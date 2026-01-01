@@ -54,14 +54,27 @@ SPORTS_KEYWORDS = [
     'mvp', 'championship', 'finals', 'touchdown', 'goal', 'home run', 
     'slam dunk', 'knockout', 'winner', 'points', 'assists', 'rebounds',
     ' beat ', ' defeat ', 'victory', 'loses', 'advance',
+    
+    # Portuguese League / Other Clubs
+    'sporting cp', 'benfica', 'porto', 'braga',
+    'ajax', 'feyenoord', 'psv', 'celtic', 'rangers',
+    'rio ave', 'vitoria', 'moreirense',
+
+    # Saudi Pro League
+    'spl', 'saudi pro league', 'al nassr', 'al hilal', 
+    'al ahli', 'al ittihad', 'al ettifaq', 'al shabab', 'saudi',
 ]
 
 
-def detect_category(title: str, slug: str = "") -> str:
+def detect_category(title: str, slug: str = "", url: str = "") -> str:
     """
-    Detect the category of a trade based on its market title and URL slug.
+    Detect the category of a trade based on its market title, URL slug, and full URL.
     Returns: 'crypto', 'sports', or 'other'
     """
+    # Check URL path for sports (e.g. /sports/nba/... or /sports/por/...)
+    if url and '/sports/' in url.lower():
+        return 'sports'
+    
     # Combine title and slug for search (slug is very useful for categories like /sports/nba/...)
     text_to_search = (title + " " + slug).lower()
     

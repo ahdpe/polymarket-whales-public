@@ -7,6 +7,8 @@ import os
 from decimal import Decimal
 from collections import OrderedDict
 
+from config import POLYGONSCAN_API_KEY
+
 logger = logging.getLogger(__name__)
 
 # Data API endpoint (public, no auth required)
@@ -17,6 +19,14 @@ POLL_INTERVAL = 3
 MAX_LRU_SIZE = 10000
 DB_PATH = "data/trades.db"
 TTL_HOURS = 72
+
+# Trader positions cache (TTL 60 seconds)
+POSITIONS_CACHE_TTL = 60
+_positions_cache = {}  # {proxy_wallet: {"data": {...}, "ts": timestamp}}
+
+# Wallet age cache (TTL 7 days - age is static)
+WALLET_AGE_CACHE_TTL = 7 * 24 * 60 * 60
+_wallet_age_cache = {}  # {proxy_wallet: {"first_ts": timestamp, "cached_at": timestamp}}
 
 
 class TradePersistence:
@@ -267,6 +277,259 @@ class PolymarketService:
             logger.error(f"Error fetching trades: {e}")
             return []
 
+    async def get_trader_positions(self, proxy_wallet):
+        """
+        Fetch trader's open positions from Data API.
+        Returns: {"pnl_usd": float, "pnl_percent": float, "open_count": int, "total_value": float, "alltime_pnl": float}
+        Uses TTL cache (60 seconds).
+        """
+        if not proxy_wallet:
+            return None
+            
+        # Check cache
+        now = time.time()
+        if proxy_wallet in _positions_cache:
+            cached = _positions_cache[proxy_wallet]
+            if now - cached["ts"] < POSITIONS_CACHE_TTL:
+                return cached["data"]
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                # Fetch open positions with pagination
+                # API has a hard limit of 500 positions per request
+                open_pnl = 0
+                total_value = 0
+                initial_value = 0
+                all_positions = []
+                
+                offset = 0
+                limit = 1000 # Request more, but API will cap at 500
+                
+                while True:
+                    url_open = f"{DATA_API_URL}/positions?user={proxy_wallet}&limit={limit}&offset={offset}"
+                    async with session.get(url_open, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                        if resp.status == 200:
+                            batch = await resp.json()
+                            if batch and isinstance(batch, list) and len(batch) > 0:
+                                all_positions.extend(batch)
+                                
+                                # If we got fewer than 500, we reached the end
+                                if len(batch) < 500:
+                                    break
+                                
+                                offset += len(batch)
+                                
+                                # Safety break to avoid too many requests (max 5000 positions)
+                                if offset >= 5000:
+                                    break
+                            else:
+                                break
+                        else:
+                            break
+                            
+                if all_positions:
+                    total_value = sum(float(p.get("currentValue", 0) or 0) for p in all_positions)
+                    initial_value = sum(float(p.get("initialValue", 0) or 0) for p in all_positions)
+                    # Calculate Open PnL as currentValue - initialValue
+                    open_pnl = total_value - initial_value
+                    open_count = len(all_positions)
+                
+                # Calculate percentage PnL for open positions
+                if initial_value > 0:
+                    pnl_percent = (open_pnl / initial_value) * 100
+                else:
+                    pnl_percent = 0
+                
+                result = {
+                    "pnl_usd": open_pnl,
+                    "pnl_percent": pnl_percent,
+                    "open_count": open_count,
+                    "total_value": total_value
+                }
+                
+                # Cache result
+                _positions_cache[proxy_wallet] = {"data": result, "ts": now}
+                return result
+                
+        except asyncio.TimeoutError:
+            logger.debug(f"Timeout fetching positions for {proxy_wallet[:10]}...")
+            return None
+        except Exception as e:
+            logger.debug(f"Error fetching positions: {e}")
+            return None
+
+    async def get_trader_first_activity(self, proxy_wallet):
+        """
+        Fetch trader's first activity timestamp from Data API.
+        Returns: Unix timestamp (seconds) of first activity, or None.
+        Uses TTL cache (5 minutes).
+        """
+        if not proxy_wallet:
+            return None
+            
+        # Check cache
+        now = time.time()
+        if proxy_wallet in _wallet_age_cache:
+            cached = _wallet_age_cache[proxy_wallet]
+            if now - cached["cached_at"] < WALLET_AGE_CACHE_TTL:
+                return cached["first_ts"]
+        
+        try:
+            # API returns newest first. We need to find the LAST page of results.
+            # Strategy:
+            # 1. Fetch first 100.
+            # 2. If < 100, we have the full history (last item is oldest).
+            # 3. If == 100, user is "active" (potentially truncated).
+            #    a) If we have POLYGONSCAN_API_KEY, query blockchain immediately.
+            #    b) If no key, attempt binary search on Poly API.
+            
+            oldest_ts = None
+            is_full_batch = False
+            
+            async with aiohttp.ClientSession() as session:
+                # 1. Fetch first batch
+                url = f"{DATA_API_URL}/activity?user={proxy_wallet}&limit=100&offset=0"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    if resp.status != 200:
+                        return None
+                    data = await resp.json()
+                    if not data or not isinstance(data, list) or len(data) == 0:
+                        return None
+                    
+                    if len(data) == 100:
+                        is_full_batch = True
+                    
+                    if len(data) < 100:
+                        # Found it in first batch
+                        oldest_ts = data[-1].get("timestamp", 0)
+                        if oldest_ts:
+                            _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now}
+                            return oldest_ts
+            
+                # If we are here, we have >= 100 items.
+                
+                # --- PolygonScan Check ---
+                poly_api_key = POLYGONSCAN_API_KEY
+                
+                if is_full_batch and poly_api_key:
+                    try:
+                        # Query multiple endpoints: txlist, tokentx (ERC20), token1155tx (ERC1155)
+                        # Proxy wallets often show 'No transactions found' in txlist but have token transfers.
+                        actions = ["txlist", "tokentx", "token1155tx"]
+                        min_ts = None
+                        
+                        # We can do this concurrently or sequentially. 
+                        # Sequential is safer for rate limits (3-5 req/sec). 
+                        # We only need 1st page, 1 item.
+                        
+                        for act in actions:
+                            ps_url = f"https://api.etherscan.io/v2/api?chainid=137&module=account&action={act}&address={proxy_wallet}&startblock=0&endblock=99999999&page=1&offset=1&sort=asc&apikey={poly_api_key}"
+                            async with session.get(ps_url, timeout=aiohttp.ClientTimeout(total=5)) as ps_resp:
+                                if ps_resp.status == 200:
+                                    ps_data = await ps_resp.json()
+                                    if ps_data.get("status") == "1" and ps_data.get("result"):
+                                        first_tx = ps_data["result"][0]
+                                        ts = int(first_tx.get("timeStamp", 0))
+                                        if ts > 0:
+                                            if min_ts is None or ts < min_ts:
+                                                min_ts = ts
+                                                
+                        if min_ts:
+                            _wallet_age_cache[proxy_wallet] = {"first_ts": min_ts, "cached_at": now}
+                            return min_ts
+
+                    except Exception as e:
+                        logger.debug(f"PolygonScan fetch failed: {e}")
+                
+                # --- Poly API Fallback (Binary/Step Search) ---
+                # Used if no API key OR blockchain fetch failed.
+                
+                # 2. Step up to find upper bound
+                steps = [500, 1000, 5000, 10000, 20000, 50000]
+                low = 100
+                high = 50000
+                
+                found_upper_bound = False
+                # If high is 500, we don't need to check steps > 500
+                valid_steps = [s for s in steps if s < high]
+                for step in valid_steps:
+                   # ... reuse existing step logic or simplified loop ...
+                   pass
+                   
+                # Let's reuse the existing comprehensive step search to be safe and robust
+                # (Keep existing logic for binary search below)
+                
+                # 2. Step up to find upper bound
+                steps = [500, 1000, 5000, 10000, 20000, 50000]
+                low = 100
+                high = 50000
+                
+                found_upper_bound = False
+                for step in steps:
+                    url = f"{DATA_API_URL}/activity?user={proxy_wallet}&limit=1&offset={step}"
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                        has_data = False
+                        if resp.status == 200:
+                            d = await resp.json()
+                            if d and isinstance(d, list) and len(d) > 0:
+                                has_data = True
+                        
+                        if has_data:
+                            low = step # This offset has data, so oldest is at least here
+                        else:
+                            high = step # This offset empty, so oldest is before here
+                            found_upper_bound = True
+                            break
+                
+                # If we went through all steps and still have data at 50000, use 50000
+                if not found_upper_bound and low == 50000:
+                     high = 50000 # Just use this as max
+                
+                # 3. Binary search between low and high
+                max_valid_offset = low
+                
+                while low <= high:
+                    mid = (low + high) // 2
+                    if mid == max_valid_offset:
+                        low = mid + 1
+                        continue
+                        
+                    url = f"{DATA_API_URL}/activity?user={proxy_wallet}&limit=1&offset={mid}"
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            if data and isinstance(data, list) and len(data) > 0:
+                                max_valid_offset = mid
+                                low = mid + 1
+                            else:
+                                high = mid - 1
+                        else:
+                            high = mid - 1 # Treat error as no data to be safe
+                
+                # 4. Fetch the record at max_valid_offset
+                if max_valid_offset > 0:
+                    url = f"{DATA_API_URL}/activity?user={proxy_wallet}&limit=1&offset={max_valid_offset}"
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            if data and len(data) > 0:
+                                oldest_ts = data[0].get("timestamp", 0)
+                else:
+                    # Fallback to first batch's last item
+                    # oldest_ts should be set from step 1, but if we entered loop it might be overwritten?
+                    # Re-check first batch if needed, but oldest_ts should correspond to offset=0 last item if max_valid_offset=0
+                    pass
+            
+            if oldest_ts:
+                _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now}
+                return oldest_ts
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Error fetching first activity: {e}")
+            return None
+
     async def poll_trades(self, callback, interval=POLL_INTERVAL):
         """
         Poll for new trades every `interval` seconds.
@@ -357,3 +620,7 @@ class PolymarketService:
             "last_timestamp": self.last_timestamp,
             "consecutive_errors": self.consecutive_errors
         }
+
+def get_wallet_age_cache():
+    """Get copy of wallet age cache for debugging."""
+    return _wallet_age_cache.copy()

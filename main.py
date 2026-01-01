@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import fcntl
+import time
 from services.polymarket import PolymarketService
 from services.telegram_service import (
     start_telegram, send_trade_alert, user_filters, 
@@ -20,6 +21,76 @@ logger = logging.getLogger(__name__)
 
 # Default chat ID from env (if set)
 DEFAULT_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# Module-level service reference (set in main())
+poly_service = None
+
+
+def format_position_stats(pos_data):
+    """Format position stats line for whale message."""
+    if not pos_data:
+        return ""
+    
+    pnl_usd = pos_data.get("pnl_usd", 0)
+    pnl_pct = pos_data.get("pnl_percent", 0)
+    open_count = pos_data.get("open_count", 0)
+    total_value = pos_data.get("total_value", 0)
+    
+    # Format values (K/M notation for large numbers)
+    def fmt_val(v):
+        v_abs = abs(v)
+        if v_abs >= 1_000_000:
+            return f"${v_abs/1_000_000:.1f}M"
+        elif v_abs >= 1_000:
+            return f"${v_abs/1_000:.1f}K"
+        else:
+            return f"${v_abs:.0f}"
+    
+    # Format Open PnL with sign and emoji
+    if pnl_usd >= 0:
+        open_pnl_str = f"+{fmt_val(pnl_usd)}"
+    else:
+        open_pnl_str = f"🔻{fmt_val(pnl_usd)}"
+    pnl_pct_str = f"({pnl_pct:+.0f}%)" if pnl_pct else "(0%)"
+    
+    return f"\n📊 Open PnL: {open_pnl_str} {pnl_pct_str}\n💼 Open Positions: {open_count} | Val: {fmt_val(total_value)}"
+
+
+def format_wallet_age(first_activity_ts):
+    """Format wallet age from first activity timestamp."""
+    if not first_activity_ts:
+        return ""
+    
+    now = time.time()
+    age_seconds = now - first_activity_ts
+    
+    if age_seconds < 0:
+        return ""
+    
+    # Calculate years, months, days
+    days = int(age_seconds / 86400)
+    
+    if days >= 365:
+        years = days // 365
+        months = (days % 365) // 30
+        if months > 0:
+            age_str = f"{years}y {months}mo"
+        else:
+            age_str = f"{years}y"
+    elif days >= 30:
+        months = days // 30
+        remaining_days = days % 30
+        if remaining_days >= 7:
+            age_str = f"{months}mo {remaining_days}d"
+        else:
+            age_str = f"{months}mo"
+    elif days >= 1:
+        age_str = f"{days}d"
+    else:
+        hours = int(age_seconds / 3600)
+        age_str = f"{hours}h" if hours > 0 else "<1h"
+    
+    return f"\n🕐 Wallet Age: {age_str}"
 
 async def handle_trade(trade_data):
     """
@@ -40,14 +111,20 @@ async def handle_trade(trade_data):
         market_title = trade_data.get('title', 'Unknown Market')
         slug = trade_data.get('slug', '')
         event_slug = trade_data.get('eventSlug', '')
-        category = detect_category(market_title, f"{slug} {event_slug}")
-            
+        
+        # Build market URL early (needed for category detection)
+        market_url = f"https://polymarket.com/event/{event_slug}" if event_slug else ""
+        
+        # Also check for sports-specific URL pattern if available from API
+        api_url = trade_data.get('url', '') or trade_data.get('marketUrl', '')
+        
+        category = detect_category(market_title, f"{slug} {event_slug}", url=api_url or market_url)
+        
         emoji = alert_config['emoji']
         side = trade_data.get('side', 'UNKNOWN')
         outcome = trade_data.get('outcome', '')
         trader = trade_data.get('name') or trade_data.get('pseudonym', 'Unknown')
         trader_address = trade_data.get('proxyWallet', '') or trade_data.get('maker', '')
-        event_slug = trade_data.get('eventSlug', '')
         
         # Color for side + outcome
         # 🟢 Green = BUY Yes, 🔴 Red = BUY No, 🔵 Blue = SELL
@@ -61,12 +138,19 @@ async def handle_trade(trade_data):
         # Category emoji
         cat_emoji = {"crypto": "💰", "sports": "⚽", "other": "📌"}.get(category, "")
         
-        # Build URLs
-        market_url = f"https://polymarket.com/event/{event_slug}" if event_slug else ""
         trader_url = f"https://polymarket.com/profile/{trader_address}" if trader_address else ""
         
         # Price as percentage (Polymarket prices are 0-1)
         price_pct = price * 100
+        
+        # Fetch trader positions and first activity (cached, async)
+        pos_data = None
+        first_activity_ts = None
+        if poly_service and trader_address:
+            pos_data = await poly_service.get_trader_positions(trader_address)
+            first_activity_ts = await poly_service.get_trader_first_activity(trader_address)
+        position_stats_line = format_position_stats(pos_data)
+        wallet_age_line = format_wallet_age(first_activity_ts)
         
         # Get all users who should receive this alert
         for chat_id, min_threshold in user_filters.items():
@@ -116,7 +200,7 @@ async def handle_trade(trade_data):
                     f"{cat_emoji} [{market_title[:80]}]({market_url})\n"
                     f"{side_display} @ {price_pct:.1f}%\n"
                     f"💵 {money_text}\n"
-                    f"{level_emoji} {trader_text}"
+                    f"{level_emoji} {trader_text}{position_stats_line}{wallet_age_line}"
                 )
                 await send_trade_alert(chat_id, msg)
         
@@ -167,7 +251,7 @@ async def handle_trade(trade_data):
                         f"{cat_emoji} [{market_title[:80]}]({market_url})\n"
                         f"{side_display} @ {price_pct:.1f}%\n"
                         f"💵 {money_text}\n"
-                        f"{level_emoji} {trader_text}"
+                        f"{level_emoji} {trader_text}{position_stats_line}{wallet_age_line}"
                     )
                     await send_trade_alert(DEFAULT_CHAT_ID, msg)
             except ValueError:
@@ -196,6 +280,7 @@ async def main():
     tg_task = asyncio.create_task(start_telegram())
     
     # Start Polymarket Service
+    global poly_service
     poly_service = PolymarketService()
     
     logger.info("Starting PolyWhales...")

@@ -68,6 +68,12 @@ TRANSLATIONS = {
 🐟 РЫБА — >$2,000
 🦐 КРЕВЕТКА — >$500
 
+*Метрики в уведомлениях:*
+📊 *Open PnL* — PnL открытых позиций (нереализованный)
+💼 *Open Positions* — Количество активных позиций (не закрытых)
+💵 *Val* — Текущая стоимость всех позиций
+🕐 *Wallet Age* — Возраст кошелька (с первой сделки)
+
 *Как определяются категории:*
 1. 💰 *Крипто (Crypto)*
 Если в названии есть: bitcoin, btc, ethereum, eth, solana, doge, pepe, binance, nft, airdrop и др.
@@ -149,6 +155,12 @@ Real-time monitoring of large trades on [Polymarket](https://polymarket.com).
 🐬 DOLPHIN — >$5,000
 🐟 FISH — >$2,000
 🦐 SHRIMP — >$500
+
+*Metric definitions:*
+📊 *Open PnL* — PnL of open positions (Unrealized)
+💼 *Open Positions* — Count of active positions (not closed)
+💵 *Val* — Current value of open positions
+🕐 *Wallet Age* — Time since first activity
 
 *Category definitions:*
 1. 💰 *Crypto*

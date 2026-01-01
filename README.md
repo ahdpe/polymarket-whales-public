@@ -16,6 +16,7 @@ Telegram-бот для отслеживания крупных сделок ("к
 - ⚖️ **Фильтр вероятности** — исключает почти решённые рынки (99.9%)
 - 🌐 **Двуязычный интерфейс** — Русский / English
 - 🔗 **Ссылки на профиль трейдера** и рынок
+- 📈 **Расширенная аналитика:** Open PnL, активные позиции, возраст кошелька
 
 ### Классификация объёмов
 
@@ -28,6 +29,20 @@ Telegram-бот для отслеживания крупных сделок ("к
 | 🐬 | Дельфин | >$5,000 |
 | 🐟 | Рыба | >$2,000 |
 | 🦐 | Креветка | >$500 |
+
+### Новые метрики и точность данных
+
+#### Аналитика трейдера
+В каждом уведомлении теперь доступна статистика:
+- 📊 **Open PnL**: Нереализованная прибыль/убыток по открытым позициям.
+- 💼 **Open Positions**: Количество и стоимость активных (не закрытых) позиций.
+- 🕐 **Wallet Age**: Возраст кошелька с момента первой активности.
+
+#### Точный возраст кошелька (PolygonScan + Proxy)
+Polymarket API часто обрезает историю сделок для активных трейдеров. Чтобы возраст определялся точно:
+1. **Интеграция с блокчейном:** Если история короткая, бот проверяет данные напрямую в PolygonScan (требуется API Key).
+2. **Поддержка Proxy-кошельков:** Бот умеет определять возраст даже для смарт-кошельков (Gnosis Safe / Proxy), проверяя переводы токенов ERC20/ERC1155.
+3. **Кэширование:** Найденный возраст запоминается на **7 дней**, чтобы экономить лимиты API.
 
 ### Принцип работы
 
@@ -49,7 +64,7 @@ Telegram-бот для отслеживания крупных сделок ("к
 #### 3. Дедупликация и Хранение (Persistence)
 Чтобы избежать повторных уведомлений (например, при перезапуске):
 - **База данных:** Используется локальная база **SQLite** (`data/trades.db`), где хранятся уникальные ключи всех обработанных сделок.
-- **Кэш:** В оперативной памяти держится список последних 10,000 сделок (LRU Cache) для мгновенной проверки.
+- **Кэш:** В оперативной памяти держится список последних 10,000 сделок (LRU Cache).
 - **Очистка:** Старые записи (старше 72 часов) автоматически удаляются из базы.
 
 #### 4. Telegram Бот (TelegramService)
@@ -69,7 +84,13 @@ Telegram-бот для отслеживания крупных сделок ("к
   - Типом сделки (Покупка/Продажа) и ценой
   - Суммой сделки (для серий пишет "Series X fills")
   - Уровнем "кита" и ссылкой на трейдера
+  - Статистикой (PnL, Pos, Age)
 
+#### 5. Администрирование
+- `/stats` — статистика бота (только для владельца)
+- `/users` — список пользователей
+- `/broadcast <сообщение>` — рассылка всем пользователям
+- `/cache` — просмотр кэша возраста кошельков
 ### Установка
 
 ```bash
@@ -82,6 +103,8 @@ pip install -r requirements.txt
 ```
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
+# Опционально (для точного возраста кошельков)
+POLYGONSCAN_API_KEY=your_polygonscan_key
 ```
 
 Запуск:
@@ -103,6 +126,7 @@ Telegram bot for real-time tracking of large trades ("whales") on [Polymarket](h
 - ⚖️ **Probability filter** — excludes near-resolved markets (99.9%)
 - 🌐 **Bilingual interface** — Russian / English
 - 🔗 **Links to trader profile** and market
+- 📈 **Advanced Analytics:** Open PnL, Active Positions, Wallet Age
 
 ### Volume Classification
 
@@ -116,47 +140,48 @@ Telegram bot for real-time tracking of large trades ("whales") on [Polymarket](h
 | 🐟 | Fish | >$2,000 |
 | 🦐 | Shrimp | >$500 |
 
+### New Metrics & Data Accuracy
+
+#### Trader Analytics
+Every alert includes detailed stats:
+- 📊 **Open PnL**: Floating profit/loss on open positions.
+- 💼 **Open Positions**: Count and total value of active positions.
+- 🕐 **Wallet Age**: Time since the very first activity.
+
+#### Accurate Wallet Age (PolygonScan + Proxy)
+Polymarket API often truncates activity history for high-frequency traders. For accuracy:
+1. **Blockchain Integration:** If history seems short, the bot queries PolygonScan directly (requires API Key).
+2. **Proxy Wallet Support:** Correctly identifies age even for Smart Wallets (Gnosis/Proxy) by checking ERC20/ERC1155 transfers.
+3. **Caching:** Wallet age is cached for **7 days** to minimize API usage.
+
 ### How It Works
 
 #### 1. Data Fetching (PolymarketService)
 - **Source:** Uses public **Polymarket Data API** (`data-api.polymarket.com`).
 - **Method:** Polls the API every **3 seconds**.
-- **Input filtering:** Only `CASH` type trades from **$10** are requested (to capture small parts of large orders).
+- **Input filtering:** Only `CASH` type trades from **$10** are requested.
 
 #### 2. Processing and Aggregation
-A single large trade on Polymarket is often split into multiple small fills. To avoid spamming notifications, the bot groups them into series.
-- **Grouping:** Trades are combined into a series if they match:
-  - Trader wallet
-  - Market (Condition ID)
-  - Side (BUY/SELL)
-  - Outcome (YES/NO/Outcome Index)
-- **Time window:** Trades are collected within **60 seconds** from the first fill.
-- **Trigger threshold:** If the series sum exceeds **$500**, it's considered significant.
+A single large trade is often split into multiple fills. To avoid spam, the bot groups them:
+- **Grouping:** Same wallet, market, side, outcome.
+- **Time window:** **60 seconds** aggregation window.
+- **Trigger:** Series sum > **$500**.
 
 #### 3. Deduplication and Persistence
-To avoid duplicate notifications (e.g., on restart):
-- **Database:** Local **SQLite** database (`data/trades.db`) stores unique keys of all processed trades.
-- **Cache:** 10,000 most recent trades are kept in memory (LRU Cache) for instant lookup.
-- **Cleanup:** Old records (older than 72 hours) are automatically deleted.
+- **Database:** Local **SQLite** (`data/trades.db`) stores processed trade keys.
+- **Cache:** 10,000 most recent trades in RAM.
+- **Cleanup:** Records > 72h are deleted.
 
 #### 4. Telegram Bot (TelegramService)
-The bot interacts with users and sends notifications.
-- **Personalization:** Each user can configure their filters:
-  - **Minimum amount:** from $500 to $100,000
-  - **Categories:** Crypto, Sports, Other (determined by keywords)
-  - **Probability:** Any, 1%-99%, 5%-95%, 10%-90%
-  - **Language:** Russian or English
-- **Interface:**
-  - `💰 Trade Amount` — select minimum threshold
-  - `📂 Categories` — select market categories
-  - `⚖️ Probability` — probability filter
-  - `▶️ Start / ⏸️ Stop` — notification toggle
-- **Notifications:** Sends message with:
-  - Category emoji (💰, ⚽, 📌) and market name
-  - Trade type (Buy/Sell) and price
-  - Trade amount (for series shows "Series X fills")
-  - Whale level and link to trader
+- **Filters:** Amount, Category, Probability, Language.
+- **Interface:** Persistent menu for easy configuration.
+- **Alerts:** Rich messages with emojis, links, and trader stats.
 
+#### 5. Administration
+- `/stats` — bot statistics (owner only)
+- `/users` — user list
+- `/broadcast <message>` — broadcast to all users
+- `/cache` — inspect wallet age cache
 ### Installation
 
 ```bash
@@ -169,6 +194,8 @@ Create `.env` file:
 ```
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
+# Optional (for accurate wallet age)
+POLYGONSCAN_API_KEY=your_polygonscan_key
 ```
 
 Run:

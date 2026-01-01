@@ -493,13 +493,27 @@ async def cmd_users(message: types.Message):
         threshold = user_filters.get(uid, 100)
         status = "▶️" if user_statuses.get(uid, True) else "⏸️"
         lang = user_languages.get(uid, 'ru').upper()
-        username = user_usernames.get(uid, "—")
-        msg += f"@{username} | {status} | ${threshold:,} | {lang}\n"
+        
+        # Escape markdown characters in username to avoid breaking the message
+        # We need to escape: _, *, [, ], (, ), ~, `, >, #, +, -, =, |, {, }, ., !
+        # For Telegram MarkdownV2 usually just _ * [ ] ( ) ~ ` > # + - = | { } . !
+        # But here valid implementation for standard Markdown or MarkdownV2 is needed.
+        # The bot uses parse_mode="Markdown" (Legacy) based on existing code.
+        # Legacy Markdown only needs escaping for: _ * ` [
+        
+        raw_username = user_usernames.get(uid, "—")
+        safe_username = str(raw_username).replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[")
+        
+        msg += f"@{safe_username} | {status} | ${threshold:,} | {lang}\n"
     
     if len(user_filters) > 50:
         msg += f"\n... и ещё {len(user_filters) - 50} пользователей"
     
-    await message.answer(msg, parse_mode="Markdown")
+    try:
+        await message.answer(msg, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Error sending /users list: {e}")
+        await message.answer("❌ Ошибка при отправке списка пользователей. Проверьте логи.")
 
 
 @dp.message(Command("broadcast"))
@@ -528,6 +542,39 @@ async def cmd_broadcast(message: types.Message):
             failed += 1
     
     await message.answer(f"📢 Рассылка завершена!\n✅ Отправлено: {sent}\n❌ Ошибок: {failed}")
+
+
+@dp.message(Command("cache"))
+async def cmd_cache(message: types.Message):
+    """Show wallet age cache stats (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    from services.polymarket import get_wallet_age_cache
+    
+    cache = get_wallet_age_cache()
+    count = len(cache)
+    
+    if count == 0:
+        await message.answer("📭 Кэш возраста кошельков пуст.")
+        return
+        
+    msg = f"📂 **Wallet Age Cache ({count})**\n\n"
+    
+    # Show last 10 entries
+    keys = list(cache.keys())[-10:]
+    now = __import__('time').time()
+    
+    for k in keys:
+        entry = cache[k]
+        age_days = (now - entry['first_ts']) / 86400
+        cached_min = (now - entry['cached_at']) / 60
+        msg += f"`{k[:6]}...`: Age {age_days:.1f}d (cached {cached_min:.1f}m ago)\n"
+        
+    if count > 10:
+        msg += f"\n... и ещё {count - 10} записей."
+        
+    await message.answer(msg, parse_mode="Markdown")
 
 
 async def start_telegram():
