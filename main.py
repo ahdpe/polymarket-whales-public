@@ -119,6 +119,56 @@ async def handle_trade(trade_data):
         api_url = trade_data.get('url', '') or trade_data.get('marketUrl', '')
         
         category = detect_category(market_title, f"{slug} {event_slug}", url=api_url or market_url)
+
+        # --- OPTIMIZATION: Identify recipients BEFORE triggering expensive API calls ---
+        recipients = [] # List of (chat_id, localized_level_emoji, localized_level_name, localized_lang)
+
+        # Helper to check if a user qualifies
+        def check_user(chat_id, min_threshold):
+             if value_usd < min_threshold:
+                 return False
+
+             # Check active status
+             from services.telegram_service import is_user_active
+             if not is_user_active(chat_id):
+                 return False
+
+             # Check category filter
+             user_prefs = get_user_categories(chat_id)
+             if not should_show_trade(category, user_prefs):
+                 return False
+             
+             # Check probability filter
+             prob_range = get_user_probability_filter(chat_id)
+             if prob_range:
+                 min_prob, max_prob = prob_range
+                 if price < min_prob or price > max_prob:
+                     return False
+             
+             return True
+
+        # 1. Check registered users
+        for chat_id, min_threshold in user_filters.items():
+            if check_user(chat_id, min_threshold):
+                recipients.append(chat_id)
+        
+        # 2. Check default chat ID (if not already included)
+        if DEFAULT_CHAT_ID:
+            try:
+                default_id = int(DEFAULT_CHAT_ID)
+                if default_id not in user_filters and default_id not in recipients:
+                     # Use default lowest threshold for fallback
+                     min_threshold = FILTERS[-1]['min']
+                     if check_user(default_id, min_threshold):
+                         recipients.append(default_id)
+            except ValueError:
+                pass
+
+        # If no one wants this trade, stop here!
+        if not recipients:
+            return 
+            
+        # --- End Optimization ---
         
         emoji = alert_config['emoji']
         side = trade_data.get('side', 'UNKNOWN')
@@ -144,6 +194,7 @@ async def handle_trade(trade_data):
         price_pct = price * 100
         
         # Fetch trader positions and first activity (cached, async)
+        # We only do this NOW because we know at least one person will see it.
         pos_data = None
         first_activity_ts = None
         if poly_service and trader_address:
@@ -152,110 +203,35 @@ async def handle_trade(trade_data):
         position_stats_line = format_position_stats(pos_data)
         wallet_age_line = format_wallet_age(first_activity_ts)
         
-        # Get all users who should receive this alert
-        for chat_id, min_threshold in user_filters.items():
-            if value_usd >= min_threshold:
-                # Check active status
-                from services.telegram_service import is_user_active
-                if not is_user_active(chat_id):
-                    continue
+        # Money display logic
+        if side == 'BUY':
+            money_text = f"*${value_usd:,.0f}* → ${size:,.0f}"
+        else:
+            money_text = f"*${value_usd:,.0f}*"
 
-                # Check category filter
-                user_prefs = get_user_categories(chat_id)
-                if not should_show_trade(category, user_prefs):
-                    continue
-                
-                # Check probability filter
-                prob_range = get_user_probability_filter(chat_id)
-                if prob_range:
-                    min_prob, max_prob = prob_range
-                    if price < min_prob or price > max_prob:
-                        continue  # Price outside user's probability range
-                
-                # Get user's language
-                lang = get_user_lang(chat_id)
-                level_name = get_trade_level_name(lang, alert_config['min'])
-                
-                # Get localized emoji
-                level_emoji = get_trade_level_emoji(lang, alert_config['min'])
-                
-                # Build trader link
-                trader_text = f"[{trader}]({trader_url})" if trader_url else trader
-                
-                # Money display: BUY shows spent → payout, SELL shows just received amount
-                if side == 'BUY':
-                    money_text = f"*${value_usd:,.0f}* → ${size:,.0f}"
-                else:
-                    money_text = f"*${value_usd:,.0f}*"
-                
-                # Format header based on whether it's a multi-fill series or single trade
-                is_series = trade_data.get('is_aggregate', False) and trade_data.get('series_fills', 1) > 1
-                if is_series:
-                    fills = trade_data.get('series_fills', 0)
-                    side_display = f"⚡ *Series {side} {outcome}* ({fills} fills)"
-                else:
-                    side_display = f"{side_emoji} *{side} {outcome}*"
-                    
-                msg = (
-                    f"{cat_emoji} [{market_title[:80]}]({market_url})\n"
-                    f"{side_display} @ {price_pct:.1f}%\n"
-                    f"💵 {money_text}\n"
-                    f"{level_emoji} {trader_text}{position_stats_line}{wallet_age_line}"
-                )
-                await send_trade_alert(chat_id, msg)
-        
-        # Also send to default chat if set and not already in user_filters
-        if DEFAULT_CHAT_ID:
-            try:
-                default_id = int(DEFAULT_CHAT_ID)
-                # Skip if already sent via user_filters
-                if default_id in user_filters:
-                    return
-                    
-                # Use user's saved threshold if exists, otherwise default to lowest
-                min_threshold = user_filters.get(default_id, FILTERS[-1]['min'])
-                if value_usd >= min_threshold:
-                    # Check category filter for default user
-                    user_prefs = get_user_categories(default_id)
-                    if not should_show_trade(category, user_prefs):
-                        return
-                    
-                    # Check probability filter for default user
-                    prob_range = get_user_probability_filter(default_id)
-                    if prob_range:
-                        min_prob, max_prob = prob_range
-                        if price < min_prob or price > max_prob:
-                            return  # Price outside probability range
-                    
-                    lang = get_user_lang(default_id)
-                    level_name = get_trade_level_name(lang, alert_config['min'])
-                    level_emoji = get_trade_level_emoji(lang, alert_config['min'])
-                    
-                    trader_text = f"[{trader}]({trader_url})" if trader_url else trader
-                    
-                    # Money display: BUY shows spent → payout, SELL shows just received amount
-                    if side == 'BUY':
-                        money_text = f"*${value_usd:,.0f}* → ${size:,.0f}"
-                    else:
-                        money_text = f"*${value_usd:,.0f}*"
-                    
-                    # Format header based on whether it's a multi-fill series or single trade
-                    is_series = trade_data.get('is_aggregate', False) and trade_data.get('series_fills', 1) > 1
-                    if is_series:
-                        fills = trade_data.get('series_fills', 0)
-                        side_display = f"⚡ *Series {side} {outcome}* ({fills} fills)"
-                    else:
-                        side_display = f"{side_emoji} *{side} {outcome}*"
-                    
-                    msg = (
-                        f"{cat_emoji} [{market_title[:80]}]({market_url})\n"
-                        f"{side_display} @ {price_pct:.1f}%\n"
-                        f"💵 {money_text}\n"
-                        f"{level_emoji} {trader_text}{position_stats_line}{wallet_age_line}"
-                    )
-                    await send_trade_alert(DEFAULT_CHAT_ID, msg)
-            except ValueError:
-                pass
+        # Header logic
+        is_series = trade_data.get('is_aggregate', False) and trade_data.get('series_fills', 1) > 1
+        if is_series:
+            fills = trade_data.get('series_fills', 0)
+            side_display = f"⚡ *Series {side} {outcome}* ({fills} fills)"
+        else:
+            side_display = f"{side_emoji} *{side} {outcome}*"
+
+        # Send to all recipients
+        for chat_id in recipients:
+             # Localization per user
+             lang = get_user_lang(chat_id)
+             level_emoji = get_trade_level_emoji(lang, alert_config['min'])
+             
+             trader_text = f"[{trader}]({trader_url})" if trader_url else trader
+             
+             msg = (
+                f"{cat_emoji} [{market_title[:80]}]({market_url})\n"
+                f"{side_display} @ {price_pct:.1f}%\n"
+                f"💵 {money_text}\n"
+                f"{level_emoji} {trader_text}{position_stats_line}{wallet_age_line}"
+            )
+             await send_trade_alert(chat_id, msg)
                     
     except Exception as e:
         logger.error(f"Error handling trade: {e}")

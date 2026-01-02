@@ -60,6 +60,7 @@ Polymarket API часто обрезает историю сделок для а
   - Исход (YES/NO/Outcome Index)
 - **Окно времени:** Сделки собираются в течение **60 секунд** с момента первой части.
 - **Порог срабатывания:** Если сумма серии превышает **$500**, она считается значимой и передается на отправку.
+- **Оптимизация:** Тяжелые запросы к API (PnL, Pos, Age) выполняются **только** если сделка проходит фильтры хотя бы одного активного пользователя.
 
 #### 3. Дедупликация и Хранение (Persistence)
 Чтобы избежать повторных уведомлений (например, при перезапуске):
@@ -166,6 +167,7 @@ A single large trade is often split into multiple fills. To avoid spam, the bot 
 - **Grouping:** Same wallet, market, side, outcome.
 - **Time window:** **60 seconds** aggregation window.
 - **Trigger:** Series sum > **$500**.
+- **Optimization:** Expensive API calls (PnL, Pos, Age) are deferred and only executed if the trade matches at least one active user's filters.
 
 #### 3. Deduplication and Persistence
 - **Database:** Local **SQLite** (`data/trades.db`) stores processed trade keys.
