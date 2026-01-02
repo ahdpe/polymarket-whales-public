@@ -15,7 +15,7 @@ POLY_WALLET_ADDRESS = os.getenv("POLY_WALLET_ADDRESS")
 POLY_PRIVATE_KEY = os.getenv("POLY_PRIVATE_KEY") 
 
 # PolygonScan API Key (Optional, for accurate wallet age)
-POLYGONSCAN_API_KEY = os.getenv("POLYGONSCAN_API_KEY", "NWIDXJ5IBKJ5E9I4AWVUKAND4YNN5I49ZJ")
+POLYGONSCAN_API_KEY = os.getenv("POLYGONSCAN_API_KEY")
 
 CLOB_API_URL = "https://clob.polymarket.com"
 WS_URL = "wss://ws-gamma-clob.polymarket.com/" # Gamma is usually testnet, CLOB prod is `wss://ws-clob.polymarket.com/` ?
