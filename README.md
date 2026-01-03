@@ -87,11 +87,6 @@ Polymarket API часто обрезает историю сделок для а
   - Уровнем "кита" и ссылкой на трейдера
   - Статистикой (PnL, Pos, Age)
 
-#### 5. Администрирование
-- `/stats` — статистика бота (только для владельца)
-- `/users` — список пользователей
-- `/broadcast <сообщение>` — рассылка всем пользователям
-- `/cache` — просмотр кэша возраста кошельков
 ### Установка
 
 ```bash
@@ -179,11 +174,6 @@ A single large trade is often split into multiple fills. To avoid spam, the bot 
 - **Interface:** Persistent menu for easy configuration.
 - **Alerts:** Rich messages with emojis, links, and trader stats.
 
-#### 5. Administration
-- `/stats` — bot statistics (owner only)
-- `/users` — user list
-- `/broadcast <message>` — broadcast to all users
-- `/cache` — inspect wallet age cache
 ### Installation
 
 ```bash
