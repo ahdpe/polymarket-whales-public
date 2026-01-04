@@ -11,3 +11,5 @@ data/trades.db
 data/trades.db-shm
 data/trades.db-wal
 *.log
+data/saved_whales.db
+public_export/

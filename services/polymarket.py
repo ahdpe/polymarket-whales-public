@@ -245,9 +245,34 @@ class PolymarketService:
         self.last_timestamp = 0
         self.consecutive_errors = 0
         self.total_trades_processed = 0
+        self.recent_wallets = OrderedDict()  # {wallet_address: last_seen_timestamp}
+        self.seen_activities = set()  # Set of activity IDs we've already processed
+        self.last_activity_poll = 0
         
         logger.info("PolymarketService initialized - using Data API with SQLite Persistence & Aggregation")
         
+    async def _fetch_recent_activities(self, user_address: str, activity_type: str, limit=100, offset=0):
+        """Fetch recent activities (SPLIT/REDEEM/MERGE) for a specific user from Data API."""
+        try:
+            url = f"{DATA_API_URL}/activity?user={user_address}&type={activity_type}&limit={limit}&offset={offset}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    if resp.status == 200:
+                        activities = await resp.json()
+                        if activities and isinstance(activities, list):
+                            return activities
+                        return []
+                    else:
+                        text = await resp.text()
+                        logger.debug(f"Failed to fetch {activity_type} activities for {user_address[:10]}...: {resp.status} - {text[:100]}")
+                        return []
+        except asyncio.TimeoutError:
+            logger.debug(f"Timeout fetching {activity_type} activities for {user_address[:10]}...")
+            return []
+        except Exception as e:
+            logger.debug(f"Error fetching {activity_type} activities: {e}")
+            return []
+
     async def _fetch_recent_trades(self, limit=10000, offset=0, min_size=10):
         """Fetch recent trades from Data API."""
         try:
@@ -569,6 +594,14 @@ class PolymarketService:
                         trades_found_in_poll += 1
                         self.total_trades_processed += 1
                         
+                        # Collect wallet address for activity polling
+                        trader_address = trade.get('proxyWallet') or trade.get('maker')
+                        if trader_address:
+                            self.recent_wallets[trader_address] = time.time()
+                            # Keep only the most recent N wallets
+                            while len(self.recent_wallets) > 100:  # Keep last 100 active wallets
+                                self.recent_wallets.popitem(last=False)
+                        
                         # Pass to Aggregator
                         agg_trade = self.aggregator.process_trade(trade)
                         if agg_trade:
@@ -608,6 +641,133 @@ class PolymarketService:
                      
             except Exception as e:
                 logger.error(f"Polling error: {e}")
+            
+            await asyncio.sleep(interval)
+    
+    def _map_activity_to_trade(self, activity: dict, activity_type: str) -> dict:
+        """Map activity data to a trade-like dictionary for consistent processing."""
+        # Extract common fields
+        activity_id = activity.get('id')
+        timestamp = activity.get('timestamp', time.time())
+        user_address = activity.get('user') or activity.get('proxyWallet') or activity.get('maker', '')
+        
+        # Market info
+        market_title = activity.get('title') or activity.get('marketTitle') or 'Unknown Market'
+        slug = activity.get('slug') or activity.get('eventSlug', '')
+        event_slug = activity.get('eventSlug') or slug
+        market_url = f"https://polymarket.com/event/{event_slug}" if event_slug else ""
+        
+        # Outcome
+        outcome = activity.get('outcome') or activity.get('outcomeIndex', '')
+        if isinstance(outcome, int):
+            outcome = 'YES' if outcome == 0 else 'NO'
+        
+        # Price and size
+        price = float(activity.get('price', 0))
+        size = float(activity.get('size', 0) or activity.get('amount', 0))
+        
+        # For SPLIT/MERGE/REDEEM, the API provides usdcSize which is the actual USD value
+        # price is always 0.5 for these operations, so price * size gives wrong result
+        usdc_size = float(activity.get('usdcSize', 0) or 0)
+        if usdc_size > 0:
+            value_usd = usdc_size
+        elif price > 0:
+            value_usd = price * size
+        else:
+            value_usd = size  # Fallback: size might already be USD
+        
+        # If value_usd is still 0, try to get from other fields
+        if value_usd == 0:
+            value_usd = float(activity.get('value', 0) or activity.get('valueUsd', 0) or 0)
+        
+        return {
+            'id': activity_id,
+            'timestamp': timestamp,
+            'title': market_title,
+            'market_url': market_url,
+            'slug': slug,
+            'eventSlug': event_slug,
+            'side': activity_type.upper(),  # Use activity type as 'side'
+            'type': activity_type.upper(),  # Use activity type as 'type'
+            'outcome': outcome,
+            'price': price if price > 0 else 0.5,  # Default price if missing
+            'size': size if size > 0 else value_usd,  # Use value_usd as size if size is 0
+            'value_usd': value_usd,
+            'proxyWallet': user_address,
+            'maker': user_address,
+            'name': activity.get('name') or activity.get('pseudonym', ''),
+            'is_aggregate': False,  # Activities are not aggregated
+            'series_fills': 1
+        }
+    
+    async def poll_activities(self, callback, interval=30):
+        """
+        Poll for new SPLIT/REDEEM/MERGE activities for recently active traders.
+        Runs separately from trade polling to avoid blocking.
+        """
+        logger.info(f"Activity polling for SPLIT/REDEEM/MERGE (every {interval}s)...")
+        activity_types = ['SPLIT', 'REDEEM', 'MERGE']
+        max_wallets_to_check = 25  # Limit to recent active wallets
+        
+        while True:
+            try:
+                # Get recently active wallets (last 1 hour)
+                now = time.time()
+                recent_wallets = [
+                    wallet for wallet, last_seen in self.recent_wallets.items()
+                    if now - last_seen < 3600  # Last hour
+                ][:max_wallets_to_check]
+                
+                if not recent_wallets:
+                    # Log periodically that we're waiting for wallets
+                    if now - self.last_activity_poll > 300:  # Every 5 minutes
+                        logger.debug(f"Activity polling: waiting for active wallets (tracking {len(self.recent_wallets)} total)")
+                    await asyncio.sleep(interval)
+                    continue
+                
+                logger.debug(f"Activity polling: checking {len(recent_wallets)} wallets for SPLIT/REDEEM/MERGE")
+                
+                for wallet_address in recent_wallets:
+                    for activity_type in activity_types:
+                        activities = await self._fetch_recent_activities(wallet_address, activity_type, limit=10, offset=0)
+                        
+                        for activity in activities:
+                            # Generate synthetic activity ID (API doesn't provide 'id' field)
+                            tx_hash = activity.get('transactionHash', '')
+                            condition_id = activity.get('conditionId', '')
+                            activity_id = f"{tx_hash}|{condition_id}|{activity_type}"
+                            
+                            if not tx_hash:  # Skip if no transaction hash
+                                continue
+                            
+                            # Check if we've seen this activity
+                            if activity_id in self.seen_activities:
+                                continue
+                            
+                            self.seen_activities.add(activity_id)
+                            
+                            # Clean old activity IDs (keep last 10000)
+                            if len(self.seen_activities) > 10000:
+                                # Remove oldest 2000
+                                old_ids = list(self.seen_activities)[:2000]
+                                for old_id in old_ids:
+                                    self.seen_activities.discard(old_id)
+                            
+                            # Map activity to trade-like format
+                            trade_data = self._map_activity_to_trade(activity, activity_type)
+                            
+                            # Only process if value is significant
+                            if trade_data.get('value_usd', 0) >= 500:
+                                logger.info(f"🔔 {activity_type} detected: ${trade_data.get('value_usd', 0):,.0f} by {wallet_address[:10]}... in {trade_data.get('title', 'Unknown Market')[:50]}")
+                                await callback(trade_data)
+                        
+                        # Small delay between requests to avoid rate limiting
+                        await asyncio.sleep(0.5)
+                
+                self.last_activity_poll = now
+                
+            except Exception as e:
+                logger.error(f"Activity polling error: {e}")
             
             await asyncio.sleep(interval)
     

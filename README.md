@@ -14,9 +14,12 @@ Telegram-бот для отслеживания крупных сделок ("к
 - 💰 **Фильтр по сумме** — выбери минимальный порог
 - 📂 **Фильтр по категориям** — Крипто, Спорт, Остальное
 - ⚖️ **Фильтр вероятности** — исключает почти решённые рынки (99.9%)
+- 🔄 **Фильтр типов событий** — выбирай какие сделки отслеживать: BUY, SELL, SPLIT, MERGE, REDEEM
 - 🌐 **Двуязычный интерфейс** — Русский / English
 - 🔗 **Ссылки на профиль трейдера** и рынок
 - 📈 **Расширенная аналитика:** Open PnL, активные позиции, возраст кошелька
+- ⭐ **Избранное:** Сохранение интересных трейдеров с их текущим "уровнем" (🦐-🔥)
+- 🐦 **Twitter интеграция** — автоматическая публикация крупных сделок в Twitter/X
 
 ### Классификация объёмов
 
@@ -56,8 +59,13 @@ Polymarket API часто обрезает историю сделок для а
 - **Группировка:** Сделки объединяются в серию, если совпадают:
   - Кошелек трейдера
   - Рынок (Condition ID)
-  - Сторона (BUY/SELL)
+  - Сторона (BUY/SELL/SPLIT/MERGE/REDEEM)
   - Исход (YES/NO/Outcome Index)
+- **Типы событий:** Бот поддерживает все типы сделок Polymarket:
+  - **BUY/SELL** — обычные покупки и продажи
+  - **SPLIT** — разделение позиции на YES и NO одновременно
+  - **MERGE** — объединение YES и NO позиций обратно в USDC
+  - **REDEEM** — выкуп позиций при разрешении рынка
 - **Окно времени:** Сделки собираются в течение **60 секунд** с момента первой части.
 - **Порог срабатывания:** Если сумма серии превышает **$500**, она считается значимой и передается на отправку.
 - **Оптимизация:** Тяжелые запросы к API (PnL, Pos, Age) выполняются **только** если сделка проходит фильтры хотя бы одного активного пользователя.
@@ -76,16 +84,58 @@ Polymarket API часто обрезает историю сделок для а
   - **Вероятность:** Любая, 1%-99%, 5%-95%, 10%-90%
   - **Язык:** Русский или Английский
 - **Интерфейс:**
-  - `💰 Сумма сделки` — выбор минимального порога
-  - `📂 Категории` — выбор категорий рынков
-  - `⚖️ Вероятность` — фильтр по вероятности
+  - `⚙️ Фильтры` — подменю со всеми настройками фильтров:
+    - `💰 Сумма сделки` — выбор минимального порога
+    - `📂 Категории` — выбор категорий рынков
+    - `⚖️ Вероятность` — фильтр по вероятности
+    - `🔄 Типы событий` — выбор типов сделок (BUY, SELL, SPLIT, MERGE, REDEEM)
   - `▶️ Запустить / ⏸️ Остановить` — переключатель уведомлений
+  - `⭐ Избранное` — список сохранённых трейдеров
 - **Уведомления:** Присылает сообщение с:
   - Эмодзи категории (💰, ⚽, 📌) и названием рынка
-  - Типом сделки (Покупка/Продажа) и ценой
+  - Типом сделки (BUY/SELL/SPLIT/MERGE/REDEEM) с цветовыми индикаторами:
+    - 🟢 BUY Yes, 🔴 BUY No, 🔵 SELL, ⚪ SPLIT, ↔️ MERGE, 🟣 REDEEM
   - Суммой сделки (для серий пишет "Series X fills")
   - Уровнем "кита" и ссылкой на трейдера
   - Статистикой (PnL, Pos, Age)
+
+#### 5. Twitter Интеграция
+Бот может автоматически публиковать крупные сделки в Twitter/X:
+- **Настройки:** Минимальная сумма, интервал между твитами, фильтры по вероятности и категориям
+- **Фильтры типов событий:** Управление публикацией BUY, SELL, SPLIT, MERGE, REDEEM (по умолчанию только BUY)
+- **Защита от блокировок:** Минимальный интервал 25 минут, пауза 6 часов при 403 ошибке
+- **Форматирование:** Английский язык, без эмодзи в названиях уровней, специальное форматирование
+- **Команды:** 
+  - `/twitter` — все настройки и статус
+  - `/twitter_on`, `/twitter_off` — вкл/выкл постинг
+  - `/twitter_min 25000` — минимум в долларах
+  - `/twitter_interval 25` — интервал между твитами (минуты)
+  - `/twitter_prob 1_99` — фильтр вероятности
+  - `/twitter_sell on/off` — SELL сигналы
+  - `/twitter_split on/off` — SPLIT сигналы
+  - `/twitter_merge on/off` — MERGE сигналы
+  - `/twitter_redeem on/off` — REDEEM сигналы
+  - `/twitter_cat crypto on/off` — фильтры категорий
+
+#### 6. Администрирование
+- `/stats` — статистика бота (только для владельца)
+- `/users` — список пользователей
+- `/broadcast <сообщение>` — рассылка всем пользователям
+- `/cache` — просмотр кэша возраста кошельков
+- `/admin` — памятка со всеми административными командами
+
+#### 7. Архитектура "Избранного" (Saved Traders)
+Реализация списка избранных трейдеров оптимизирована для работы с ограничениями Telegram API:
+1. **Компактные ключи (Callback Data):**
+   - Telegram ограничивает `callback_data` до 64 байт.
+   - Полные адреса кошельков (42 символа) + префикс команды часто превышают лимит.
+   - **Решение:** Используется таблица `whale_keys`, где хеш `SHA1(wallet_address)[:10]` мапится на полный адрес. В кнопках передается только короткий хеш.
+2. **Оптимизация производительности:**
+   - Данные для отображения списка (имя, иконка уровня) кэшируются в БД в момент сохранения.
+   - Это позволяет рендерить списки мгновенно без запросов к Polymarket API.
+3. **Хранение данных (SQLite):**
+   - `saved_whales`: Связь `user_id` <-> `whale_id` + комментарий пользователя.
+   - `whale_keys`: Общая таблица метаданных (адрес, имя, уровень).
 
 ### Установка
 
@@ -101,12 +151,18 @@ TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 # Опционально (для точного возраста кошельков)
 POLYGONSCAN_API_KEY=your_polygonscan_key
+# Опционально (для Twitter интеграции)
+TWITTER_API_KEY=your_twitter_api_key
+TWITTER_API_SECRET=your_twitter_api_secret
+TWITTER_ACCESS_TOKEN=your_twitter_access_token
+TWITTER_ACCESS_TOKEN_SECRET=your_twitter_access_token_secret
 ```
 
 Запуск:
 ```bash
 python main.py
 ```
+> **Важно:** Убедитесь, что запущена только **одна** копия бота. Запуск нескольких экземпляров приведет к дублированию уведомлений и ошибкам фильтрации.
 
 ---
 
@@ -120,9 +176,12 @@ Telegram bot for real-time tracking of large trades ("whales") on [Polymarket](h
 - 💰 **Amount filter** — choose minimum threshold
 - 📂 **Category filter** — Crypto, Sports, Other
 - ⚖️ **Probability filter** — excludes near-resolved markets (99.9%)
+- 🔄 **Event type filter** — choose which trades to track: BUY, SELL, SPLIT, MERGE, REDEEM
 - 🌐 **Bilingual interface** — Russian / English
 - 🔗 **Links to trader profile** and market
 - 📈 **Advanced Analytics:** Open PnL, Active Positions, Wallet Age
+- ⭐ **Favorites:** Save interesting traders with their current "level" (🦐-🔥)
+- 🐦 **Twitter integration** — automatic posting of large trades to Twitter/X
 
 ### Volume Classification
 
@@ -159,7 +218,12 @@ Polymarket API often truncates activity history for high-frequency traders. For 
 
 #### 2. Processing and Aggregation
 A single large trade is often split into multiple fills. To avoid spam, the bot groups them:
-- **Grouping:** Same wallet, market, side, outcome.
+- **Grouping:** Same wallet, market, side (BUY/SELL/SPLIT/MERGE/REDEEM), outcome.
+- **Event types:** The bot supports all Polymarket trade types:
+  - **BUY/SELL** — regular purchases and sales
+  - **SPLIT** — splitting a position into YES and NO simultaneously
+  - **MERGE** — merging YES and NO positions back into USDC
+  - **REDEEM** — redeeming positions when market resolves
 - **Time window:** **60 seconds** aggregation window.
 - **Trigger:** Series sum > **$500**.
 - **Optimization:** Expensive API calls (PnL, Pos, Age) are deferred and only executed if the trade matches at least one active user's filters.
@@ -170,9 +234,48 @@ A single large trade is often split into multiple fills. To avoid spam, the bot 
 - **Cleanup:** Records > 72h are deleted.
 
 #### 4. Telegram Bot (TelegramService)
-- **Filters:** Amount, Category, Probability, Language.
-- **Interface:** Persistent menu for easy configuration.
-- **Alerts:** Rich messages with emojis, links, and trader stats.
+- **Filters:** Amount, Category, Probability, Event Types (BUY/SELL/SPLIT/MERGE/REDEEM), Language.
+- **Interface:** Compact menu with "⚙️ Filters" submenu for all filter settings.
+- **Alerts:** Rich messages with emojis, links, and trader stats:
+  - Color-coded trade types: 🟢 BUY Yes, 🔴 BUY No, 🔵 SELL, ⚪ SPLIT, ↔️ MERGE, 🟣 REDEEM
+
+#### 5. Twitter Integration
+The bot can automatically post large trades to Twitter/X:
+- **Settings:** Minimum amount, tweet interval, probability and category filters
+- **Event type filters:** Control posting of BUY, SELL, SPLIT, MERGE, REDEEM (only BUY enabled by default)
+- **Anti-spam protection:** 25-minute minimum interval, 6-hour pause on 403 errors
+- **Formatting:** English only, no emojis in tier names, special formatting rules
+- **Commands:**
+  - `/twitter` — all settings and status
+  - `/twitter_on`, `/twitter_off` — enable/disable posting
+  - `/twitter_min 25000` — minimum amount in USD
+  - `/twitter_interval 25` — interval between tweets (minutes)
+  - `/twitter_prob 1_99` — probability filter
+  - `/twitter_sell on/off` — SELL signals
+  - `/twitter_split on/off` — SPLIT signals
+  - `/twitter_merge on/off` — MERGE signals
+  - `/twitter_redeem on/off` — REDEEM signals
+  - `/twitter_cat crypto on/off` — category filters
+
+#### 6. Administration
+- `/stats` — bot statistics (owner only)
+- `/users` — user list
+- `/broadcast <message>` — broadcast to all users
+- `/cache` — inspect wallet age cache
+- `/admin` — admin commands cheatsheet
+
+#### 7. Favorites Architecture (Saved Traders)
+The saved traders implementation is optimized for Telegram API constraints:
+1. **Compact Keys (Callback Data):**
+   - Telegram limits `callback_data` to 64 bytes.
+   - Full wallet addresses (42 chars) + action prefixes often exceed this limit.
+   - **Solution:** We use a `whale_keys` table mapping `SHA1(wallet_address)[:10]` to the full address. Buttons only carry this short hash.
+2. **Performance Optimization:**
+   - Display data (name, level icon) is cached in the DB at the time of saving.
+   - This allows instant list rendering without Polymarket API calls.
+3. **Data Storage (SQLite):**
+   - `saved_whales`: Maps `user_id` <-> `whale_id` + user comment.
+   - `whale_keys`: Shared metadata table (address, name, level).
 
 ### Installation
 
@@ -188,12 +291,18 @@ TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 # Optional (for accurate wallet age)
 POLYGONSCAN_API_KEY=your_polygonscan_key
+# Optional (for Twitter integration)
+TWITTER_API_KEY=your_twitter_api_key
+TWITTER_API_SECRET=your_twitter_api_secret
+TWITTER_ACCESS_TOKEN=your_twitter_access_token
+TWITTER_ACCESS_TOKEN_SECRET=your_twitter_access_token_secret
 ```
 
 Run:
 ```bash
 python main.py
 ```
+> **Important:** Ensure only **one** instance of the bot is running. Multiple instances will cause duplicate alerts and broken filtering.
 
 ---
 

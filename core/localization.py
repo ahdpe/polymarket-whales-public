@@ -3,16 +3,23 @@
 TRANSLATIONS = {
     'ru': {
         # Start message
-        'welcome': "🐋 *Polymarket Whales*\n\nОтслеживаю крупные сделки на Polymarket в реальном времени.\n\n*Возможности:*\n• Уведомления о сделках от $500 до $100,000+\n• Фильтрация по сумме и категориям\n• Ссылки на профиль трейдера\n\nИспользуй кнопки для настройки.",
+        'welcome': "🐋 *Polymarket Whales*\n\nКрупные сделки на Polymarket — в реальном времени.\n\n*Что умеет бот:*\n• 🔔 Уведомления от $500 до $100,000+\n• 🎯 Фильтры по сумме и категориям\n• 🔗 Быстрые ссылки на профили\n• ⭐ Избранное — сохранённые трейдеры и заметки\n\nНастрой уведомления кнопками ниже.",
         
         # Buttons
+        'btn_filters': "⚙️ Фильтры",
         'btn_amount': "💰 Сумма сделки",
         'btn_categories': "📂 Категории",
         'btn_probability': "⚖️ Вероятность",
+        'btn_sides': "🔄 Типы событий",
         'btn_start': "▶️ Запустить",
         'btn_stop': "⏸️ Остановить",
         'btn_language': "🇬🇧 EN",
         'btn_about': "ℹ️ О боте",
+        'btn_hide_menu': "⬇️ Скрыть меню",
+        'btn_show_menu': "⬆️ Показать меню",
+        'btn_back': "⬅️ Назад",
+        'menu_hidden': "✅ Меню скрыто. Нажмите 'Показать меню' чтобы вернуть его.",
+        'menu_shown': "✅ Меню показано.",
         
         # Status
         'bot_started': "▶️ **Бот запущен!**\nЯ буду присылать уведомления о сделках.",
@@ -29,6 +36,18 @@ TRANSLATIONS = {
         # Filter - Probability
         'probability_menu_title': "⚖️ **Вероятность**\n\nФильтр по вероятности рынка:\n(исключает почти решённые рынки)",
         'probability_set': "✅ Фильтр вероятности: *{range}*",
+        
+        # Filter - Side Types
+        'sides_menu_title': "🔄 **Типы событий**\n\nВыбери какие типы сделок отслеживать:",
+        'sides_set': "✅ Типы событий обновлены: {sides}",
+        'filters_menu_title': "⚙️ **Фильтры**\n\nВыбери настройку:",
+        'side_all': "Все события",
+        'side_buy': "🟢 BUY",
+        'side_sell': "🔵 SELL",
+        'side_split': "⚪ SPLIT",
+        'side_merge': "↔️ MERGE",
+        'side_redeem': "🟣 REDEEM",
+        'side_nothing': "Ничего",
         'prob_any': "🌐 Любая",
         'prob_1_99': "🟢 1% — 99%",
         'prob_5_95': "🟡 5% — 95%",
@@ -58,6 +77,8 @@ TRANSLATIONS = {
 • Фильтр минимальной суммы (настраивается пользователем)
 • Выбор категорий (Крипто, Спорт, Остальное)
 • Фильтр вероятности (исключает почти решённые рынки)
+• Фильтр типов событий (BUY, SELL, SPLIT, MERGE, REDEEM)
+• ⭐ Избранное (Сохранение избранных трейдеров)
 
 *Классификация объемов:*
 🔥 МЕГА КИТ — >$100,000
@@ -67,6 +88,13 @@ TRANSLATIONS = {
 🐬 ДЕЛЬФИН — >$5,000
 🐟 РЫБА — >$2,000
 🦐 КРЕВЕТКА — >$500
+
+*Типы событий:*
+🟢 BUY — покупка
+🔵 SELL — продажа
+⚪ SPLIT — разделение на YES+NO
+↔️ MERGE — объединение YES+NO → USDC
+🟣 REDEEM — выкуп при разрешении рынка
 
 *Метрики в уведомлениях:*
 📊 *Open PnL* — PnL открытых позиций (нереализованный)
@@ -81,27 +109,49 @@ TRANSLATIONS = {
 Если в названии есть: nfl, nba, football, soccer, ufc, f1, lakers, goal и др.
 
 💬 Обратная связь: @Andrey\_Os
-💻 [GitHub](https://github.com/ahdpe/PolymarketWhales)
+💻 [GitHub](https://github.com/ahdpe/polymarket-whales-public)
 
 ⚡ *ТОП Биржа для торговли:*
 [Регистрируйся на Bybit и получи бонусы! 🎁](https://www.bybit.com/invite?ref=JDRKDN)""",
         
         # Trade alerts
-        'open_market': "Открыть рынок",
+
+        
+        # Saved Traders
+        'btn_saved': "⭐ Избранное",
+        'save_btn': "В избранное",
+        'saved_btn': "✅ Сохранено",
+        'note_btn': "💬 Коммент",
+        'saved_list_title': "⭐ **Избранное**\n\n",
+        'saved_empty': "Список пуст. Сохраняй китов из алертов!",
+        'saved_deleted': "🗑 Трейдер удалён",
+        'saved_added': "⭐ Трейдер сохранён!",
+        'note_prompt': "💬 Введи комментарий (макс. 240 символов):\n\nОтправь \"–\" чтобы удалить комментарий.",
+        'note_saved': "✅ Комментарий сохранён",
+        'note_too_long': "❌ Слишком длинный! Макс. 240 символов. Попробуй ещё раз:",
+        'note_removed': "✅ Комментарий удалён",
+        'page_info': "Стр. {page}/{total}",
     },
     
     'en': {
         # Start message
-        'welcome': "🐋 *Polymarket Whales*\n\nReal-time monitoring of large trades on Polymarket.\n\n*Features:*\n• Trade alerts from $500 to $100,000+\n• Amount and category filters\n• Trader profile links\n\nUse buttons below to configure.",
+        'welcome': "🐋 *Polymarket Whales*\n\nLarge trades on Polymarket — in real-time.\n\n*What the bot can do:*\n• 🔔 Alerts from $500 to $100,000+\n• 🎯 Amount and category filters\n• 🔗 Quick links to profiles\n• ⭐ Favorites — saved traders and notes\n\nConfigure alerts using the buttons below.",
         
         # Buttons
+        'btn_filters': "⚙️ Filters",
         'btn_amount': "💰 Trade Amount",
         'btn_categories': "📂 Categories",
         'btn_probability': "⚖️ Probability",
+        'btn_sides': "🔄 Event Types",
         'btn_start': "▶️ Start",
         'btn_stop': "⏸️ Stop",
         'btn_language': "🇷🇺 RU",
         'btn_about': "ℹ️ About",
+        'btn_hide_menu': "⬇️ Hide Menu",
+        'btn_show_menu': "⬆️ Show Menu",
+        'btn_back': "⬅️ Back",
+        'menu_hidden': "✅ Menu hidden. Press 'Show Menu' to restore it.",
+        'menu_shown': "✅ Menu shown.",
         
         # Status
         'bot_started': "▶️ **Bot started!**\nI will send trade alerts.",
@@ -118,6 +168,18 @@ TRANSLATIONS = {
         # Filter - Probability
         'probability_menu_title': "⚖️ **Probability**\n\nFilter by market probability:\n(excludes near-resolved markets)",
         'probability_set': "✅ Probability filter: *{range}*",
+        
+        # Filter - Side Types
+        'sides_menu_title': "🔄 **Event Types**\n\nSelect which trade types to track:",
+        'sides_set': "✅ Event types updated: {sides}",
+        'filters_menu_title': "⚙️ **Filters**\n\nSelect setting:",
+        'side_all': "All events",
+        'side_buy': "🟢 BUY",
+        'side_sell': "🔵 SELL",
+        'side_split': "⚪ SPLIT",
+        'side_merge': "↔️ MERGE",
+        'side_redeem': "🟣 REDEEM",
+        'side_nothing': "None",
         'prob_any': "🌐 Any",
         'prob_1_99': "🟢 1% — 99%",
         'prob_5_95': "🟡 5% — 95%",
@@ -146,6 +208,8 @@ Real-time monitoring of large trades on [Polymarket](https://polymarket.com).
 • Customizable amount threshold
 • Category selection (Crypto, Sports, Other)
 • Probability filter (excludes near-resolved markets)
+• Event type filter (BUY, SELL, SPLIT, MERGE, REDEEM)
+• ⭐ Favorites (Save favorite traders)
 
 *Volume classification:*
 🔥 MEGA WHALE — >$100,000
@@ -155,6 +219,13 @@ Real-time monitoring of large trades on [Polymarket](https://polymarket.com).
 🐬 DOLPHIN — >$5,000
 🐟 FISH — >$2,000
 🦐 SHRIMP — >$500
+
+*Event types:*
+🟢 BUY — purchase
+🔵 SELL — sale
+⚪ SPLIT — split into YES+NO
+↔️ MERGE — merge YES+NO → USDC
+🟣 REDEEM — redeem on market resolution
 
 *Metric definitions:*
 📊 *Open PnL* — PnL of open positions (Unrealized)
@@ -169,13 +240,28 @@ Keywords: bitcoin, btc, ethereum, eth, solana, doge, pepe, binance, nft, airdrop
 Keywords: nfl, nba, football, soccer, ufc, f1, lakers, goal, etc.
 
 💬 Feedback: @Andrey\_Os
-💻 [GitHub](https://github.com/ahdpe/PolymarketWhales)
+💻 [GitHub](https://github.com/ahdpe/polymarket-whales-public)
 
 ⚡ *Best Exchange to Trade:*
 [Join Bybit and get massive bonuses! 🎁](https://www.bybit.com/invite?ref=JDRKDN)""",
         
         # Trade alerts
-        'open_market': "Open market",
+
+        
+        # Saved Traders
+        'btn_saved': "⭐ Favorites",
+        'save_btn': "To Favorites",
+        'saved_btn': "✅ Saved",
+        'note_btn': "💬 Note",
+        'saved_list_title': "⭐ **Favorites**\n\n",
+        'saved_empty': "Empty list. Save whales from alerts!",
+        'saved_deleted': "🗑 Trader removed",
+        'saved_added': "⭐ Trader saved!",
+        'note_prompt': "💬 Enter note (max 240 chars):\n\nSend \"–\" to remove note.",
+        'note_saved': "✅ Note saved",
+        'note_too_long': "❌ Too long! Max 240 characters. Try again:",
+        'note_removed': "✅ Note removed",
+        'page_info': "Page {page}/{total}",
     }
 }
 
@@ -234,6 +320,21 @@ def get_text(lang: str, key: str, **kwargs) -> str:
 def get_trade_level_name(lang: str, min_value: int) -> str:
     """Get localized trade level name."""
     return TRADE_LEVELS.get(lang, TRADE_LEVELS['ru']).get(min_value, "")
+
+
+def get_trade_level_icon(min_value: int) -> str:
+    """Get just the emoji for the trade level."""
+    # Mapping of threshold to emoji (same as TRADE_LEVEL_EMOJIS keys)
+    icons = {
+        100000: "🔥",
+        50000: "⚡",
+        25000: "🐋",
+        10000: "🦈",
+        5000: "🐬",
+        2000: "🐟",
+        500: "🦐",
+    }
+    return icons.get(min_value, "🦐")
 
 
 def get_trade_level_emoji(lang: str, min_value: int) -> str:

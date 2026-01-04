@@ -17,6 +17,12 @@ POLY_PRIVATE_KEY = os.getenv("POLY_PRIVATE_KEY")
 # PolygonScan API Key (Optional, for accurate wallet age)
 POLYGONSCAN_API_KEY = os.getenv("POLYGONSCAN_API_KEY")
 
+# Twitter API (for posting alerts)
+TWITTER_API_KEY = os.getenv("TWITTER_API_KEY")
+TWITTER_API_SECRET = os.getenv("TWITTER_API_SECRET")
+TWITTER_ACCESS_TOKEN = os.getenv("TWITTER_ACCESS_TOKEN")
+TWITTER_ACCESS_TOKEN_SECRET = os.getenv("TWITTER_ACCESS_TOKEN_SECRET")
+
 CLOB_API_URL = "https://clob.polymarket.com"
 WS_URL = "wss://ws-gamma-clob.polymarket.com/" # Gamma is usually testnet, CLOB prod is `wss://ws-clob.polymarket.com/` ?
 # Note: "Gamma" is often used in docs, but the production CLOB is different.
