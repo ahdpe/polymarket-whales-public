@@ -14,10 +14,20 @@ POLL_INTERVAL = 3
 MAX_LRU_SIZE = 10000
 DB_PATH = 'data/trades.db'
 TTL_HOURS = 72
+RECENT_WALLETS_WINDOW = 48 * 3600
+WALLET_ACTIVITY_CHECK_COOLDOWN = 300
 POSITIONS_CACHE_TTL = 60
 _positions_cache = {}
 WALLET_AGE_CACHE_TTL = 7 * 24 * 60 * 60
 _wallet_age_cache = {}
+
+def norm_ts(x, default=0.0) -> float:
+    """Normalize timestamp to seconds (handle ms)."""
+    pass
+
+def norm_ts_int(x, default=0) -> int:
+    """Normalize timestamp to integer seconds (handle ms)."""
+    pass
 
 class TradePersistence:
 
@@ -30,13 +40,13 @@ class TradePersistence:
     def _normalize_decimal(self, val):
         pass
 
-    def generate_key(self, trade):
+    def generate_key(self, trade: dict) -> str:
         pass
 
-    def is_seen(self, key):
+    def is_seen(self, key: str) -> bool:
         pass
 
-    def _add_to_lru(self, key):
+    def _add_to_lru(self, key: str):
         pass
 
     def add_batch(self, keys):
@@ -57,14 +67,9 @@ class TradeAggregator:
         pass
 
     def process_trade(self, trade):
-        """
-        Process a new trade.
-        Returns: aggregated_trade dict if a series triggers an alert, else None.
-        """
         pass
 
     def cleanup(self):
-        """Garbage collect old series."""
         pass
 
 class PolymarketService:
@@ -72,52 +77,38 @@ class PolymarketService:
     def __init__(self):
         pass
 
-    async def _fetch_recent_activities(self, user_address: str, activity_type: str, limit=100, offset=0):
-        """Fetch recent activities (SPLIT/REDEEM/MERGE) for a specific user from Data API."""
+    async def _fetch_recent_activities(self, session, user_address, activity_type, limit=50, offset=0):
         pass
 
-    async def _fetch_recent_trades(self, limit=10000, offset=0, min_size=10):
-        """Fetch recent trades from Data API."""
+    def _seen_activity_add(self, activity_id: str, ts: float):
+        pass
+
+    def _seen_activity_has(self, activity_id: str) -> bool:
+        pass
+
+    async def _fetch_recent_trades(self, session, limit=10000, offset=0, min_size=10):
+        pass
+
+    def _prune_recent_wallets(self, now: float):
         pass
 
     async def get_trader_positions(self, proxy_wallet):
-        """
-        Fetch trader's open positions from Data API.
-        Returns: {"pnl_usd": float, "pnl_percent": float, "open_count": int, "total_value": float, "alltime_pnl": float}
-        Uses TTL cache (60 seconds).
-        """
         pass
 
     async def get_trader_first_activity(self, proxy_wallet):
-        """
-        Fetch trader's first activity timestamp from Data API.
-        Returns: Unix timestamp (seconds) of first activity, or None.
-        Uses TTL cache (5 minutes).
-        """
         pass
 
     async def poll_trades(self, callback, interval=POLL_INTERVAL):
-        """
-        Poll for new trades every `interval` seconds.
-        Uses pagination, SQLite persistence, and Aggregation.
-        """
         pass
 
     def _map_activity_to_trade(self, activity: dict, activity_type: str) -> dict:
-        """Map activity data to a trade-like dictionary for consistent processing."""
         pass
 
-    async def poll_activities(self, callback, interval=30):
-        """
-        Poll for new SPLIT/REDEEM/MERGE activities for recently active traders.
-        Runs separately from trade polling to avoid blocking.
-        """
+    async def poll_activities(self, callback, interval: int=15):
         pass
 
     def get_stats(self):
-        """Get service statistics."""
         pass
 
 def get_wallet_age_cache():
-    """Get copy of wallet age cache for debugging."""
     pass

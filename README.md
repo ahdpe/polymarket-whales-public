@@ -143,7 +143,7 @@ Polymarket API часто обрезает историю сделок для а
 ### Установка
 
 ```bash
-git clone https://github.com/ahdpe/polymarket-whales-public.git
+git clone https://github.com/ahdpe/PolymarketWhales.git
 cd PolymarketWhales
 pip install -r requirements.txt
 ```
@@ -283,7 +283,7 @@ The saved traders implementation is optimized for Telegram API constraints:
 ### Installation
 
 ```bash
-git clone https://github.com/ahdpe/polymarket-whales-public.git
+git clone https://github.com/ahdpe/PolymarketWhales.git
 cd PolymarketWhales
 pip install -r requirements.txt
 ```

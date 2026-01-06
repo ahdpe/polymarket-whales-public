@@ -27,7 +27,15 @@ def load_settings():
 def save_settings():
     """Save user settings to file."""
     pass
-(user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types) = load_settings()
+(user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types, bot_enabled) = load_settings()
+
+def is_bot_enabled():
+    """Check if bot is enabled (not stopped by admin)."""
+    pass
+
+def set_bot_enabled(enabled):
+    """Set bot enabled state (admin only)."""
+    pass
 PROBABILITY_OPTIONS = {'any': None, '1_99': (0.01, 0.99), '5_95': (0.05, 0.95), '10_90': (0.1, 0.9)}
 
 def get_default_categories():
@@ -44,6 +52,10 @@ def ensure_user_exists(chat_id):
 
 def get_user_lang(chat_id):
     """Get user's language preference."""
+    pass
+
+def get_language_button_text(current_lang: str) -> str:
+    """Get language button text showing current language first, then switch option."""
     pass
 
 def is_user_active(chat_id):
@@ -64,6 +76,10 @@ def get_collapsed_keyboard(chat_id):
 
 def get_amount_keyboard(chat_id):
     """Create inline keyboard for amount filter selection."""
+    pass
+
+def get_amount_confirm_keyboard(chat_id):
+    """Create inline keyboard for $500 filter confirmation."""
     pass
 
 def get_probability_keyboard(chat_id):
@@ -141,7 +157,7 @@ async def btn_start_stop(message: types.Message):
     """Handle Start/Stop toggle button."""
     pass
 
-@dp.message(F.text.in_(['🇬🇧 EN', '🇷🇺 RU']))
+@dp.message(F.text.in_(['🇷🇺 RU / 🇬🇧 ENG', '🇬🇧 ENG / 🇷🇺 RU']))
 async def btn_language(message: types.Message):
     """Handle Language toggle button."""
     pass
@@ -247,6 +263,16 @@ async def callback_filter(callback: CallbackQuery):
     """Handle filter amount selection."""
     pass
 
+@dp.callback_query(F.data == 'confirm_filter_500')
+async def callback_confirm_filter_500(callback: CallbackQuery):
+    """Handle confirmation for $500 filter."""
+    pass
+
+@dp.callback_query(F.data == 'cancel_filter_500')
+async def callback_cancel_filter_500(callback: CallbackQuery):
+    """Handle cancellation for $500 filter - return to amount menu."""
+    pass
+
 @dp.callback_query(F.data.startswith('prob_'))
 async def callback_probability(callback: CallbackQuery):
     """Handle probability filter selection."""
@@ -305,6 +331,16 @@ async def cmd_broadcast(message: types.Message):
 @dp.message(Command('cache'))
 async def cmd_cache(message: types.Message):
     """Show wallet age cache stats (owner only)."""
+    pass
+
+@dp.message(Command('bot_stop'))
+async def cmd_bot_stop(message: types.Message):
+    """Stop bot alerts (owner only)."""
+    pass
+
+@dp.message(Command('bot_start'))
+async def cmd_bot_start(message: types.Message):
+    """Start bot alerts (owner only)."""
     pass
 
 @dp.message(Command('twitter'))

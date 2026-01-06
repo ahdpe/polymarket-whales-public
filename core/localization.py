@@ -28,6 +28,10 @@ TRANSLATIONS = {
         # Filter - Amount
         'amount_menu_title': "💰 **Сумма сделки**\n\nВыбери минимальную сумму:",
         'amount_set': "✅ Минимальная сумма установлена: *${min:,}*",
+        'amount_warning_title': "⚠️ Много сделок",
+        'amount_warning_text': "Порог $500 без дополнительных фильтров приведёт к большому количеству алертов.\nВключить $500 всё равно?",
+        'amount_confirm_yes': "✅ Да, включить",
+        'amount_confirm_no': "❌ Нет, отмена",
         
         # Filter - Categories  
         'categories_menu_title': "📂 **Категории**\n\nВыбери какие рынки отслеживать:",
@@ -160,6 +164,10 @@ TRANSLATIONS = {
         # Filter - Amount
         'amount_menu_title': "💰 **Trade Amount**\n\nSelect minimum amount:",
         'amount_set': "✅ Minimum amount set: *${min:,}*",
+        'amount_warning_title': "⚠️ Many Trades",
+        'amount_warning_text': "A $500 threshold without additional filters will result in a large number of alerts.\nEnable $500 anyway?",
+        'amount_confirm_yes': "✅ Yes, enable",
+        'amount_confirm_no': "❌ No, cancel",
         
         # Filter - Categories  
         'categories_menu_title': "📂 **Categories**\n\nSelect which markets to track:",

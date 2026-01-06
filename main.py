@@ -13,7 +13,8 @@ from core.localization import get_text, get_trade_level_name, get_trade_level_em
 from config import FILTERS
 from storage import saved_whales
 from services.twitter_service import get_twitter_service
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+logging.basicConfig(level=logging.INFO, format=log_format, handlers=[logging.StreamHandler(), logging.FileHandler('bot_output.log', mode='a', encoding='utf-8')])
 logger = logging.getLogger(__name__)
 DEFAULT_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 poly_service = None

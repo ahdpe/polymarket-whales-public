@@ -20,7 +20,9 @@ TWITTER_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), '..', 'twitter_s
 DEFAULT_TWEET_INTERVAL_SEC = 25 * 60
 PAUSE_ON_403_SEC = 6 * 60 * 60
 PROBABILITY_OPTIONS = {'any': None, '1_99': (0.01, 0.99), '5_95': (0.05, 0.95), '10_90': (0.1, 0.9)}
-DEFAULT_SETTINGS = {'enabled': False, 'min_alert_usd': 100000, 'last_tweet_ts': 0, 'paused_until': 0, 'interval_minutes': 25, 'probability_filter': '1_99', 'allow_sell': False, 'allow_split': False, 'allow_merge': False, 'allow_redeem': False, 'categories': {'crypto': True, 'sports': True, 'other': True}}
+MAX_TWEETS_PER_24H = 17
+TWEET_WINDOW_SEC = 24 * 60 * 60
+DEFAULT_SETTINGS = {'enabled': False, 'min_alert_usd': 100000, 'tweet_timestamps': [], 'paused_until': 0, 'interval_minutes': 25, 'probability_filter': '1_99', 'allow_sell': False, 'allow_split': False, 'allow_merge': False, 'allow_redeem': False, 'categories': {'crypto': True, 'sports': True, 'other': True}}
 _twitter_settings = None
 
 def _load_settings() -> dict:
@@ -111,8 +113,16 @@ def is_twitter_paused() -> tuple[bool, int]:
     """Check if Twitter is paused due to 403. Returns (is_paused, seconds_remaining)."""
     pass
 
+def _clean_old_timestamps(timestamps: list, now: float) -> list:
+    """Remove timestamps older than 24 hours."""
+    pass
+
+def get_tweets_in_last_24h() -> int:
+    """Get count of tweets sent in the last 24 hours."""
+    pass
+
 def get_seconds_until_next_tweet() -> int:
-    """Get seconds until next tweet is allowed (rate limit)."""
+    """Get seconds until next tweet slot is available (24h rolling window)."""
     pass
 
 def _record_successful_tweet():
@@ -150,6 +160,22 @@ class TwitterService:
 
     async def post_trade_alert(self, trade_data: dict) -> Optional[str]:
         """Format and post a trade alert with anti-spam protection."""
+        pass
+
+    def _get_queue_lock(self):
+        """Get or create queue lock."""
+        pass
+
+    async def _add_to_queue(self, trade_data: dict):
+        """Add trade to pending queue if there's space."""
+        pass
+
+    async def _process_pending_queue(self):
+        """Process pending queue - try to post tweets if interval allows."""
+        pass
+
+    async def process_queue_periodically(self, interval=60):
+        """Background task to periodically check and process pending queue."""
         pass
 _twitter_service = None
 
