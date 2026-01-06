@@ -43,10 +43,11 @@ def load_settings():
                 usernames = {int(k): v for k, v in data.get('usernames', {}).items()}
                 probabilities = {int(k): v for k, v in data.get('probabilities', {}).items()}
                 side_types = {int(k): v for k, v in data.get('side_types', {}).items()}
-                return filters, categories, languages, statuses, usernames, probabilities, side_types
+                bot_enabled = data.get('bot_enabled', True)  # Default: enabled
+                return filters, categories, languages, statuses, usernames, probabilities, side_types, bot_enabled
     except Exception as e:
         logger.error(f"Error loading settings: {e}")
-    return {}, {}, {}, {}, {}, {}, {}
+    return {}, {}, {}, {}, {}, {}, {}, True  # Default: enabled
 
 def save_settings():
     """Save user settings to file."""
@@ -58,7 +59,8 @@ def save_settings():
             'statuses': {str(k): v for k, v in user_statuses.items()},
             'usernames': {str(k): v for k, v in user_usernames.items()},
             'probabilities': {str(k): v for k, v in user_probabilities.items()},
-            'side_types': {str(k): v for k, v in user_side_types.items()}
+            'side_types': {str(k): v for k, v in user_side_types.items()},
+            'bot_enabled': bot_enabled
         }
         with open(SETTINGS_FILE, 'w') as f:
             json.dump(data, f)
@@ -66,7 +68,17 @@ def save_settings():
         logger.error(f"Error saving settings: {e}")
 
 # Load settings on startup
-user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types = load_settings()
+user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types, bot_enabled = load_settings()
+
+def is_bot_enabled():
+    """Check if bot is enabled (not stopped by admin)."""
+    return bot_enabled
+
+def set_bot_enabled(enabled):
+    """Set bot enabled state (admin only)."""
+    global bot_enabled
+    bot_enabled = enabled
+    save_settings()
 
 # Probability filter options: (min, max) or None for any
 PROBABILITY_OPTIONS = {
@@ -113,6 +125,13 @@ def get_user_lang(chat_id):
     """Get user's language preference."""
     return user_languages.get(chat_id, 'en')
 
+def get_language_button_text(current_lang: str) -> str:
+    """Get language button text showing current language first, then switch option."""
+    if current_lang == 'ru':
+        return "🇷🇺 RU / 🇬🇧 ENG"
+    else:
+        return "🇬🇧 ENG / 🇷🇺 RU"
+
 def is_user_active(chat_id):
     """Check if user bot is active (started)."""
     return user_statuses.get(chat_id, False)  # Default False (Stopped)
@@ -131,7 +150,7 @@ def get_main_keyboard(chat_id):
              KeyboardButton(text=get_text(lang, 'btn_filters')),
              KeyboardButton(text=get_text(lang, 'btn_saved'))],
             [KeyboardButton(text=get_text(lang, 'btn_about')),
-             KeyboardButton(text=get_text(lang, 'btn_language')),
+             KeyboardButton(text=get_language_button_text(lang)),
              KeyboardButton(text=get_text(lang, 'btn_hide_menu'))]
         ],
         resize_keyboard=True,
@@ -183,6 +202,22 @@ def get_amount_keyboard(chat_id):
         btn = InlineKeyboardButton(text=text, callback_data=f"filter_{f['min']}")
         buttons.append([btn])
     
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_amount_confirm_keyboard(chat_id):
+    """Create inline keyboard for $500 filter confirmation."""
+    lang = get_user_lang(chat_id)
+    buttons = [
+        [InlineKeyboardButton(
+            text=get_text(lang, 'amount_confirm_yes'),
+            callback_data="confirm_filter_500"
+        )],
+        [InlineKeyboardButton(
+            text=get_text(lang, 'amount_confirm_no'),
+            callback_data="cancel_filter_500"
+        )]
+    ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -477,7 +512,7 @@ async def btn_start_stop(message: types.Message):
         reply_markup=get_main_keyboard(chat_id)
     )
 
-@dp.message(F.text.in_(["🇬🇧 EN", "🇷🇺 RU"]))
+@dp.message(F.text.in_(["🇷🇺 RU / 🇬🇧 ENG", "🇬🇧 ENG / 🇷🇺 RU"]))
 async def btn_language(message: types.Message):
     """Handle Language toggle button."""
     chat_id = message.chat.id
@@ -992,6 +1027,21 @@ async def callback_filter(callback: CallbackQuery):
     lang = get_user_lang(chat_id)
     min_value = int(callback.data.replace("filter_", ""))
     
+    # If user selects $500, show warning confirmation
+    if min_value == 500:
+        await callback.answer()
+        warning_text = (
+            f"*{get_text(lang, 'amount_warning_title')}*\n\n"
+            f"{get_text(lang, 'amount_warning_text')}"
+        )
+        await callback.message.edit_text(
+            warning_text,
+            parse_mode="Markdown",
+            reply_markup=get_amount_confirm_keyboard(chat_id)
+        )
+        return
+    
+    # For other amounts, apply immediately
     user_filters[chat_id] = min_value
     save_settings()
     
@@ -1002,6 +1052,41 @@ async def callback_filter(callback: CallbackQuery):
         parse_mode="Markdown"
     )
     logger.info(f"User {chat_id} set filter to ${min_value}")
+
+
+@dp.callback_query(F.data == "confirm_filter_500")
+async def callback_confirm_filter_500(callback: CallbackQuery):
+    """Handle confirmation for $500 filter."""
+    chat_id = callback.message.chat.id
+    ensure_user_exists(chat_id)
+    lang = get_user_lang(chat_id)
+    
+    # Apply $500 filter
+    user_filters[chat_id] = 500
+    save_settings()
+    
+    await callback.answer(get_text(lang, 'filter_toast'))
+    await callback.message.edit_text(
+        get_text(lang, 'amount_set', min=500),
+        parse_mode="Markdown"
+    )
+    logger.info(f"User {chat_id} confirmed and set filter to $500")
+
+
+@dp.callback_query(F.data == "cancel_filter_500")
+async def callback_cancel_filter_500(callback: CallbackQuery):
+    """Handle cancellation for $500 filter - return to amount menu."""
+    chat_id = callback.message.chat.id
+    ensure_user_exists(chat_id)
+    lang = get_user_lang(chat_id)
+    
+    await callback.answer()
+    await callback.message.edit_text(
+        get_text(lang, 'amount_menu_title'),
+        parse_mode="Markdown",
+        reply_markup=get_amount_keyboard(chat_id)
+    )
+    logger.info(f"User {chat_id} cancelled $500 filter selection")
 
 @dp.callback_query(F.data.startswith("prob_"))
 async def callback_probability(callback: CallbackQuery):
@@ -1168,6 +1253,10 @@ async def cmd_admin(message: types.Message):
     
     msg = """🔐 **Команды администратора**
 
+🤖 **Управление ботом:**
+`/bot_stop` — остановить отправку алертов
+`/bot_start` — возобновить отправку алертов
+
 📊 **Статистика:**
 `/stats` — статистика бота
 `/users` — список пользователей
@@ -1199,6 +1288,9 @@ async def cmd_stats(message: types.Message):
     if message.chat.id != OWNER_ID:
         return  # Silently ignore non-owners
     
+    # Bot status
+    bot_status = "▶️ Включен" if is_bot_enabled() else "⏸️ Остановлен"
+    
     total_users = len(user_filters)
     active_users = sum(1 for uid in user_statuses if user_statuses.get(uid, True))
     paused_users = total_users - active_users
@@ -1218,6 +1310,8 @@ async def cmd_stats(message: types.Message):
     en_users = total_users - ru_users
     
     msg = f"""📊 **Статистика бота**
+
+🤖 **Статус:** {bot_status}
 
 👥 **Пользователи:** {total_users}
 ▶️ Активных: {active_users}
@@ -1342,6 +1436,28 @@ async def cmd_cache(message: types.Message):
     await message.answer(msg, parse_mode="Markdown")
 
 
+@dp.message(Command("bot_stop"))
+async def cmd_bot_stop(message: types.Message):
+    """Stop bot alerts (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return  # Silently ignore non-owners
+    
+    set_bot_enabled(False)
+    logger.info(f"Bot alerts stopped by admin (chat_id: {message.chat.id})")
+    await message.answer("⏸️ **Бот остановлен**\n\nВсе алерты временно отключены. Используйте `/bot_start` для возобновления.", parse_mode="Markdown")
+
+
+@dp.message(Command("bot_start"))
+async def cmd_bot_start(message: types.Message):
+    """Start bot alerts (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return  # Silently ignore non-owners
+    
+    set_bot_enabled(True)
+    logger.info(f"Bot alerts started by admin (chat_id: {message.chat.id})")
+    await message.answer("▶️ **Бот запущен**\n\nОтправка алертов возобновлена.", parse_mode="Markdown")
+
+
 # ============ TWITTER ADMIN COMMANDS ============
 
 @dp.message(Command("twitter"))
@@ -1355,7 +1471,7 @@ async def cmd_twitter(message: types.Message):
         is_twitter_paused, get_seconds_until_next_tweet,
         get_twitter_interval, get_twitter_probability_filter,
         is_twitter_sell_allowed, is_twitter_split_allowed, is_twitter_merge_allowed, is_twitter_redeem_allowed,
-        get_twitter_categories
+        get_twitter_categories, get_tweets_in_last_24h, MAX_TWEETS_PER_24H
     )
     
     settings = get_twitter_settings()
@@ -1373,13 +1489,18 @@ async def cmd_twitter(message: types.Message):
     else:
         pause_str = "✅ Нет паузы"
     
-    # Check rate limit
+    # Check 24h rolling window limit
+    tweets_count = get_tweets_in_last_24h()
     wait_secs = get_seconds_until_next_tweet()
     if wait_secs > 0:
         wait_mins = wait_secs // 60
-        rate_str = f"⏳ След. твит: {wait_mins} мин"
+        wait_hours = wait_mins // 60
+        if tweets_count >= MAX_TWEETS_PER_24H:
+            rate_str = f"⛔ Лимит: {tweets_count}/{MAX_TWEETS_PER_24H} (след. слот через {wait_hours}h{wait_mins%60}m)"
+        else:
+            rate_str = f"⏳ След. твит: {wait_mins} мин"
     else:
-        rate_str = "✅ Готов"
+        rate_str = f"✅ Готов ({tweets_count}/{MAX_TWEETS_PER_24H} за 24ч)"
     
     # Filters
     interval = get_twitter_interval()

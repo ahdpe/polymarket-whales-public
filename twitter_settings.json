@@ -1,11 +1,21 @@
 {
   "enabled": true,
   "min_alert_usd": 100000,
-  "last_tweet_ts": 0,
+  "tweet_timestamps": [
+    1767607103.0940313,
+    1767657481.0630448,
+    1767659378.8722246,
+    1767662282.6455448,
+    1767664968.7584896,
+    1767667700.4471843
+  ],
   "paused_until": 0,
   "interval_minutes": 25,
-  "probability_filter": "any",
+  "probability_filter": "1_99",
   "allow_sell": false,
+  "allow_split": false,
+  "allow_merge": false,
+  "allow_redeem": false,
   "categories": {
     "crypto": true,
     "sports": true,

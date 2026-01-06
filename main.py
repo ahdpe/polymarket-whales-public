@@ -18,7 +18,15 @@ from storage import saved_whales
 from services.twitter_service import get_twitter_service
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+logging.basicConfig(
+    level=logging.INFO, 
+    format=log_format,
+    handlers=[
+        logging.StreamHandler(),  # Keep stderr for systemd/journal
+        logging.FileHandler('bot_output.log', mode='a', encoding='utf-8')  # Also write to file
+    ]
+)
 logger = logging.getLogger(__name__)
 
 # Default chat ID from env (if set)
@@ -98,6 +106,11 @@ async def handle_trade(trade_data):
     """
     Callback for when a trade is received from Data API.
     """
+    # Check if bot is enabled (admin can stop/start bot)
+    from services.telegram_service import is_bot_enabled
+    if not is_bot_enabled():
+        return  # Bot is stopped by admin, skip processing
+    
     try:
         price = float(trade_data.get('price', 0))
         size = float(trade_data.get('size', 0))
@@ -192,6 +205,7 @@ async def handle_trade(trade_data):
              # Check side type filter
              side_types_prefs = get_user_side_types(chat_id)
              if not should_show_side_type(side, trade_data, side_types_prefs):
+                 logger.debug(f"Trade filtered by side type: chat_id={chat_id}, side={side}, type={trade_data.get('type')}, prefs={side_types_prefs}")
                  return False
              
              return True
@@ -263,13 +277,13 @@ async def handle_trade(trade_data):
         # Money display logic
         if is_split:
             # For Split, show total value (split creates both YES and NO positions)
-            money_text = f"*${value_usd:,.0f}* → ${size:,.0f} (YES + NO)"
+            money_text = f"*${value_usd:,.0f}* (YES + NO)"
         elif is_merge:
             # For Merge, show value (merge combines YES+NO back to USDC)
-            money_text = f"*${value_usd:,.0f}* → ${size:,.0f} (YES + NO → USDC)"
+            money_text = f"*${value_usd:,.0f}* (YES + NO → USDC)"
         elif is_redeem:
             # For Redeem, show redeemed value
-            money_text = f"*${value_usd:,.0f}* → ${size:,.0f}"
+            money_text = f"*${value_usd:,.0f}*"
         elif side == 'BUY':
             money_text = f"*${value_usd:,.0f}* → ${size:,.0f}"
         else:
@@ -307,12 +321,17 @@ async def handle_trade(trade_data):
              
              trader_text = f"[{trader}]({trader_url})" if trader_url else trader
              
+             # Format side_display - skip price % for SPLIT/MERGE/REDEEM
+             if is_split or is_merge or is_redeem:
+                 side_line = f"{side_display}\n"
+             else:
+                 side_line = f"{side_display} @ {price_pct:.1f}%\n"
+             
              msg = (
                 f"{cat_emoji} [{market_title[:80]}]({market_url})\n"
-                f"{side_display} @ {price_pct:.1f}%\n"
+                f"{side_line}"
                 f"💵 {money_text}\n"
                 f"{level_emoji} {trader_text}{position_stats_line}{wallet_age_line}\n"
-                f"Alerts: [@PolymarketWhales_bot](https://t.me/PolymarketWhales_bot)"
             )
              # Get level icon for button
              level_icon = get_trade_level_icon(alert_config['min'])
@@ -371,11 +390,20 @@ async def main():
     
     # Run Polymarket trade polling (uses POLL_INTERVAL from polymarket.py)
     trade_polling_task = asyncio.create_task(poly_service.poll_trades(handle_trade))
-    # DISABLED: SPLIT/MERGE/REDEEM activity polling (uncomment to re-enable)
-    # activity_polling_task = asyncio.create_task(poly_service.poll_activities(handle_trade))
+    # SPLIT/MERGE/REDEEM activity polling (enabled)
+    activity_polling_task = asyncio.create_task(poly_service.poll_activities(handle_trade))
+    
+    # Start Twitter queue processor (if Twitter is configured)
+    twitter_service = get_twitter_service()
+    twitter_queue_task = None
+    if twitter_service and twitter_service.is_configured:
+        twitter_queue_task = asyncio.create_task(twitter_service.process_queue_periodically(interval=60))
     
     # Wait for all tasks
-    await asyncio.gather(trade_polling_task, tg_task)
+    tasks = [trade_polling_task, activity_polling_task, tg_task]
+    if twitter_queue_task:
+        tasks.append(twitter_queue_task)
+    await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
     try:

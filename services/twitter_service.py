@@ -32,13 +32,17 @@ PROBABILITY_OPTIONS = {
     '10_90': (0.10, 0.90),
 }
 
+# Twitter API limits
+MAX_TWEETS_PER_24H = 17  # Maximum tweets per 24-hour rolling window
+TWEET_WINDOW_SEC = 24 * 60 * 60  # 24 hours in seconds
+
 # Default settings
 DEFAULT_SETTINGS = {
     'enabled': False,              # Default: Disabled
     'min_alert_usd': 100000,       # Default: $100K minimum for Twitter
-    'last_tweet_ts': 0,           # Timestamp of last successful tweet
+    'tweet_timestamps': [],        # List of timestamps of successful tweets (for 24h rolling window)
     'paused_until': 0,            # Timestamp until which posting is paused (403 protection)
-    'interval_minutes': 25,       # Minutes between tweets
+    'interval_minutes': 25,       # Minutes between tweets (minimum interval, but 24h limit takes priority)
     'probability_filter': '1_99', # Probability range filter
     'allow_sell': False,          # Allow SELL signals
     'allow_split': False,         # Allow SPLIT signals
@@ -67,6 +71,21 @@ def _load_settings() -> dict:
                 loaded = json.load(f)
                 # Merge with defaults to ensure all keys exist
                 _twitter_settings = {**DEFAULT_SETTINGS, **loaded}
+                
+                # Migration: convert old last_tweet_ts to tweet_timestamps
+                if 'last_tweet_ts' in loaded and loaded['last_tweet_ts'] > 0:
+                    if 'tweet_timestamps' not in loaded or not loaded.get('tweet_timestamps'):
+                        _twitter_settings['tweet_timestamps'] = [loaded['last_tweet_ts']]
+                        logger.info("Migrated last_tweet_ts to tweet_timestamps")
+                    # Remove old key
+                    if 'last_tweet_ts' in _twitter_settings:
+                        del _twitter_settings['last_tweet_ts']
+                        _save_settings()  # Save migrated settings
+                
+                # Ensure tweet_timestamps exists
+                if 'tweet_timestamps' not in _twitter_settings:
+                    _twitter_settings['tweet_timestamps'] = []
+                
                 return _twitter_settings
     except Exception as e:
         logger.error(f"Error loading Twitter settings: {e}")
@@ -231,23 +250,68 @@ def is_twitter_paused() -> tuple[bool, int]:
     return False, 0
 
 
-def get_seconds_until_next_tweet() -> int:
-    """Get seconds until next tweet is allowed (rate limit)."""
+def _clean_old_timestamps(timestamps: list, now: float) -> list:
+    """Remove timestamps older than 24 hours."""
+    cutoff = now - TWEET_WINDOW_SEC
+    return [ts for ts in timestamps if ts > cutoff]
+
+
+def get_tweets_in_last_24h() -> int:
+    """Get count of tweets sent in the last 24 hours."""
     settings = _load_settings()
-    last_tweet_ts = settings.get('last_tweet_ts', 0)
-    interval_sec = settings.get('interval_minutes', 25) * 60
-    next_allowed = last_tweet_ts + interval_sec
+    timestamps = settings.get('tweet_timestamps', [])
     now = time.time()
-    if next_allowed > now:
-        return int(next_allowed - now)
+    cleaned = _clean_old_timestamps(timestamps, now)
+    return len(cleaned)
+
+
+def get_seconds_until_next_tweet() -> int:
+    """Get seconds until next tweet slot is available (24h rolling window)."""
+    settings = _load_settings()
+    timestamps = settings.get('tweet_timestamps', [])
+    now = time.time()
+    
+    # Clean old timestamps
+    cleaned = _clean_old_timestamps(timestamps, now)
+    
+    # Check if we're at the limit
+    if len(cleaned) >= MAX_TWEETS_PER_24H:
+        # Find the oldest tweet in the window - it will free up first
+        if cleaned:
+            oldest_ts = min(cleaned)
+            next_available = oldest_ts + TWEET_WINDOW_SEC
+            wait_secs = next_available - now
+            return max(0, int(wait_secs))
+        return TWEET_WINDOW_SEC  # Fallback: wait full 24h
+    
+    # Also check minimum interval (if configured)
+    interval_sec = settings.get('interval_minutes', 25) * 60
+    if cleaned:
+        last_tweet_ts = max(cleaned)
+        next_allowed = last_tweet_ts + interval_sec
+        if next_allowed > now:
+            return int(next_allowed - now)
+    
     return 0
 
 
 def _record_successful_tweet():
     """Record timestamp of successful tweet."""
     settings = _load_settings()
-    settings['last_tweet_ts'] = time.time()
+    now = time.time()
+    
+    # Get current timestamps and clean old ones
+    timestamps = settings.get('tweet_timestamps', [])
+    timestamps = _clean_old_timestamps(timestamps, now)
+    
+    # Add new timestamp
+    timestamps.append(now)
+    
+    # Keep only recent timestamps (last 24h + some buffer)
+    # This prevents the list from growing indefinitely
+    settings['tweet_timestamps'] = timestamps
     _save_settings()
+    logger.debug(f"Recorded tweet. Total in last 24h: {len(timestamps)}/{MAX_TWEETS_PER_24H}")
 
 
 def _activate_403_pause():
@@ -277,6 +341,11 @@ class TwitterService:
             self.api_key, self.api_secret,
             self.access_token, self.access_token_secret
         ])
+        
+        # Queue for pending tweets (when interval limit is active but 24h limit is OK)
+        self.pending_queue = []  # List of (trade_data, timestamp) tuples
+        self.max_queue_size = 10  # Maximum tweets in queue
+        self._queue_lock = None  # Will be initialized when needed
         
         if self.is_configured:
             self._init_client()
@@ -319,10 +388,19 @@ class TwitterService:
         if paused:
             return False, f"paused_403_{secs}s"
         
-        # Check rate limit (configurable interval)
+        # Check 24-hour rolling window limit (17 tweets max)
+        tweets_count = get_tweets_in_last_24h()
+        if tweets_count >= MAX_TWEETS_PER_24H:
+            wait_secs = get_seconds_until_next_tweet()
+            wait_mins = wait_secs // 60
+            wait_hours = wait_mins // 60
+            return False, f"daily_limit_{tweets_count}/{MAX_TWEETS_PER_24H}_wait_{wait_hours}h{wait_mins%60}m"
+        
+        # Check minimum interval (if configured)
         wait_secs = get_seconds_until_next_tweet()
         if wait_secs > 0:
-            return False, f"rate_limit_{wait_secs}s"
+            wait_mins = wait_secs // 60
+            return False, f"interval_limit_{wait_mins}m"
         
         # Check side/type signals
         side = trade_data.get('side', '').upper()
@@ -380,98 +458,70 @@ class TwitterService:
         """Format trade data as a tweet. English only, no emojis in header."""
         # Extract data
         market_title = trade_data.get('title', 'Unknown Market')
-        market_url = trade_data.get('market_url', '')
         side = trade_data.get('side', 'UNKNOWN')
         outcome = trade_data.get('outcome', '')
         price = float(trade_data.get('price', 0))
         size = float(trade_data.get('size', 0))
         value_usd = price * size
         
-        # Map level_name to English (no emojis)
-        level_name_raw = trade_data.get('level_name', 'WHALE')
-        level_map = {
-            'Креветка': 'SHRIMP', 'Shrimp': 'SHRIMP', 'SHRIMP': 'SHRIMP',
-            'Рыба': 'FISH', 'Fish': 'FISH', 'FISH': 'FISH',
-            'Дельфин': 'DOLPHIN', 'Dolphin': 'DOLPHIN', 'DOLPHIN': 'DOLPHIN',
-            'Акула': 'SHARK', 'Shark': 'SHARK', 'SHARK': 'SHARK',
-            'Кит': 'WHALE', 'Whale': 'WHALE', 'WHALE': 'WHALE',
-            'Супер Кит': 'SUPER WHALE', 'Super Whale': 'SUPER WHALE', 'SUPER WHALE': 'SUPER WHALE',
-            'Мега Кит': 'MEGA WHALE', 'Mega Whale': 'MEGA WHALE', 'MEGA WHALE': 'MEGA WHALE',
-        }
-        level_name = level_map.get(level_name_raw, 'WHALE')
+        # For SPLIT/MERGE/REDEEM, use side if outcome is empty
+        side_upper = side.upper()
+        is_special = side_upper in ('SPLIT', 'MERGE', 'REDEEM')
+        if is_special:
+            # For special events, use side name (SPLIT, MERGE, or REDEEM + outcome if available)
+            first_line_text = f"{side_upper} {outcome}".strip() if outcome else side_upper
+        else:
+            # For BUY/SELL, add side before outcome
+            if outcome:
+                first_line_text = f"{side_upper} {outcome}"  # "BUY Knicks"
+            else:
+                first_line_text = side_upper  # "BUY" or "SELL"
         
         # Trader info
         trader_address = trade_data.get('trader_address', '')
         trader_name = trade_data.get('name', '') or trade_data.get('trader_name', '')
         
-        # Shorten address for display: 0xcd36...0f01
+        # Shorten address for display: 0xfffa…8864 (4-6 chars + … + 4 chars)
         if trader_address and len(trader_address) > 12:
-            short_address = f"{trader_address[:6]}...{trader_address[-4:]}"
+            # Use 4-6 characters from start + … + 4 characters from end
+            short_address = f"{trader_address[:4]}…{trader_address[-4:]}"
         else:
             short_address = trader_address or 'Unknown'
         
-        # Trader display: full name (bold) if available, otherwise Wallet: short_address
+        # Trader display: always "Trader: ... 🐋"
         if trader_name and trader_name.strip():
-            trader_display = f"Trader: {trader_name}"
+            trader_display = f"Trader: {trader_name} 🐋"
         else:
-            trader_display = f"Wallet: {short_address}"
+            trader_display = f"Trader: {short_address} 🐋"
         
+        # Profile URL with https://
         trader_url = f"https://polymarket.com/profile/{trader_address}" if trader_address else ""
-        
-        # Position stats
-        pos_data = trade_data.get('position_stats') or {}
-        pnl_usd = pos_data.get('pnl_usd', 0) if pos_data else 0
-        pnl_pct = pos_data.get('pnl_percent', 0) if pos_data else 0
-        open_count = pos_data.get('open_count', 0) if pos_data else 0
-        total_value = pos_data.get('total_value', 0) if pos_data else 0
-        
-        # Format values (K/M notation)
-        def fmt_val(v):
-            v_abs = abs(v)
-            if v_abs >= 1_000_000:
-                return f"${v_abs/1_000_000:.1f}M"
-            elif v_abs >= 1_000:
-                return f"${v_abs/1_000:.1f}K"
-            else:
-                return f"${v_abs:.0f}"
-        
-        # PnL formatting
-        if pnl_usd >= 0:
-            pnl_str = f"+{fmt_val(pnl_usd)}"
-        else:
-            pnl_str = f"-{fmt_val(pnl_usd)}"
-        pnl_pct_str = f"({pnl_pct:+.0f}%)" if pnl_pct else "(0%)"
         
         # Wallet age
         wallet_age = trade_data.get('wallet_age_str', '')
         
-        # Money display - bold only the entry amount
-        money_line = f"${value_usd:,.0f} → ${size:,.0f}"
+        # Money display - only first value with 💵
+        money_line = f"Size: ${value_usd:,.0f} 💵"
         
-        # Build tweet lines
+        # Build tweet lines - new format
+        # For SPLIT/MERGE/REDEEM, don't show price percentage
+        if is_special:
+            first_line = first_line_text  # Just "SPLIT", "MERGE", or "REDEEM"
+        else:
+            first_line = f"{first_line_text} @ {price*100:.1f}%"  # "YES @ 91.0%"
+        
         lines = [
-            f"{level_name} trade",
+            first_line,
+            money_line,  # "Size: $189,596 💵"
             "",
-            market_title,
-            market_url if market_url else None,
+            f"Market: {market_title}",  # Market title without URL
             "",
-            f"{side} {outcome} @ {price*100:.1f}%",
-            money_line,
-            "",
-            trader_display,
-            trader_url if trader_url else None,
-            f"Open PnL: {pnl_str} {pnl_pct_str}",
-            f"Open Positions: {open_count} | Val: {fmt_val(total_value)}",
+            trader_display,  # "Trader: GoriIIa 🐋" or "Trader: 0xfffa…8864 🐋"
+            f"Profile: {trader_url}" if trader_url else None,  # "Profile: https://polymarket.com/profile/0xfffa..."
         ]
         
         if wallet_age:
-            lines.append(f"Wallet Age: {wallet_age}")
-        
-        lines.extend([
-            "",
-            "Alerts 👇",
-            "t.me/PolymarketWhales_bot"
-        ])
+            lines.append(f"Wallet age: {wallet_age}")  # Lowercase "age"
         
         # Filter None values and join
         tweet = "\n".join(line for line in lines if line is not None)
@@ -516,6 +566,18 @@ class TwitterService:
                 logger.error(f"Twitter 403 Forbidden - pausing for 6 hours. Error: {error_str}")
                 return None
             
+            # Check for 429 Rate Limit - calculate when next slot frees up
+            if '429' in error_str or 'rate limit' in error_str.lower():
+                wait_secs = get_seconds_until_next_tweet()
+                wait_mins = wait_secs // 60
+                wait_hours = wait_mins // 60
+                tweets_count = get_tweets_in_last_24h()
+                logger.warning(
+                    f"Twitter 429 Rate Limit - {tweets_count}/{MAX_TWEETS_PER_24H} tweets in last 24h. "
+                    f"Next slot available in {wait_hours}h{wait_mins%60}m"
+                )
+                return None
+            
             # Log other errors
             logger.error(f"Failed to post tweet: {error_str}")
             return None
@@ -525,13 +587,94 @@ class TwitterService:
         should, reason = self.should_post(trade_data)
         
         if not should:
-            # Log skipped tweets for debugging (but not too verbose)
+            # If it's an interval limit (but 24h limit is OK), add to queue
+            if reason.startswith('interval_limit'):
+                await self._add_to_queue(trade_data)
+                return None
+            
+            # For other reasons (disabled, paused, daily_limit, etc.), skip
             if not reason.startswith('rate_limit') and not reason.startswith('amount'):
                 logger.debug(f"Tweet skipped: {reason}")
             return None
         
+        # Can post immediately
         tweet_text = self.format_tweet(trade_data)
-        return await self.post_tweet(tweet_text)
+        result = await self.post_tweet(tweet_text)
+        
+        # If posted successfully, try to process queue
+        if result:
+            await self._process_pending_queue()
+        
+        return result
+    
+    def _get_queue_lock(self):
+        """Get or create queue lock."""
+        if self._queue_lock is None:
+            self._queue_lock = asyncio.Lock()
+        return self._queue_lock
+    
+    async def _add_to_queue(self, trade_data: dict):
+        """Add trade to pending queue if there's space."""
+        async with self._get_queue_lock():
+            if len(self.pending_queue) >= self.max_queue_size:
+                # Remove oldest if queue is full
+                self.pending_queue.pop(0)
+                logger.warning(f"Twitter queue full, removing oldest tweet")
+            
+            self.pending_queue.append((trade_data, time.time()))
+            logger.info(f"Tweet added to queue (size: {len(self.pending_queue)}/{self.max_queue_size})")
+    
+    async def _process_pending_queue(self):
+        """Process pending queue - try to post tweets if interval allows."""
+        async with self._get_queue_lock():
+            if not self.pending_queue:
+                return
+        
+        # Check if we can post now
+        wait_secs = get_seconds_until_next_tweet()
+        if wait_secs > 0:
+            # Still need to wait
+            return
+        
+        # Try to post from queue
+        async with self._get_queue_lock():
+            if not self.pending_queue:
+                return
+            
+            # Get oldest tweet from queue
+            trade_data, queued_at = self.pending_queue.pop(0)
+        
+        # Double-check we can post
+        should, reason = self.should_post(trade_data)
+        if not should:
+            # Still can't post, put it back at the end
+            async with self._get_queue_lock():
+                self.pending_queue.append((trade_data, queued_at))
+            return
+        
+        # Post the tweet
+        tweet_text = self.format_tweet(trade_data)
+        result = await self.post_tweet(tweet_text)
+        
+        if result:
+            logger.info(f"Posted queued tweet (queue size: {len(self.pending_queue)})")
+            # Recursively process more from queue if possible
+            await self._process_pending_queue()
+        else:
+            # Failed to post, put it back
+            async with self._get_queue_lock():
+                self.pending_queue.insert(0, (trade_data, queued_at))
+    
+    async def process_queue_periodically(self, interval=60):
+        """Background task to periodically check and process pending queue."""
+        logger.info("Twitter queue processor started")
+        while True:
+            try:
+                await asyncio.sleep(interval)
+                await self._process_pending_queue()
+            except Exception as e:
+                logger.error(f"Error in queue processor: {e}")
+                await asyncio.sleep(interval)
 
 
 # Global instance (lazy initialization)

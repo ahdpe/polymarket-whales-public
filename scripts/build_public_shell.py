@@ -23,6 +23,7 @@ IGNORE_PATTERNS = [
     "bot_output.log",
     "scripts/build_public_shell.py", # Don't export the build script itself
     "storage", # Usually contains sessions
+    "public_export", # Don't copy the public export into itself
 ]
 
 # Files to Keep As-Is (No Stubbing)
