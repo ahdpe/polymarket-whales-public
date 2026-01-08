@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 # Twitter settings file (stores min_alert_usd, enabled status, pause info)
 TWITTER_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), '..', 'twitter_settings.json')
+# Twitter queue file (stores pending queue)
+TWITTER_QUEUE_FILE = os.path.join(os.path.dirname(__file__), '..', 'twitter_queue.json')
 
 # Rate limit constants
 DEFAULT_TWEET_INTERVAL_SEC = 25 * 60  # 25 minutes default
@@ -349,7 +351,8 @@ class TwitterService:
         
         if self.is_configured:
             self._init_client()
-            logger.info("TwitterService initialized successfully")
+            self._load_queue()  # Load queue from disk
+            logger.info(f"TwitterService initialized successfully (queue size: {len(self.pending_queue)})")
         else:
             logger.warning("TwitterService not configured - missing API keys")
     
@@ -372,10 +375,11 @@ class TwitterService:
             logger.error(f"Failed to initialize Twitter client: {e}")
             self.is_configured = False
     
-    def should_post(self, trade_data: dict) -> tuple[bool, str]:
+    def wants_trade(self, trade_data: dict) -> tuple[bool, str]:
         """
-        Check if trade should be posted to Twitter.
-        Returns (should_post, reason_if_not).
+        Check if Twitter wants this trade (filters only, no rate limits).
+        Returns (wants_trade, reason_if_not).
+        Used to determine if we should call post_trade_alert (which handles queue).
         """
         if not self.is_configured:
             return False, "not_configured"
@@ -383,24 +387,10 @@ class TwitterService:
         if not is_twitter_enabled():
             return False, "disabled"
         
-        # Check 403 pause
+        # Check 403 pause (this is a hard stop, not a rate limit)
         paused, secs = is_twitter_paused()
         if paused:
             return False, f"paused_403_{secs}s"
-        
-        # Check 24-hour rolling window limit (17 tweets max)
-        tweets_count = get_tweets_in_last_24h()
-        if tweets_count >= MAX_TWEETS_PER_24H:
-            wait_secs = get_seconds_until_next_tweet()
-            wait_mins = wait_secs // 60
-            wait_hours = wait_mins // 60
-            return False, f"daily_limit_{tweets_count}/{MAX_TWEETS_PER_24H}_wait_{wait_hours}h{wait_mins%60}m"
-        
-        # Check minimum interval (if configured)
-        wait_secs = get_seconds_until_next_tweet()
-        if wait_secs > 0:
-            wait_mins = wait_secs // 60
-            return False, f"interval_limit_{wait_mins}m"
         
         # Check side/type signals
         side = trade_data.get('side', '').upper()
@@ -451,6 +441,32 @@ class TwitterService:
         value_usd = price * float(trade_data.get('size', 0))
         if value_usd < get_twitter_min_alert():
             return False, f"amount_{value_usd:.0f}_below_min"
+        
+        return True, "ok"
+    
+    def should_post(self, trade_data: dict) -> tuple[bool, str]:
+        """
+        Check if trade should be posted to Twitter right now (includes rate limits).
+        Returns (should_post, reason_if_not).
+        """
+        # First check if we want this trade at all (filters)
+        wants, reason = self.wants_trade(trade_data)
+        if not wants:
+            return False, reason
+        
+        # Check 24-hour rolling window limit (17 tweets max)
+        tweets_count = get_tweets_in_last_24h()
+        if tweets_count >= MAX_TWEETS_PER_24H:
+            wait_secs = get_seconds_until_next_tweet()
+            wait_mins = wait_secs // 60
+            wait_hours = wait_mins // 60
+            return False, f"daily_limit_{tweets_count}/{MAX_TWEETS_PER_24H}_wait_{wait_hours}h{wait_mins%60}m"
+        
+        # Check minimum interval (if configured)
+        wait_secs = get_seconds_until_next_tweet()
+        if wait_secs > 0:
+            wait_mins = wait_secs // 60
+            return False, f"interval_limit_{wait_mins}m"
         
         return True, "ok"
     
@@ -587,14 +603,15 @@ class TwitterService:
         should, reason = self.should_post(trade_data)
         
         if not should:
-            # If it's an interval limit (but 24h limit is OK), add to queue
-            if reason.startswith('interval_limit'):
+            # If it's an interval limit or daily limit (but not paused/disabled), add to queue
+            if reason.startswith('interval_limit') or reason.startswith('daily_limit'):
                 await self._add_to_queue(trade_data)
                 return None
             
-            # For other reasons (disabled, paused, daily_limit, etc.), skip
-            if not reason.startswith('rate_limit') and not reason.startswith('amount'):
-                logger.debug(f"Tweet skipped: {reason}")
+            # For other reasons (disabled, paused, etc.), skip
+            trader_id = self._get_trader_id(trade_data)
+            trade_value = self._get_trade_value_usd(trade_data)
+            logger.info(f"Tweet skipped: {reason} (trader: {trader_id[:10]}..., value: ${trade_value:,.0f})")
             return None
         
         # Can post immediately
@@ -613,20 +630,105 @@ class TwitterService:
             self._queue_lock = asyncio.Lock()
         return self._queue_lock
     
+    def _load_queue(self):
+        """Load queue from disk."""
+        try:
+            if os.path.exists(TWITTER_QUEUE_FILE):
+                with open(TWITTER_QUEUE_FILE, 'r') as f:
+                    data = json.load(f)
+                    # Convert back to list of tuples
+                    self.pending_queue = [(item['trade_data'], item['queued_at']) for item in data]
+                    logger.info(f"Loaded {len(self.pending_queue)} items from Twitter queue")
+        except Exception as e:
+            logger.error(f"Error loading Twitter queue: {e}")
+            self.pending_queue = []
+    
+    def _save_queue(self):
+        """Save queue to disk."""
+        try:
+            # Convert to JSON-serializable format
+            data = [{'trade_data': trade_data, 'queued_at': queued_at} 
+                   for trade_data, queued_at in self.pending_queue]
+            with open(TWITTER_QUEUE_FILE, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving Twitter queue: {e}")
+    
+    def _get_trade_value_usd(self, trade_data: dict) -> float:
+        """Calculate trade value in USD."""
+        value_usd = trade_data.get('value_usd')
+        if value_usd is not None:
+            return float(value_usd)
+        price = float(trade_data.get('price', 0))
+        size = float(trade_data.get('size', 0))
+        return price * size
+    
+    def _get_trader_id(self, trade_data: dict) -> str:
+        """Get unique trader identifier (address or name)."""
+        trader_address = trade_data.get('trader_address', '')
+        if trader_address:
+            return trader_address.lower()  # Normalize to lowercase
+        # Fallback to trader name if no address
+        trader_name = trade_data.get('trader_name', '') or trade_data.get('name', '')
+        return trader_name.lower() if trader_name else 'unknown'
+    
     async def _add_to_queue(self, trade_data: dict):
-        """Add trade to pending queue if there's space."""
+        """
+        Add trade to pending queue with smart prioritization:
+        1. Deduplicate by trader: if same trader exists, keep only the largest trade
+        2. If queue is full (>= 10), prioritize by trade size, keep largest 10
+        3. If queue is not full, maintain FIFO order
+        """
         async with self._get_queue_lock():
-            if len(self.pending_queue) >= self.max_queue_size:
-                # Remove oldest if queue is full
-                self.pending_queue.pop(0)
-                logger.warning(f"Twitter queue full, removing oldest tweet")
+            trader_id = self._get_trader_id(trade_data)
+            trade_value = self._get_trade_value_usd(trade_data)
+            queued_at = time.time()
             
-            self.pending_queue.append((trade_data, time.time()))
-            logger.info(f"Tweet added to queue (size: {len(self.pending_queue)}/{self.max_queue_size})")
+            # Step 1: Check for duplicate trader - if exists, keep only the largest
+            existing_index = None
+            existing_value = 0
+            for idx, (existing_trade, _) in enumerate(self.pending_queue):
+                existing_trader_id = self._get_trader_id(existing_trade)
+                if existing_trader_id == trader_id:
+                    existing_value = self._get_trade_value_usd(existing_trade)
+                    if trade_value > existing_value:
+                        # New trade is larger, replace the existing one
+                        existing_index = idx
+                    else:
+                        # Existing trade is larger or equal, skip adding new one
+                        logger.info(f"Tweet skipped: trader {trader_id} already in queue with larger trade (${existing_value:,.0f} vs ${trade_value:,.0f})")
+                        return
+            
+            # Remove existing duplicate if we found a larger trade
+            if existing_index is not None:
+                removed_trade = self.pending_queue.pop(existing_index)
+                removed_value = self._get_trade_value_usd(removed_trade[0])
+                logger.info(f"Replaced smaller trade from trader {trader_id} (${removed_value:,.0f} → ${trade_value:,.0f})")
+            
+            # Step 2: Add new trade to queue
+            self.pending_queue.append((trade_data, queued_at))
+            
+            # Step 3: If queue is full (>= 10), prioritize by trade size
+            if len(self.pending_queue) > self.max_queue_size:
+                # Sort by trade value (descending) and keep only top max_queue_size
+                self.pending_queue.sort(key=lambda x: self._get_trade_value_usd(x[0]), reverse=True)
+                removed_count = len(self.pending_queue) - self.max_queue_size
+                removed_trades = self.pending_queue[self.max_queue_size:]
+                self.pending_queue = self.pending_queue[:self.max_queue_size]
+                
+                removed_values = [self._get_trade_value_usd(t[0]) for t in removed_trades]
+                logger.warning(f"Twitter queue full ({len(self.pending_queue) + removed_count} > {self.max_queue_size}), "
+                             f"removed {removed_count} smallest trades (values: ${', '.join(f'{v:,.0f}' for v in sorted(removed_values))})")
+            
+            logger.info(f"Tweet added to queue (size: {len(self.pending_queue)}/{self.max_queue_size}, "
+                       f"value: ${trade_value:,.0f}, trader: {trader_id[:10]}...)")
+            # Save queue to disk
+            self._save_queue()
     
     async def _process_pending_queue(self):
         """Process pending queue - try to post tweets if interval allows."""
         async with self._get_queue_lock():
+            queue_size = len(self.pending_queue)
             if not self.pending_queue:
                 return
         
@@ -634,6 +736,8 @@ class TwitterService:
         wait_secs = get_seconds_until_next_tweet()
         if wait_secs > 0:
             # Still need to wait
+            wait_mins = wait_secs // 60
+            logger.info(f"Twitter queue: {queue_size} items waiting, need to wait {wait_mins}m {wait_secs%60}s")
             return
         
         # Try to post from queue
@@ -643,27 +747,40 @@ class TwitterService:
             
             # Get oldest tweet from queue
             trade_data, queued_at = self.pending_queue.pop(0)
+            queue_age_secs = int(time.time() - queued_at)
+            queue_age_mins = queue_age_secs // 60
         
         # Double-check we can post
         should, reason = self.should_post(trade_data)
         if not should:
             # Still can't post, put it back at the end
+            logger.warning(f"Twitter queue: Cannot post tweet queued {queue_age_mins}m ago, reason: {reason}. Returning to queue.")
             async with self._get_queue_lock():
                 self.pending_queue.append((trade_data, queued_at))
+                # Save queue to disk
+                self._save_queue()
             return
         
         # Post the tweet
+        trader_id = self._get_trader_id(trade_data)
+        trade_value = self._get_trade_value_usd(trade_data)
+        logger.info(f"Twitter queue: Processing tweet queued {queue_age_mins}m ago (trader: {trader_id[:10]}..., value: ${trade_value:,.0f})")
         tweet_text = self.format_tweet(trade_data)
         result = await self.post_tweet(tweet_text)
         
         if result:
             logger.info(f"Posted queued tweet (queue size: {len(self.pending_queue)})")
+            # Save queue to disk
+            self._save_queue()
             # Recursively process more from queue if possible
             await self._process_pending_queue()
         else:
             # Failed to post, put it back
+            logger.warning(f"Twitter queue: Failed to post tweet, returning to front of queue")
             async with self._get_queue_lock():
                 self.pending_queue.insert(0, (trade_data, queued_at))
+                # Save queue to disk
+                self._save_queue()
     
     async def process_queue_periodically(self, interval=60):
         """Background task to periodically check and process pending queue."""

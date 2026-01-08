@@ -216,9 +216,9 @@ async def handle_trade(trade_data):
                 recipients.append(chat_id)
         
         # 2. Check if Twitter wants this trade (independent of Telegram)
-        # Pass trade_data for full anti-spam checks (side=BUY only, probability 1-99%)
+        # Use wants_trade (filters only) - post_trade_alert will handle queue/rate limits
         twitter_service = get_twitter_service()
-        twitter_wants = twitter_service and twitter_service.should_post(trade_data)[0]
+        twitter_wants = twitter_service and twitter_service.wants_trade(trade_data)[0]
         
         # If no one wants this trade (neither Telegram nor Twitter), stop here!
         if not recipients and not twitter_wants:
