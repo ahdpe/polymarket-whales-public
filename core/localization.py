@@ -114,6 +114,7 @@ TRANSLATIONS = {
 
 💬 Обратная связь: @Andrey\_Os
 💻 [GitHub](https://github.com/ahdpe/polymarket-whales-public)
+🐦 [Twitter/X](https://x.com/PolyMrktWhales)
 
 ⚡ *ТОП Биржа для торговли:*
 [Регистрируйся на Bybit и получи бонусы! 🎁](https://www.bybit.com/invite?ref=JDRKDN)""",
@@ -249,6 +250,7 @@ Keywords: nfl, nba, football, soccer, ufc, f1, lakers, goal, etc.
 
 💬 Feedback: @Andrey\_Os
 💻 [GitHub](https://github.com/ahdpe/polymarket-whales-public)
+🐦 [Twitter/X](https://x.com/PolyMrktWhales)
 
 ⚡ *Best Exchange to Trade:*
 [Join Bybit and get massive bonuses! 🎁](https://www.bybit.com/invite?ref=JDRKDN)""",

@@ -1,0 +1,505 @@
+nohup: ignoring input
+▶️  Starting with current .env...
+✅ Activated virtual environment
+🤖 Starting bot...
+2026-01-04 19:54:27,842 - storage.saved_whales - INFO - Saved whales DB initialized
+2026-01-04 19:54:27,904 - services.polymarket - INFO - PolymarketService initialized - using Data API with SQLite Persistence & Aggregation
+2026-01-04 19:54:27,905 - __main__ - INFO - Starting PolyWhales...
+2026-01-04 19:54:27,905 - __main__ - INFO - Using Polymarket Data API for whale trades...
+2026-01-04 19:54:27,906 - services.telegram_service - INFO - Starting Telegram Bot Polling...
+2026-01-04 19:54:27,908 - aiogram.dispatcher - INFO - Start polling
+2026-01-04 19:54:27,908 - services.polymarket - INFO - Starting trade polling (every 3s)...
+2026-01-04 19:54:27,999 - aiogram.dispatcher - INFO - Run polling for bot @PolymarketWhales_bot id=7982935017 - 'Polymarket Whales 🐋'
+2026-01-04 19:54:34,422 - aiogram.event - INFO - Update id=320613947 is handled. Duration 42 ms by bot id=7982935017
+2026-01-04 19:54:37,301 - services.telegram_service - INFO - User 176487802 set filter to $50000
+2026-01-04 19:54:37,302 - aiogram.event - INFO - Update id=320613948 is handled. Duration 134 ms by bot id=7982935017
+2026-01-04 19:55:32,292 - services.twitter_service - INFO - Twitter client initialized
+2026-01-04 19:55:32,294 - services.twitter_service - INFO - TwitterService initialized successfully
+2026-01-04 19:55:35,329 - storage.saved_whales - INFO - get_or_create_key: name=Punisher2022, level_icon=🦈
+2026-01-04 19:55:37,626 - services.polymarket - INFO - Processed 375 new raw trades. Aggregator active.
+2026-01-04 19:56:59,668 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 19:58:32,730 - storage.saved_whales - INFO - get_or_create_key: name=LayerZeroLabs, level_icon=🦈
+2026-01-04 19:58:34,530 - storage.saved_whales - INFO - get_or_create_key: name=Maxtom, level_icon=🐟
+2026-01-04 19:58:35,686 - storage.saved_whales - INFO - get_or_create_key: name=Fuego89, level_icon=🦈
+2026-01-04 19:58:36,917 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:00:01,292 - storage.saved_whales - INFO - get_or_create_key: name=LayerZeroLabs, level_icon=🦈
+2026-01-04 20:00:02,525 - storage.saved_whales - INFO - get_or_create_key: name=akalamgo, level_icon=🐟
+2026-01-04 20:00:03,338 - services.polymarket - INFO - Processed 445 new raw trades. Aggregator active.
+2026-01-04 20:01:32,033 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:03:02,886 - storage.saved_whales - INFO - get_or_create_key: name=0xc8C2e35222F6b28a794773C9cD15e61f5f882d1C-1766087567531, level_icon=🐟
+2026-01-04 20:03:03,930 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:04:33,159 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:06:04,014 - storage.saved_whales - INFO - get_or_create_key: name=gmpm, level_icon=🐋
+2026-01-04 20:06:05,127 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:07:36,583 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:09:06,232 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:10:36,794 - storage.saved_whales - INFO - get_or_create_key: name=0xF9245E105CE647438E09f7d86eCdd4C7a01d45c1-1767486061611, level_icon=🐋
+2026-01-04 20:10:38,506 - storage.saved_whales - INFO - get_or_create_key: name=statwC00KS, level_icon=🦈
+2026-01-04 20:10:39,552 - storage.saved_whales - INFO - get_or_create_key: name=overtaxed23, level_icon=🦈
+2026-01-04 20:10:39,960 - services.polymarket - INFO - Processed 372 new raw trades. Aggregator active.
+2026-01-04 20:10:43,387 - aiogram.event - INFO - Update id=320613949 is handled. Duration 85 ms by bot id=7982935017
+2026-01-04 20:10:44,878 - services.telegram_service - INFO - User 176487802 set filter to $2000
+2026-01-04 20:10:44,879 - aiogram.event - INFO - Update id=320613950 is handled. Duration 224 ms by bot id=7982935017
+2026-01-04 20:12:08,071 - storage.saved_whales - INFO - get_or_create_key: name=Gametheory, level_icon=🦈
+2026-01-04 20:12:09,596 - storage.saved_whales - INFO - get_or_create_key: name=aBeanCounter, level_icon=🐬
+2026-01-04 20:12:09,700 - storage.saved_whales - INFO - get_or_create_key: name=aBeanCounter, level_icon=🐬
+2026-01-04 20:12:10,756 - storage.saved_whales - INFO - get_or_create_key: name=MrDLK, level_icon=🐟
+2026-01-04 20:12:13,734 - storage.saved_whales - INFO - get_or_create_key: name=EdwardLewis, level_icon=🐟
+2026-01-04 20:12:14,985 - storage.saved_whales - INFO - get_or_create_key: name=786B, level_icon=🐟
+2026-01-04 20:12:16,149 - storage.saved_whales - INFO - get_or_create_key: name=0x6A32A31F2B28c31c016C6A222f2942240d8D0086-1756820952447, level_icon=🐟
+2026-01-04 20:12:16,363 - storage.saved_whales - INFO - get_or_create_key: name=overtaxed23, level_icon=🦈
+2026-01-04 20:12:17,684 - storage.saved_whales - INFO - get_or_create_key: name=Csikos, level_icon=🐬
+2026-01-04 20:12:18,901 - storage.saved_whales - INFO - get_or_create_key: name=forshow, level_icon=🐟
+2026-01-04 20:12:20,019 - storage.saved_whales - INFO - get_or_create_key: name=Yanncll, level_icon=🐟
+2026-01-04 20:12:23,301 - aiogram.event - INFO - Update id=320613951 is handled. Duration 66 ms by bot id=7982935017
+2026-01-04 20:12:25,385 - services.telegram_service - INFO - User 176487802 set filter to $50000
+2026-01-04 20:12:25,385 - aiogram.event - INFO - Update id=320613952 is handled. Duration 68 ms by bot id=7982935017
+2026-01-04 20:12:27,100 - storage.saved_whales - INFO - get_or_create_key: name=Levi1124, level_icon=🦈
+2026-01-04 20:12:27,505 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:12:36,431 - aiogram.event - INFO - Update id=320613953 is handled. Duration 124 ms by bot id=7982935017
+2026-01-04 20:12:37,913 - aiogram.event - INFO - Update id=320613954 is handled. Duration 63 ms by bot id=7982935017
+2026-01-04 20:13:39,009 - storage.saved_whales - INFO - get_or_create_key: name=Levi1124, level_icon=🦈
+2026-01-04 20:13:40,031 - storage.saved_whales - INFO - get_or_create_key: name=luckytraderr, level_icon=🦈
+2026-01-04 20:13:40,519 - services.polymarket - INFO - Processed 378 new raw trades. Aggregator active.
+2026-01-04 20:15:07,377 - aiogram.event - INFO - Update id=320613955 is handled. Duration 478 ms by bot id=7982935017
+2026-01-04 20:15:12,054 - services.polymarket - INFO - Processed 320 new raw trades. Aggregator active.
+2026-01-04 20:16:43,218 - storage.saved_whales - INFO - get_or_create_key: name=musalbas, level_icon=🦈
+2026-01-04 20:16:44,068 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:18:12,437 - storage.saved_whales - INFO - get_or_create_key: name=SlavaUkraini, level_icon=🐟
+2026-01-04 20:18:12,838 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:19:44,806 - services.polymarket - INFO - Processed 490 new raw trades. Aggregator active.
+2026-01-04 20:21:16,338 - services.polymarket - INFO - Processed 493 new raw trades. Aggregator active.
+2026-01-04 20:22:08,635 - aiogram.event - INFO - Update id=320613956 is handled. Duration 520 ms by bot id=7982935017
+2026-01-04 20:22:12,070 - aiogram.event - INFO - Update id=320613957 is handled. Duration 67 ms by bot id=7982935017
+2026-01-04 20:22:14,107 - aiogram.event - INFO - Update id=320613958 is handled. Duration 178 ms by bot id=7982935017
+2026-01-04 20:22:15,129 - aiogram.event - INFO - Update id=320613959 is handled. Duration 71 ms by bot id=7982935017
+2026-01-04 20:22:20,990 - aiogram.event - INFO - Update id=320613960 is handled. Duration 178 ms by bot id=7982935017
+2026-01-04 20:22:21,407 - aiogram.event - INFO - Update id=320613961 is handled. Duration 93 ms by bot id=7982935017
+2026-01-04 20:22:22,199 - aiogram.event - INFO - Update id=320613962 is handled. Duration 242 ms by bot id=7982935017
+2026-01-04 20:22:22,913 - aiogram.event - INFO - Update id=320613963 is handled. Duration 140 ms by bot id=7982935017
+2026-01-04 20:22:46,801 - storage.saved_whales - INFO - get_or_create_key: name=DimasXT, level_icon=🐋
+2026-01-04 20:22:47,258 - storage.saved_whales - INFO - get_or_create_key: name=DimasXT, level_icon=⚡
+2026-01-04 20:22:47,493 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 20:22:48,287 - services.polymarket - INFO - Processed 451 new raw trades. Aggregator active.
+2026-01-04 20:24:19,174 - storage.saved_whales - INFO - get_or_create_key: name=primm, level_icon=🦈
+2026-01-04 20:24:20,201 - services.polymarket - INFO - Processed 450 new raw trades. Aggregator active.
+2026-01-04 20:25:48,345 - storage.saved_whales - INFO - get_or_create_key: name=jocpolitic, level_icon=🦈
+2026-01-04 20:25:50,181 - storage.saved_whales - INFO - get_or_create_key: name=OhioEnviro, level_icon=🦈
+2026-01-04 20:25:52,113 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:27:19,596 - storage.saved_whales - INFO - get_or_create_key: name=OhioEnviro, level_icon=🦈
+2026-01-04 20:27:21,049 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:28:50,132 - storage.saved_whales - INFO - get_or_create_key: name=bossoskil, level_icon=⚡
+2026-01-04 20:28:51,257 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 20:28:51,854 - storage.saved_whales - INFO - get_or_create_key: name=, level_icon=🦈
+2026-01-04 20:28:53,849 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:30:18,962 - storage.saved_whales - INFO - get_or_create_key: name=bossoskil, level_icon=🦈
+2026-01-04 20:30:19,950 - storage.saved_whales - INFO - get_or_create_key: name=0xc1DfF32f43FacF12F334B8006F65960F6Da116C1-1765451761500, level_icon=🐟
+2026-01-04 20:30:21,308 - storage.saved_whales - INFO - get_or_create_key: name=LeetSwap, level_icon=🦈
+2026-01-04 20:30:22,594 - storage.saved_whales - INFO - get_or_create_key: name=jtwyslljy, level_icon=🐋
+2026-01-04 20:30:23,071 - services.polymarket - INFO - Processed 453 new raw trades. Aggregator active.
+2026-01-04 20:32:31,371 - storage.saved_whales - INFO - get_or_create_key: name=LeetSwap, level_icon=🦈
+2026-01-04 20:33:27,998 - storage.saved_whales - INFO - get_or_create_key: name=gmpm, level_icon=🐋
+2026-01-04 20:33:28,525 - aiogram.event - INFO - Update id=320613966 is handled. Duration 622 ms by bot id=7982935017
+2026-01-04 20:33:28,663 - aiogram.event - INFO - Update id=320613965 is handled. Duration 762 ms by bot id=7982935017
+2026-01-04 20:33:28,780 - aiogram.event - INFO - Update id=320613964 is handled. Duration 973 ms by bot id=7982935017
+2026-01-04 20:33:29,938 - storage.saved_whales - INFO - get_or_create_key: name=Ajwritescrypt0, level_icon=🦈
+2026-01-04 20:33:31,180 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:33:35,032 - services.polymarket - INFO - Processed 445 new raw trades. Aggregator active.
+2026-01-04 20:33:39,431 - aiogram.event - INFO - Update id=320613967 is handled. Duration 135 ms by bot id=7982935017
+2026-01-04 20:33:42,624 - aiogram.event - INFO - Update id=320613968 is handled. Duration 744 ms by bot id=7982935017
+2026-01-04 20:33:44,040 - aiogram.event - INFO - Update id=320613969 is handled. Duration 56 ms by bot id=7982935017
+2026-01-04 20:33:45,674 - aiogram.event - INFO - Update id=320613970 is handled. Duration 224 ms by bot id=7982935017
+2026-01-04 20:33:47,632 - aiogram.event - INFO - Update id=320613971 is handled. Duration 325 ms by bot id=7982935017
+2026-01-04 20:33:50,041 - aiogram.event - INFO - Update id=320613972 is handled. Duration 397 ms by bot id=7982935017
+2026-01-04 20:34:53,971 - storage.saved_whales - INFO - get_or_create_key: name=ErikRosalesNews, level_icon=🦈
+2026-01-04 20:34:56,076 - storage.saved_whales - INFO - get_or_create_key: name=GondorCallsForAid, level_icon=🦈
+2026-01-04 20:34:57,309 - storage.saved_whales - INFO - get_or_create_key: name=gopfan2, level_icon=🐬
+2026-01-04 20:34:58,297 - services.polymarket - INFO - Processed 381 new raw trades. Aggregator active.
+2026-01-04 20:36:23,157 - storage.saved_whales - INFO - get_or_create_key: name=ErikRosalesNews, level_icon=🦈
+2026-01-04 20:36:24,777 - storage.saved_whales - INFO - get_or_create_key: name=tdrhrhhd, level_icon=🦈
+2026-01-04 20:36:25,193 - storage.saved_whales - INFO - get_or_create_key: name=akalamgo, level_icon=🐟
+2026-01-04 20:36:25,568 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:37:56,608 - services.polymarket - INFO - Processed 390 new raw trades. Aggregator active.
+2026-01-04 20:38:27,192 - aiogram.event - INFO - Update id=320613973 is handled. Duration 638 ms by bot id=7982935017
+2026-01-04 20:38:29,489 - aiogram.event - INFO - Update id=320613974 is handled. Duration 115 ms by bot id=7982935017
+2026-01-04 20:39:27,861 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:40:56,492 - aiogram.event - INFO - Update id=320613975 is handled. Duration 597 ms by bot id=7982935017
+2026-01-04 20:40:57,540 - aiogram.event - INFO - Update id=320613976 is handled. Duration 153 ms by bot id=7982935017
+2026-01-04 20:40:59,291 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:40:59,669 - services.telegram_service - INFO - User 176487802 set filter to $25000
+2026-01-04 20:40:59,670 - aiogram.event - INFO - Update id=320613977 is handled. Duration 91 ms by bot id=7982935017
+2026-01-04 20:41:01,797 - aiogram.event - INFO - Update id=320613978 is handled. Duration 42 ms by bot id=7982935017
+2026-01-04 20:41:03,092 - services.telegram_service - INFO - User 176487802 set filter to $10000
+2026-01-04 20:41:03,093 - aiogram.event - INFO - Update id=320613979 is handled. Duration 95 ms by bot id=7982935017
+2026-01-04 20:41:05,733 - aiogram.event - INFO - Update id=320613980 is handled. Duration 49 ms by bot id=7982935017
+2026-01-04 20:41:08,029 - aiogram.event - INFO - Update id=320613981 is handled. Duration 60 ms by bot id=7982935017
+2026-01-04 20:41:10,200 - aiogram.event - INFO - Update id=320613982 is handled. Duration 102 ms by bot id=7982935017
+2026-01-04 20:41:12,211 - aiogram.event - INFO - Update id=320613983 is handled. Duration 104 ms by bot id=7982935017
+2026-01-04 20:41:13,477 - aiogram.event - INFO - Update id=320613984 is handled. Duration 47 ms by bot id=7982935017
+2026-01-04 20:42:32,005 - storage.saved_whales - INFO - get_or_create_key: name=ttar, level_icon=🐋
+2026-01-04 20:42:33,957 - storage.saved_whales - INFO - get_or_create_key: name=Brandonjbest, level_icon=🦈
+2026-01-04 20:42:35,272 - storage.saved_whales - INFO - get_or_create_key: name=mudman88, level_icon=🔥
+2026-01-04 20:42:35,531 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 20:42:36,134 - services.twitter_service - ERROR - Failed to post tweet: 429 Too Many Requests
+Too Many Requests
+2026-01-04 20:42:36,622 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:44:01,720 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:44:02,376 - aiogram.event - INFO - Update id=320613985 is handled. Duration 554 ms by bot id=7982935017
+2026-01-04 20:44:05,963 - aiogram.event - INFO - Update id=320613986 is handled. Duration 35 ms by bot id=7982935017
+2026-01-04 20:45:33,506 - storage.saved_whales - INFO - get_or_create_key: name=bossoskil, level_icon=🦈
+2026-01-04 20:45:35,361 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:46:16,766 - aiogram.event - INFO - Update id=320613987 is handled. Duration 218 ms by bot id=7982935017
+2026-01-04 20:47:03,104 - storage.saved_whales - INFO - get_or_create_key: name=gmpm, level_icon=🔥
+2026-01-04 20:47:03,455 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 20:47:03,891 - services.twitter_service - ERROR - Failed to post tweet: 429 Too Many Requests
+Too Many Requests
+2026-01-04 20:47:04,391 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:48:30,358 - aiogram.event - INFO - Update id=320613988 is handled. Duration 87 ms by bot id=7982935017
+2026-01-04 20:48:35,088 - aiogram.event - INFO - Update id=320613989 is handled. Duration 28 ms by bot id=7982935017
+2026-01-04 20:48:35,673 - storage.saved_whales - INFO - get_or_create_key: name=Chapman91935, level_icon=🦈
+2026-01-04 20:48:35,926 - storage.saved_whales - INFO - get_or_create_key: name=gopfan2, level_icon=🐟
+2026-01-04 20:48:37,138 - storage.saved_whales - INFO - get_or_create_key: name=hsakaisold, level_icon=🦈
+2026-01-04 20:48:37,583 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:48:40,271 - aiogram.event - INFO - Update id=320613990 is handled. Duration 99 ms by bot id=7982935017
+2026-01-04 20:48:42,626 - services.telegram_service - INFO - User 176487802 set filter to $50000
+2026-01-04 20:48:42,627 - aiogram.event - INFO - Update id=320613991 is handled. Duration 78 ms by bot id=7982935017
+2026-01-04 20:49:18,703 - aiogram.event - INFO - Update id=320613992 is handled. Duration 68 ms by bot id=7982935017
+2026-01-04 20:50:08,531 - storage.saved_whales - INFO - get_or_create_key: name=gogo12fs, level_icon=🦈
+2026-01-04 20:50:08,769 - storage.saved_whales - INFO - get_or_create_key: name=Chapman91935, level_icon=🦈
+2026-01-04 20:50:09,568 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:51:37,892 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:53:07,715 - storage.saved_whales - INFO - get_or_create_key: name=SunlineTicker, level_icon=🦈
+2026-01-04 20:53:08,383 - storage.saved_whales - INFO - get_or_create_key: name=gogo12fs, level_icon=🦈
+2026-01-04 20:53:09,471 - storage.saved_whales - INFO - get_or_create_key: name=Mikee12, level_icon=🦈
+2026-01-04 20:53:11,274 - storage.saved_whales - INFO - get_or_create_key: name=Liquidifier, level_icon=🐟
+2026-01-04 20:53:11,761 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:54:30,130 - services.polymarket - INFO - Running DB cleanup...
+2026-01-04 20:56:34,848 - services.polymarket - INFO - DB cleanup completed
+2026-01-04 20:56:35,182 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramNetworkError: HTTP Client says - Request timeout error
+2026-01-04 20:56:35,194 - aiogram.dispatcher - WARNING - Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 7982935017)
+2026-01-04 20:56:39,658 - storage.saved_whales - INFO - get_or_create_key: name=lindaguagua, level_icon=🦈
+2026-01-04 20:56:41,437 - storage.saved_whales - INFO - get_or_create_key: name=DonationJay, level_icon=🐋
+2026-01-04 20:56:42,354 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:56:46,712 - aiogram.dispatcher - INFO - Connection established (tryings = 1, bot id = 7982935017)
+2026-01-04 20:57:45,216 - storage.saved_whales - INFO - get_or_create_key: name=RN1, level_icon=🐟
+2026-01-04 20:57:47,109 - storage.saved_whales - INFO - get_or_create_key: name=Change-Esport, level_icon=🐟
+2026-01-04 20:57:48,536 - storage.saved_whales - INFO - get_or_create_key: name=swisstony, level_icon=🐟
+2026-01-04 20:57:49,006 - storage.saved_whales - INFO - get_or_create_key: name=hioa, level_icon=🦈
+2026-01-04 20:57:50,123 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 20:59:17,824 - storage.saved_whales - INFO - get_or_create_key: name=knedloveprovelo, level_icon=🦈
+2026-01-04 20:59:19,286 - storage.saved_whales - INFO - get_or_create_key: name=SemyonMarmeladov, level_icon=⚡
+2026-01-04 20:59:19,913 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 20:59:21,489 - storage.saved_whales - INFO - get_or_create_key: name=TonyDaleTX, level_icon=🦈
+2026-01-04 20:59:22,083 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:00:47,316 - storage.saved_whales - INFO - get_or_create_key: name=TonyDaleTX, level_icon=🦈
+2026-01-04 21:00:48,273 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:02:19,593 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:03:50,719 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:05:21,354 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:06:51,426 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:08:24,907 - storage.saved_whales - INFO - get_or_create_key: name=Ems123, level_icon=🦈
+2026-01-04 21:08:25,395 - storage.saved_whales - INFO - get_or_create_key: name=swisstony, level_icon=🐟
+2026-01-04 21:08:25,511 - storage.saved_whales - INFO - get_or_create_key: name=Ems123, level_icon=⚡
+2026-01-04 21:08:25,653 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 21:08:25,803 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:09:05,703 - aiogram.event - INFO - Update id=320613993 is handled. Duration 118 ms by bot id=7982935017
+2026-01-04 21:09:10,737 - aiogram.event - INFO - Update id=320613994 is handled. Duration 36 ms by bot id=7982935017
+2026-01-04 21:09:56,469 - storage.saved_whales - INFO - get_or_create_key: name=AlexParkerShort, level_icon=🦈
+2026-01-04 21:09:57,663 - storage.saved_whales - INFO - get_or_create_key: name=RCSun, level_icon=🦈
+2026-01-04 21:09:57,734 - storage.saved_whales - INFO - get_or_create_key: name=AlexParkerShort, level_icon=🦈
+2026-01-04 21:09:58,893 - storage.saved_whales - INFO - get_or_create_key: name=BoringPunter, level_icon=🦈
+2026-01-04 21:09:59,239 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:11:25,772 - storage.saved_whales - INFO - get_or_create_key: name=primm, level_icon=🐋
+2026-01-04 21:11:25,987 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:12:17,075 - aiogram.event - INFO - Update id=320613995 is handled. Duration 67 ms by bot id=7982935017
+2026-01-04 21:12:19,173 - aiogram.event - INFO - Update id=320613996 is handled. Duration 29 ms by bot id=7982935017
+2026-01-04 21:12:56,624 - storage.saved_whales - INFO - get_or_create_key: name=elkmonkey, level_icon=🦈
+2026-01-04 21:12:57,852 - storage.saved_whales - INFO - get_or_create_key: name=ah0.1, level_icon=🦈
+2026-01-04 21:12:57,983 - storage.saved_whales - INFO - get_or_create_key: name=bossoskil, level_icon=⚡
+2026-01-04 21:12:58,517 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 21:12:58,723 - services.polymarket - INFO - Processed 495 new raw trades. Aggregator active.
+2026-01-04 21:13:36,828 - aiogram.event - INFO - Update id=320613997 is handled. Duration 41 ms by bot id=7982935017
+2026-01-04 21:14:28,594 - storage.saved_whales - INFO - get_or_create_key: name=Change-Esport, level_icon=🐟
+2026-01-04 21:14:28,735 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:15:58,298 - storage.saved_whales - INFO - get_or_create_key: name=AlexParkerShort, level_icon=🦈
+2026-01-04 21:15:59,395 - storage.saved_whales - INFO - get_or_create_key: name=crossfire154, level_icon=🦈
+2026-01-04 21:16:00,539 - storage.saved_whales - INFO - get_or_create_key: name=Moneyloverman, level_icon=🦈
+2026-01-04 21:16:00,652 - storage.saved_whales - INFO - get_or_create_key: name=Moneyloverman, level_icon=🦈
+2026-01-04 21:16:00,775 - services.polymarket - INFO - Processed 254 new raw trades. Aggregator active.
+2026-01-04 21:17:31,217 - storage.saved_whales - INFO - get_or_create_key: name=Bertschwert, level_icon=🐟
+2026-01-04 21:17:32,425 - storage.saved_whales - INFO - get_or_create_key: name=Latina, level_icon=🦈
+2026-01-04 21:17:33,425 - storage.saved_whales - INFO - get_or_create_key: name=eschaworldchampion2026, level_icon=🐋
+2026-01-04 21:17:33,516 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:19:00,913 - storage.saved_whales - INFO - get_or_create_key: name=dinglepuff, level_icon=🦈
+2026-01-04 21:19:02,322 - storage.saved_whales - INFO - get_or_create_key: name=0xb7511d7b0dcb75ffad0507cbac7223653d08915, level_icon=🦈
+2026-01-04 21:19:02,524 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:20:00,797 - aiogram.event - INFO - Update id=320613998 is handled. Duration 51 ms by bot id=7982935017
+2026-01-04 21:20:32,095 - storage.saved_whales - INFO - get_or_create_key: name=Latina, level_icon=🦈
+2026-01-04 21:20:33,196 - storage.saved_whales - INFO - get_or_create_key: name=redheadlab, level_icon=🦈
+2026-01-04 21:20:34,176 - storage.saved_whales - INFO - get_or_create_key: name=FollowMeABC123, level_icon=🦈
+2026-01-04 21:20:35,500 - storage.saved_whales - INFO - get_or_create_key: name=ckw, level_icon=🐋
+2026-01-04 21:20:36,720 - storage.saved_whales - INFO - get_or_create_key: name=DouYing, level_icon=🦈
+2026-01-04 21:20:36,788 - storage.saved_whales - INFO - get_or_create_key: name=FollowMeABC123, level_icon=⚡
+2026-01-04 21:20:36,949 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 21:20:37,136 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:22:01,921 - storage.saved_whales - INFO - get_or_create_key: name=Punisher2022, level_icon=🦈
+2026-01-04 21:22:02,052 - storage.saved_whales - INFO - get_or_create_key: name=FollowMeABC123, level_icon=🐋
+2026-01-04 21:22:02,261 - services.polymarket - INFO - Processed 439 new raw trades. Aggregator active.
+2026-01-04 21:23:10,777 - aiogram.event - INFO - Update id=320613999 is handled. Duration 137 ms by bot id=7982935017
+2026-01-04 21:23:15,864 - aiogram.event - INFO - Update id=320614000 is handled. Duration 25 ms by bot id=7982935017
+2026-01-04 21:23:31,732 - services.polymarket - INFO - Processed 188 new raw trades. Aggregator active.
+2026-01-04 21:26:34,589 - storage.saved_whales - INFO - get_or_create_key: name=fijinice, level_icon=⚡
+2026-01-04 21:26:34,799 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 21:26:35,186 - storage.saved_whales - INFO - get_or_create_key: name=elkmonkey, level_icon=🦈
+2026-01-04 21:26:35,298 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:26:47,580 - aiogram.event - INFO - Update id=320614001 is handled. Duration 35 ms by bot id=7982935017
+2026-01-04 21:26:50,126 - aiogram.event - INFO - Update id=320614002 is handled. Duration 70 ms by bot id=7982935017
+2026-01-04 21:26:51,483 - aiogram.event - INFO - Update id=320614003 is handled. Duration 59 ms by bot id=7982935017
+2026-01-04 21:26:52,448 - aiogram.event - INFO - Update id=320614004 is handled. Duration 45 ms by bot id=7982935017
+2026-01-04 21:26:54,245 - aiogram.event - INFO - Update id=320614005 is handled. Duration 44 ms by bot id=7982935017
+2026-01-04 21:27:07,029 - aiogram.event - INFO - Update id=320614006 is handled. Duration 37 ms by bot id=7982935017
+2026-01-04 21:27:09,854 - aiogram.event - INFO - Update id=320614007 is handled. Duration 40 ms by bot id=7982935017
+2026-01-04 21:27:12,579 - aiogram.event - INFO - Update id=320614008 is handled. Duration 59 ms by bot id=7982935017
+2026-01-04 21:27:31,774 - aiogram.event - INFO - Update id=320614009 is handled. Duration 36 ms by bot id=7982935017
+2026-01-04 21:27:34,455 - services.telegram_service - INFO - User 176487802 set filter to $10000
+2026-01-04 21:27:34,455 - aiogram.event - INFO - Update id=320614010 is handled. Duration 48 ms by bot id=7982935017
+2026-01-04 21:27:36,376 - aiogram.event - INFO - Update id=320614011 is handled. Duration 30 ms by bot id=7982935017
+2026-01-04 21:28:03,158 - storage.saved_whales - INFO - get_or_create_key: name=knedloveprovelo, level_icon=🐋
+2026-01-04 21:28:04,266 - storage.saved_whales - INFO - get_or_create_key: name=circleraybaococoboba, level_icon=🦈
+2026-01-04 21:28:05,351 - storage.saved_whales - INFO - get_or_create_key: name=COW1998, level_icon=⚡
+2026-01-04 21:28:05,460 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 21:28:05,766 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:29:32,233 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:31:05,953 - storage.saved_whales - INFO - get_or_create_key: name=MistahFox, level_icon=🐟
+2026-01-04 21:31:06,468 - storage.saved_whales - INFO - get_or_create_key: name=circleraybaococoboba, level_icon=🐋
+2026-01-04 21:31:06,617 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:32:36,942 - storage.saved_whales - INFO - get_or_create_key: name=Pwaddler, level_icon=🐋
+2026-01-04 21:32:37,030 - services.polymarket - INFO - Processed 364 new raw trades. Aggregator active.
+2026-01-04 21:34:07,734 - storage.saved_whales - INFO - get_or_create_key: name=knedloveprovelo, level_icon=🦈
+2026-01-04 21:34:08,804 - storage.saved_whales - INFO - get_or_create_key: name=vjnn, level_icon=🦈
+2026-01-04 21:34:09,906 - storage.saved_whales - INFO - get_or_create_key: name=, level_icon=🐋
+2026-01-04 21:34:10,082 - services.polymarket - INFO - Processed 491 new raw trades. Aggregator active.
+2026-01-04 21:35:40,597 - storage.saved_whales - INFO - get_or_create_key: name=gmanas, level_icon=🦈
+2026-01-04 21:35:40,723 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:35:52,842 - aiogram.event - INFO - Update id=320614012 is handled. Duration 37 ms by bot id=7982935017
+2026-01-04 21:35:54,983 - aiogram.event - INFO - Update id=320614013 is handled. Duration 59 ms by bot id=7982935017
+2026-01-04 21:35:56,765 - services.telegram_service - INFO - User 176487802 set filter to $500
+2026-01-04 21:35:56,765 - aiogram.event - INFO - Update id=320614014 is handled. Duration 47 ms by bot id=7982935017
+2026-01-04 21:36:38,560 - aiogram.event - INFO - Update id=320614015 is handled. Duration 35 ms by bot id=7982935017
+2026-01-04 21:36:42,250 - aiogram.event - INFO - Update id=320614016 is handled. Duration 23 ms by bot id=7982935017
+2026-01-04 21:37:05,195 - aiogram.event - INFO - Update id=320614017 is handled. Duration 37 ms by bot id=7982935017
+2026-01-04 21:37:10,185 - aiogram.event - INFO - Update id=320614018 is handled. Duration 62 ms by bot id=7982935017
+2026-01-04 21:37:10,570 - storage.saved_whales - INFO - get_or_create_key: name=grahamronald, level_icon=🦐
+2026-01-04 21:37:10,927 - storage.saved_whales - INFO - get_or_create_key: name=UshatPomoev, level_icon=🦐
+2026-01-04 21:37:12,030 - storage.saved_whales - INFO - get_or_create_key: name=LazyWanker, level_icon=🦐
+2026-01-04 21:37:12,148 - services.polymarket - INFO - Processed 319 new raw trades. Aggregator active.
+2026-01-04 21:37:35,149 - aiogram.event - INFO - Update id=320614019 is handled. Duration 31 ms by bot id=7982935017
+2026-01-04 21:37:41,271 - aiogram.event - INFO - Update id=320614020 is handled. Duration 37 ms by bot id=7982935017
+2026-01-04 21:37:42,989 - services.telegram_service - INFO - User 176487802 set filter to $10000
+2026-01-04 21:37:42,989 - aiogram.event - INFO - Update id=320614021 is handled. Duration 49 ms by bot id=7982935017
+2026-01-04 21:38:42,684 - storage.saved_whales - INFO - get_or_create_key: name=knedloveprovelo, level_icon=🦈
+2026-01-04 21:38:42,899 - storage.saved_whales - INFO - get_or_create_key: name=, level_icon=🐋
+2026-01-04 21:38:42,992 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:40:12,638 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:41:42,075 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:43:14,771 - services.polymarket - INFO - Processed 499 new raw trades. Aggregator active.
+2026-01-04 21:44:48,153 - storage.saved_whales - INFO - get_or_create_key: name=chefepanda, level_icon=🐟
+2026-01-04 21:44:48,310 - storage.saved_whales - INFO - get_or_create_key: name=chefepanda, level_icon=🐟
+2026-01-04 21:44:48,437 - services.polymarket - INFO - Processed 439 new raw trades. Aggregator active.
+2026-01-04 21:46:17,147 - storage.saved_whales - INFO - get_or_create_key: name=0x0F5858743719B7Da3ABe3069b982CE7E0e92456c-1741203274126, level_icon=🦈
+2026-01-04 21:46:17,805 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:47:48,506 - storage.saved_whales - INFO - get_or_create_key: name=swisstony, level_icon=🐟
+2026-01-04 21:47:48,989 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:49:18,326 - storage.saved_whales - INFO - get_or_create_key: name=Bigboybandi, level_icon=🦈
+2026-01-04 21:49:18,711 - storage.saved_whales - INFO - get_or_create_key: name=Mikee12, level_icon=🐋
+2026-01-04 21:49:20,100 - storage.saved_whales - INFO - get_or_create_key: name=amis, level_icon=🦈
+2026-01-04 21:49:21,040 - services.polymarket - INFO - Processed 399 new raw trades. Aggregator active.
+2026-01-04 21:50:48,241 - storage.saved_whales - INFO - get_or_create_key: name=Mikee12, level_icon=🦈
+2026-01-04 21:50:48,937 - services.polymarket - INFO - Processed 470 new raw trades. Aggregator active.
+2026-01-04 21:52:18,796 - services.polymarket - INFO - Processed 428 new raw trades. Aggregator active.
+2026-01-04 21:53:44,947 - aiogram.event - INFO - Update id=320614022 is handled. Duration 140 ms by bot id=7982935017
+2026-01-04 21:53:48,497 - aiogram.event - INFO - Update id=320614023 is handled. Duration 57 ms by bot id=7982935017
+2026-01-04 21:53:51,486 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:55:21,127 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:56:35,118 - services.polymarket - INFO - Running DB cleanup...
+2026-01-04 21:56:40,341 - services.polymarket - INFO - DB cleanup completed
+2026-01-04 21:56:52,866 - storage.saved_whales - INFO - get_or_create_key: name=DouYing, level_icon=🦈
+2026-01-04 21:56:53,059 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:56:53,262 - aiogram.event - INFO - Update id=320614024 is not handled. Duration 13 ms by bot id=7982935017
+2026-01-04 21:56:58,555 - aiogram.event - INFO - Update id=320614025 is handled. Duration 41 ms by bot id=7982935017
+2026-01-04 21:58:25,602 - storage.saved_whales - INFO - get_or_create_key: name=Mikee12, level_icon=🐋
+2026-01-04 21:58:25,790 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 21:59:58,306 - storage.saved_whales - INFO - get_or_create_key: name=Ajwritescrypt0, level_icon=🦈
+2026-01-04 21:59:58,510 - storage.saved_whales - INFO - get_or_create_key: name=Moneyloverman, level_icon=🦈
+2026-01-04 21:59:58,593 - services.polymarket - INFO - Processed 373 new raw trades. Aggregator active.
+2026-01-04 22:01:28,221 - services.polymarket - INFO - Processed 478 new raw trades. Aggregator active.
+2026-01-04 22:02:57,743 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 22:04:30,295 - services.polymarket - INFO - Processed 382 new raw trades. Aggregator active.
+2026-01-04 22:05:59,889 - storage.saved_whales - INFO - get_or_create_key: name=COW1998, level_icon=🦈
+2026-01-04 22:06:01,115 - storage.saved_whales - INFO - get_or_create_key: name=VPenguin, level_icon=🦈
+2026-01-04 22:06:02,234 - storage.saved_whales - INFO - get_or_create_key: name=fabiuscii, level_icon=🐟
+2026-01-04 22:06:03,386 - storage.saved_whales - INFO - get_or_create_key: name=0xcC6385889a3466743f0ce6bD46a2B20b86d0F1C7-1764772570712, level_icon=🦈
+2026-01-04 22:06:03,459 - services.polymarket - INFO - Processed 389 new raw trades. Aggregator active.
+2026-01-04 22:07:31,156 - storage.saved_whales - INFO - get_or_create_key: name=ekitike, level_icon=🦈
+2026-01-04 22:07:31,380 - storage.saved_whales - INFO - get_or_create_key: name=gmanas, level_icon=🐋
+2026-01-04 22:07:32,446 - storage.saved_whales - INFO - get_or_create_key: name=nz7, level_icon=🦈
+2026-01-04 22:07:32,748 - storage.saved_whales - INFO - get_or_create_key: name=COW1998, level_icon=🦈
+2026-01-04 22:07:32,906 - services.polymarket - INFO - Processed 387 new raw trades. Aggregator active.
+2026-01-04 22:07:32,942 - aiogram.event - INFO - Update id=320614026 is handled. Duration 24 ms by bot id=7982935017
+2026-01-04 22:08:29,338 - aiogram.event - INFO - Update id=320614027 is handled. Duration 72 ms by bot id=7982935017
+2026-01-04 22:09:03,241 - storage.saved_whales - INFO - get_or_create_key: name=chungguskhan, level_icon=🐬
+2026-01-04 22:09:03,327 - services.polymarket - INFO - Processed 302 new raw trades. Aggregator active.
+2026-01-04 22:10:32,809 - services.polymarket - INFO - Processed 234 new raw trades. Aggregator active.
+2026-01-04 22:12:02,443 - storage.saved_whales - INFO - get_or_create_key: name=fabiuscii, level_icon=🐟
+2026-01-04 22:12:02,626 - services.polymarket - INFO - Processed 408 new raw trades. Aggregator active.
+2026-01-04 22:13:35,117 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 22:15:04,842 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 22:15:29,420 - aiogram.event - INFO - Update id=320614028 is handled. Duration 155 ms by bot id=7982935017
+2026-01-04 22:16:35,200 - storage.saved_whales - INFO - get_or_create_key: name=solater, level_icon=🐟
+2026-01-04 22:16:35,320 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 22:18:04,981 - services.polymarket - INFO - Processed 414 new raw trades. Aggregator active.
+2026-01-04 22:19:00,564 - aiogram.event - INFO - Update id=320614029 is handled. Duration 34 ms by bot id=7982935017
+2026-01-04 22:19:02,609 - aiogram.event - INFO - Update id=320614030 is handled. Duration 27 ms by bot id=7982935017
+2026-01-04 22:19:07,788 - aiogram.event - INFO - Update id=320614031 is handled. Duration 55 ms by bot id=7982935017
+2026-01-04 22:19:15,258 - services.telegram_service - INFO - User 439082374 set filter to $10000
+2026-01-04 22:19:15,258 - aiogram.event - INFO - Update id=320614032 is handled. Duration 68 ms by bot id=7982935017
+2026-01-04 22:19:19,637 - aiogram.event - INFO - Update id=320614033 is handled. Duration 46 ms by bot id=7982935017
+2026-01-04 22:19:34,389 - services.polymarket - INFO - Processed 373 new raw trades. Aggregator active.
+2026-01-04 22:20:36,570 - aiogram.event - INFO - Update id=320614034 is handled. Duration 41 ms by bot id=7982935017
+2026-01-04 22:20:38,062 - aiogram.event - INFO - Update id=320614035 is handled. Duration 48 ms by bot id=7982935017
+2026-01-04 22:20:40,904 - services.telegram_service - INFO - User 176487802 set filter to $500
+2026-01-04 22:20:40,904 - aiogram.event - INFO - Update id=320614036 is handled. Duration 47 ms by bot id=7982935017
+2026-01-04 22:20:42,485 - aiogram.event - INFO - Update id=320614037 is handled. Duration 31 ms by bot id=7982935017
+2026-01-04 22:21:08,003 - storage.saved_whales - INFO - get_or_create_key: name=payooo, level_icon=🐬
+2026-01-04 22:21:08,245 - storage.saved_whales - INFO - get_or_create_key: name=Bradking, level_icon=🦐
+2026-01-04 22:21:09,347 - storage.saved_whales - INFO - get_or_create_key: name=fcdd, level_icon=🦐
+2026-01-04 22:21:09,429 - services.polymarket - INFO - Processed 318 new raw trades. Aggregator active.
+2026-01-04 22:21:15,479 - aiogram.event - INFO - Update id=320614038 is handled. Duration 46 ms by bot id=7982935017
+2026-01-04 22:21:20,211 - aiogram.event - INFO - Update id=320614039 is handled. Duration 36 ms by bot id=7982935017
+2026-01-04 22:21:22,637 - services.telegram_service - INFO - User 176487802 set filter to $25000
+2026-01-04 22:21:22,637 - aiogram.event - INFO - Update id=320614040 is handled. Duration 51 ms by bot id=7982935017
+2026-01-04 22:21:25,282 - aiogram.event - INFO - Update id=320614041 is handled. Duration 106 ms by bot id=7982935017
+2026-01-04 22:21:26,505 - services.telegram_service - INFO - User 176487802 set filter to $10000
+2026-01-04 22:21:26,505 - aiogram.event - INFO - Update id=320614042 is handled. Duration 38 ms by bot id=7982935017
+2026-01-04 22:22:35,915 - services.polymarket - INFO - Processed 286 new raw trades. Aggregator active.
+2026-01-04 22:24:05,474 - storage.saved_whales - INFO - get_or_create_key: name=Mikee12, level_icon=🦈
+2026-01-04 22:24:05,580 - services.polymarket - INFO - Processed 348 new raw trades. Aggregator active.
+2026-01-04 22:25:38,106 - services.polymarket - INFO - Processed 424 new raw trades. Aggregator active.
+2026-01-04 22:27:07,649 - services.polymarket - INFO - Processed 423 new raw trades. Aggregator active.
+2026-01-04 22:28:37,180 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 22:30:09,658 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 22:31:43,324 - storage.saved_whales - INFO - get_or_create_key: name=peter77777, level_icon=🦈
+2026-01-04 22:31:43,581 - storage.saved_whales - INFO - get_or_create_key: name=hioa, level_icon=🦈
+2026-01-04 22:31:43,751 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 22:33:11,467 - storage.saved_whales - INFO - get_or_create_key: name=c4c4, level_icon=⚡
+2026-01-04 22:33:11,669 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 22:33:13,218 - storage.saved_whales - INFO - get_or_create_key: name=praktor, level_icon=🦈
+2026-01-04 22:33:13,345 - services.polymarket - INFO - Processed 345 new raw trades. Aggregator active.
+2026-01-04 22:34:42,968 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 22:36:12,736 - storage.saved_whales - INFO - get_or_create_key: name=c4c4, level_icon=🐋
+2026-01-04 22:36:12,897 - services.polymarket - INFO - Processed 462 new raw trades. Aggregator active.
+2026-01-04 22:37:45,401 - services.polymarket - INFO - Processed 493 new raw trades. Aggregator active.
+2026-01-04 22:39:15,702 - storage.saved_whales - INFO - get_or_create_key: name=0x01542a212c9696da5b409cae879143b89661, level_icon=⚡
+2026-01-04 22:39:15,826 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 22:39:16,027 - storage.saved_whales - INFO - get_or_create_key: name=praktor, level_icon=🦈
+2026-01-04 22:39:17,006 - storage.saved_whales - INFO - get_or_create_key: name=vyyv, level_icon=🦈
+2026-01-04 22:39:17,116 - services.polymarket - INFO - Processed 461 new raw trades. Aggregator active.
+2026-01-04 22:40:46,508 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 22:42:15,848 - services.polymarket - INFO - Processed 493 new raw trades. Aggregator active.
+2026-01-04 22:43:48,268 - storage.saved_whales - INFO - get_or_create_key: name=gmanas, level_icon=⚡
+2026-01-04 22:43:48,355 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 22:43:49,491 - storage.saved_whales - INFO - get_or_create_key: name=Ahpo, level_icon=🦈
+2026-01-04 22:43:49,654 - services.polymarket - INFO - Processed 348 new raw trades. Aggregator active.
+2026-01-04 22:45:20,130 - storage.saved_whales - INFO - get_or_create_key: name=cccccccccccccccccccccccccccc, level_icon=🦈
+2026-01-04 22:45:20,252 - services.polymarket - INFO - Processed 322 new raw trades. Aggregator active.
+2026-01-04 22:46:49,837 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 22:47:35,727 - aiogram.event - INFO - Update id=320614043 is handled. Duration 30 ms by bot id=7982935017
+2026-01-04 22:48:23,275 - storage.saved_whales - INFO - get_or_create_key: name=0xBf42b711FE4DAe59C49045BB81aD8B68ad82D698-1766141281494, level_icon=🦈
+2026-01-04 22:48:24,726 - storage.saved_whales - INFO - get_or_create_key: name=EdwardLewis, level_icon=🦈
+2026-01-04 22:48:24,864 - storage.saved_whales - INFO - get_or_create_key: name=gmanas, level_icon=🦈
+2026-01-04 22:48:24,965 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 22:49:54,530 - storage.saved_whales - INFO - get_or_create_key: name=gmanas, level_icon=⚡
+2026-01-04 22:49:54,634 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 22:49:54,830 - services.polymarket - INFO - Processed 403 new raw trades. Aggregator active.
+2026-01-04 22:50:28,332 - aiogram.event - INFO - Update id=320614044 is handled. Duration 2 ms by bot id=7982935017
+2026-01-04 22:50:51,110 - aiogram.event - INFO - Update id=320614045 is handled. Duration 33 ms by bot id=7982935017
+2026-01-04 22:51:12,462 - aiogram.event - INFO - Update id=320614046 is handled. Duration 33 ms by bot id=7982935017
+2026-01-04 22:51:27,517 - storage.saved_whales - INFO - get_or_create_key: name=c4c4, level_icon=⚡
+2026-01-04 22:51:27,616 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 22:51:27,734 - services.polymarket - INFO - Processed 377 new raw trades. Aggregator active.
+2026-01-04 22:52:57,936 - services.polymarket - INFO - Processed 132 new raw trades. Aggregator active.
+2026-01-04 22:56:43,130 - services.polymarket - INFO - Running DB cleanup...
+2026-01-04 22:56:45,526 - services.polymarket - INFO - DB cleanup completed
+2026-01-04 22:57:33,100 - storage.saved_whales - INFO - get_or_create_key: name=TheOnlyHuman, level_icon=🦈
+2026-01-04 22:57:33,297 - storage.saved_whales - INFO - get_or_create_key: name=Mikee12, level_icon=🐋
+2026-01-04 22:57:33,396 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 22:59:03,823 - storage.saved_whales - INFO - get_or_create_key: name=alliterate, level_icon=🦈
+2026-01-04 22:59:04,992 - storage.saved_whales - INFO - get_or_create_key: name=0xsven, level_icon=🦈
+2026-01-04 22:59:05,164 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 23:00:34,782 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 23:02:04,326 - storage.saved_whales - INFO - get_or_create_key: name=Mikee12, level_icon=🦈
+2026-01-04 23:02:04,534 - storage.saved_whales - INFO - get_or_create_key: name=eschaworldchampion2026, level_icon=🦈
+2026-01-04 23:02:04,693 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 23:03:34,144 - services.polymarket - INFO - Processed 475 new raw trades. Aggregator active.
+2026-01-04 23:05:07,813 - storage.saved_whales - INFO - get_or_create_key: name=benwyatt, level_icon=🦈
+2026-01-04 23:05:08,045 - storage.saved_whales - INFO - get_or_create_key: name=eschaworldchampion2026, level_icon=🦈
+2026-01-04 23:05:08,230 - storage.saved_whales - INFO - get_or_create_key: name=hioa, level_icon=🐋
+2026-01-04 23:05:08,340 - services.polymarket - INFO - Processed 408 new raw trades. Aggregator active.
+2026-01-04 23:06:38,927 - storage.saved_whales - INFO - get_or_create_key: name=iroracap1, level_icon=🦈
+2026-01-04 23:06:40,006 - storage.saved_whales - INFO - get_or_create_key: name=Sportbetting76, level_icon=🦈
+2026-01-04 23:06:40,083 - services.polymarket - INFO - Processed 403 new raw trades. Aggregator active.
+2026-01-04 23:08:09,627 - storage.saved_whales - INFO - get_or_create_key: name=iroracap1, level_icon=🐋
+2026-01-04 23:08:09,857 - services.polymarket - INFO - Processed 378 new raw trades. Aggregator active.
+2026-01-04 23:09:39,363 - services.polymarket - INFO - Processed 360 new raw trades. Aggregator active.
+2026-01-04 23:11:12,105 - storage.saved_whales - INFO - get_or_create_key: name=swisstony, level_icon=🦈
+2026-01-04 23:11:12,206 - services.polymarket - INFO - Processed 393 new raw trades. Aggregator active.
+2026-01-04 23:12:41,968 - storage.saved_whales - INFO - get_or_create_key: name=c4c4, level_icon=🐋
+2026-01-04 23:12:42,172 - storage.saved_whales - INFO - get_or_create_key: name=gmanas, level_icon=⚡
+2026-01-04 23:12:42,422 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 23:12:42,729 - services.polymarket - INFO - Processed 305 new raw trades. Aggregator active.
+2026-01-04 23:14:12,421 - services.polymarket - INFO - Processed 407 new raw trades. Aggregator active.
+2026-01-04 23:15:46,005 - storage.saved_whales - INFO - get_or_create_key: name=CarlosMC, level_icon=🦈
+2026-01-04 23:15:46,117 - services.polymarket - INFO - Processed 401 new raw trades. Aggregator active.
+2026-01-04 23:17:15,831 - storage.saved_whales - INFO - get_or_create_key: name=gmanas, level_icon=⚡
+2026-01-04 23:17:15,938 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 23:17:16,204 - storage.saved_whales - INFO - get_or_create_key: name=circleraybaococoboba, level_icon=⚡
+2026-01-04 23:17:16,301 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 23:17:16,479 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 23:18:46,921 - storage.saved_whales - INFO - get_or_create_key: name=RiskAdjusted, level_icon=🦈
+2026-01-04 23:18:47,120 - services.polymarket - INFO - Processed 399 new raw trades. Aggregator active.
+2026-01-04 23:20:16,664 - services.polymarket - INFO - Processed 406 new raw trades. Aggregator active.
+2026-01-04 23:21:49,285 - storage.saved_whales - INFO - get_or_create_key: name=gmanas, level_icon=🔥
+2026-01-04 23:21:49,377 - services.telegram_service - ERROR - Failed to send Telegram message: Telegram server says - Forbidden: bot was blocked by the user
+2026-01-04 23:21:49,968 - services.twitter_service - INFO - Tweet posted successfully: 2007955658927137028
+2026-01-04 23:21:50,054 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 23:23:19,560 - storage.saved_whales - INFO - get_or_create_key: name=gmanas, level_icon=🦈
+2026-01-04 23:23:19,753 - services.polymarket - INFO - Processed 452 new raw trades. Aggregator active.
+2026-01-04 23:24:50,186 - storage.saved_whales - INFO - get_or_create_key: name=kch123, level_icon=🦈
+2026-01-04 23:24:50,267 - services.polymarket - INFO - Processed 435 new raw trades. Aggregator active.
+2026-01-04 23:25:26,951 - aiogram.event - INFO - Update id=320614047 is handled. Duration 35 ms by bot id=7982935017
+2026-01-04 23:26:00,032 - aiogram.event - INFO - Update id=320614048 is handled. Duration 37 ms by bot id=7982935017
+2026-01-04 23:26:15,453 - aiogram.event - INFO - Update id=320614049 is handled. Duration 32 ms by bot id=7982935017
+2026-01-04 23:26:19,813 - services.polymarket - INFO - Processed 493 new raw trades. Aggregator active.
+2026-01-04 23:26:26,101 - aiogram.event - INFO - Update id=320614050 is handled. Duration 44 ms by bot id=7982935017
+2026-01-04 23:26:30,606 - aiogram.event - INFO - Update id=320614051 is handled. Duration 48 ms by bot id=7982935017
+2026-01-04 23:26:34,897 - aiogram.event - INFO - Update id=320614052 is handled. Duration 38 ms by bot id=7982935017
+2026-01-04 23:26:45,147 - aiogram.event - INFO - Update id=320614053 is handled. Duration 34 ms by bot id=7982935017
+2026-01-04 23:27:52,319 - services.polymarket - INFO - Processed 393 new raw trades. Aggregator active.
+2026-01-04 23:29:22,690 - storage.saved_whales - INFO - get_or_create_key: name=Niudad, level_icon=🦈
+2026-01-04 23:29:24,238 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 23:30:52,169 - services.polymarket - INFO - Processed 427 new raw trades. Aggregator active.
+2026-01-04 23:32:22,930 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 23:33:53,634 - storage.saved_whales - INFO - get_or_create_key: name=ruby007, level_icon=🦈
+2026-01-04 23:33:54,118 - services.polymarket - INFO - Processed 339 new raw trades. Aggregator active.
+2026-01-04 23:35:24,305 - services.polymarket - INFO - Processed 398 new raw trades. Aggregator active.
+2026-01-04 23:36:55,097 - storage.saved_whales - INFO - get_or_create_key: name=one8tyfive, level_icon=🐋
+2026-01-04 23:36:55,427 - services.polymarket - INFO - Processed 481 new raw trades. Aggregator active.
+2026-01-04 23:38:25,093 - storage.saved_whales - INFO - get_or_create_key: name=CarlosMC, level_icon=🐋
+2026-01-04 23:38:25,611 - services.polymarket - INFO - Processed 500 new raw trades. Aggregator active.
+2026-01-04 23:39:56,136 - services.polymarket - INFO - Processed 458 new raw trades. Aggregator active.
+2026-01-04 23:40:10,591 - aiogram.event - INFO - Update id=320614054 is handled. Duration 200 ms by bot id=7982935017
+2026-01-04 23:40:56,258 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-01-04 23:40:56,440 - aiogram.dispatcher - INFO - Polling stopped for bot @PolymarketWhales_bot id=7982935017 - 'Polymarket Whales 🐋'
+2026-01-04 23:40:56,443 - aiogram.dispatcher - INFO - Polling stopped
+2026-01-04 23:41:28,347 - services.polymarket - INFO - Processed 466 new raw trades. Aggregator active.
+./run.sh: line 64: 1112289 Killed                  python main.py

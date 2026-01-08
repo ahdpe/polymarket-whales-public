@@ -17,6 +17,7 @@ import time
 from typing import Optional
 logger = logging.getLogger(__name__)
 TWITTER_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), '..', 'twitter_settings.json')
+TWITTER_QUEUE_FILE = os.path.join(os.path.dirname(__file__), '..', 'twitter_queue.json')
 DEFAULT_TWEET_INTERVAL_SEC = 25 * 60
 PAUSE_ON_403_SEC = 6 * 60 * 60
 PROBABILITY_OPTIONS = {'any': None, '1_99': (0.01, 0.99), '5_95': (0.05, 0.95), '10_90': (0.1, 0.9)}
@@ -143,9 +144,17 @@ class TwitterService:
         """Initialize Twitter client."""
         pass
 
+    def wants_trade(self, trade_data: dict) -> tuple[bool, str]:
+        """
+        Check if Twitter wants this trade (filters only, no rate limits).
+        Returns (wants_trade, reason_if_not).
+        Used to determine if we should call post_trade_alert (which handles queue).
+        """
+        pass
+
     def should_post(self, trade_data: dict) -> tuple[bool, str]:
         """
-        Check if trade should be posted to Twitter.
+        Check if trade should be posted to Twitter right now (includes rate limits).
         Returns (should_post, reason_if_not).
         """
         pass
@@ -166,8 +175,29 @@ class TwitterService:
         """Get or create queue lock."""
         pass
 
+    def _load_queue(self):
+        """Load queue from disk."""
+        pass
+
+    def _save_queue(self):
+        """Save queue to disk."""
+        pass
+
+    def _get_trade_value_usd(self, trade_data: dict) -> float:
+        """Calculate trade value in USD."""
+        pass
+
+    def _get_trader_id(self, trade_data: dict) -> str:
+        """Get unique trader identifier (address or name)."""
+        pass
+
     async def _add_to_queue(self, trade_data: dict):
-        """Add trade to pending queue if there's space."""
+        """
+        Add trade to pending queue with smart prioritization:
+        1. Deduplicate by trader: if same trader exists, keep only the largest trade
+        2. If queue is full (>= 10), prioritize by trade size, keep largest 10
+        3. If queue is not full, maintain FIFO order
+        """
         pass
 
     async def _process_pending_queue(self):
