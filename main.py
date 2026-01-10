@@ -218,7 +218,13 @@ async def handle_trade(trade_data):
         # 2. Check if Twitter wants this trade (independent of Telegram)
         # Use wants_trade (filters only) - post_trade_alert will handle queue/rate limits
         twitter_service = get_twitter_service()
-        twitter_wants = twitter_service and twitter_service.wants_trade(trade_data)[0]
+        twitter_wants = False
+        twitter_reason = ""
+        if twitter_service:
+            twitter_wants, twitter_reason = twitter_service.wants_trade(trade_data)
+            if not twitter_wants:
+                trader_id = trade_data.get('name') or trade_data.get('trader_address', '')[:10]
+                logger.info(f"Twitter skipped trade: {twitter_reason} (trader: {trader_id}..., value: ${value_usd:,.0f}, price: {price*100:.1f}%)")
         
         # If no one wants this trade (neither Telegram nor Twitter), stop here!
         if not recipients and not twitter_wants:
@@ -371,15 +377,13 @@ def single_instance_check():
         print("Another instance is already running. Exiting.")
         sys.exit(1)
 
-async def main():
-    # Ensure single instance
-    lock_handle = single_instance_check()
+async def start_insider_collector():
+    """Start all background tasks and return list of tasks."""
+    tasks = []
     
-    # Initialize saved whales DB
-    saved_whales.init_db()
-
     # Start Telegram in background
     tg_task = asyncio.create_task(start_telegram())
+    tasks.append(tg_task)
     
     # Start Polymarket Service
     global poly_service
@@ -390,20 +394,43 @@ async def main():
     
     # Run Polymarket trade polling (uses POLL_INTERVAL from polymarket.py)
     trade_polling_task = asyncio.create_task(poly_service.poll_trades(handle_trade))
+    tasks.append(trade_polling_task)
+    
     # SPLIT/MERGE/REDEEM activity polling (enabled)
     activity_polling_task = asyncio.create_task(poly_service.poll_activities(handle_trade))
+    tasks.append(activity_polling_task)
     
     # Start Twitter queue processor (if Twitter is configured)
     twitter_service = get_twitter_service()
-    twitter_queue_task = None
     if twitter_service and twitter_service.is_configured:
         twitter_queue_task = asyncio.create_task(twitter_service.process_queue_periodically(interval=60))
-    
-    # Wait for all tasks
-    tasks = [trade_polling_task, activity_polling_task, tg_task]
-    if twitter_queue_task:
         tasks.append(twitter_queue_task)
-    await asyncio.gather(*tasks)
+    
+    return tasks
+
+async def main():
+    # Ensure single instance
+    lock_handle = single_instance_check()
+    
+    # Initialize saved whales DB
+    saved_whales.init_db()
+
+    # Start all background tasks
+    tasks = await start_insider_collector()
+    
+    # Wait for all tasks with proper cleanup
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        # Cleanup: cancel all tasks
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        logger.info("All tasks cancelled and cleaned up")
 
 if __name__ == "__main__":
     try:

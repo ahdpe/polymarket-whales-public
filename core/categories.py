@@ -11,6 +11,16 @@ CRYPTO_KEYWORDS = [
     'halving', 'mining', 'satoshi', 'vitalik', 'crypto market',
 ]
 
+# Economics/Finance keywords (exclude from sports even if URL has /sports/)
+ECONOMICS_KEYWORDS = [
+    'fed', 'federal reserve', 'interest rate', 'interest rates', 'fomc',
+    'basis point', 'basis points', 'bps', 'federal funds', 'monetary policy',
+    'inflation', 'cpi', 'unemployment', 'gdp', 'economic', 'economy',
+    'treasury', 'bond', 'yield', 'recession', 'stimulus', 'quantitative easing',
+    'central bank', 'ecb', 'boj', 'boe', 'rate cut', 'rate hike', 'rate increase',
+    'rate decrease', 'policy decision', 'meeting decision',
+]
+
 # Sports-related keywords
 SPORTS_KEYWORDS = [
     'nfl', 'nba', 'mlb', 'nhl', 'fifa', 'uefa', 'premier league',
@@ -101,22 +111,44 @@ def detect_category(title: str, slug: str = "", url: str = "") -> str:
     Detect the category of a trade based on its market title, URL slug, and full URL.
     Returns: 'crypto', 'sports', or 'other'
     """
-    # Check URL path for sports (e.g. /sports/nba/... or /sports/por/...)
-    if url and '/sports/' in url.lower():
-        return 'sports'
-    
     # Combine title and slug for search (slug is very useful for categories like /sports/nba/...)
     text_to_search = (title + " " + slug).lower()
     
-    # Check for sports keywords FIRST (priority over crypto for ambiguous terms like "kraken")
-    for keyword in SPORTS_KEYWORDS:
+    # First, check for explicit non-sports categories (economics, politics, etc.)
+    # These should override URL-based sports detection
+    for keyword in ECONOMICS_KEYWORDS:
         if keyword in text_to_search:
-            return 'sports'
+            # Economics/finance markets should be 'other', not 'sports'
+            # Check if it's also crypto-related
+            for crypto_kw in CRYPTO_KEYWORDS:
+                if crypto_kw in text_to_search:
+                    return 'crypto'
+            return 'other'
     
     # Check for crypto keywords
     for keyword in CRYPTO_KEYWORDS:
         if keyword in text_to_search:
             return 'crypto'
+    
+    # Check for sports keywords
+    has_sports_keyword = False
+    for keyword in SPORTS_KEYWORDS:
+        if keyword in text_to_search:
+            has_sports_keyword = True
+            break
+    
+    # Only use URL /sports/ if there are actual sports keywords in the title
+    # This prevents misclassified markets (e.g., Fed decisions in /sports/) from being marked as sports
+    if url and '/sports/' in url.lower():
+        if has_sports_keyword:
+            return 'sports'
+        # If URL has /sports/ but no sports keywords, it's likely misclassified - check content
+        # If it has economics keywords, it's already handled above
+        # Otherwise, treat as 'other' to avoid false positives
+    
+    # If sports keywords found in title, return sports
+    if has_sports_keyword:
+        return 'sports'
     
     return 'other'
 
