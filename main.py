@@ -147,7 +147,7 @@ async def handle_trade(trade_data):
         side = trade_data.get('side', 'UNKNOWN')
 
         # --- OPTIMIZATION: Identify recipients BEFORE triggering expensive API calls ---
-        recipients = [] # List of (chat_id, localized_level_emoji, localized_level_name, localized_lang)
+        recipients = set() # Set of chat_ids to prevent duplicates
 
         # Helper function to check if side type should be shown
         def should_show_side_type(side, trade_data, side_types_prefs):
@@ -213,7 +213,7 @@ async def handle_trade(trade_data):
         # 1. Check registered users
         for chat_id, min_threshold in user_filters.items():
             if check_user(chat_id, min_threshold):
-                recipients.append(chat_id)
+                recipients.add(chat_id)
         
         # 2. Check if Twitter wants this trade (independent of Telegram)
         # Use wants_trade (filters only) - post_trade_alert will handle queue/rate limits

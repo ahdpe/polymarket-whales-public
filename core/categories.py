@@ -19,6 +19,11 @@ SPORTS_KEYWORDS = [
     'tennis', 'golf', 'boxing', 'ufc', 'mma', 'f1', 'formula 1',
     'olympics', 'match', 'game', 'score', 'vs ', ' vs',
     'sports',  # Generic
+    
+    # Football club abbreviations and patterns
+    ' fc ', ' sv ', ' sc ', ' afc ', ' cfc ', ' bfc ', ' rfc ', ' utd',
+    ' win on ', 'st mirren', 'freiburg', 'hamburger', 'macclesfield',
+    
     # Regional football competitions
     'acn', 'afcon', 'afc', 'concacaf', 'copa america', 'euro 2024', 'euro 2028',
     
@@ -32,7 +37,8 @@ SPORTS_KEYWORDS = [
     
     # Premier League / Soccer Clubs
     'manchester', 'liverpool', 'arsenal', 'chelsea', 'real madrid',
-    'barcelona', 'bayern', 'juventus', 'psg', 'inter milan', 'ac milan',
+    'barcelona', 'bayern', 'bayer leverkusen', 'leverkusen', 'bayer 04',
+    'juventus', 'psg', 'inter milan', 'ac milan',
     'tottenham', 'newcastle', 'aston villa', 'dortmund',
     
     # NFL Teams (Complete)
@@ -42,6 +48,14 @@ SPORTS_KEYWORDS = [
     'commanders', 'texans', 'colts', 'jaguars', 'titans', 'chargers',
     'raiders', 'broncos', 'seahawks', 'cardinals', 'rams', 'saints',
     'buccaneers', 'bucs', 'panthers', 'falcons',
+    
+    # NHL Teams
+    'bruins', 'maple leafs', 'canadiens', 'senators', 'sabres',
+    'lightning', 'panthers', 'red wings', 'blackhawks', 'predators',
+    'blues', 'wild', 'jets', 'stars', 'avalanche', 'hurricanes',
+    'blue jackets', 'devils', 'islanders', 'rangers', 'flyers',
+    'penguins', 'capitals', 'kraken', 'canucks', 'oilers', 'flames',
+    'golden knights', 'ducks', 'kings', 'sharks', 'coyotes',
     
     # National Soccer Teams (World Cup, etc.)
     'argentina', 'brazil', 'france', 'germany', 'england', 'spain',
@@ -64,8 +78,21 @@ SPORTS_KEYWORDS = [
     'spl', 'saudi pro league', 'al nassr', 'al hilal', 
     'al ahli', 'al ittihad', 'al ettifaq', 'al shabab', 'saudi',
 
+    # Italian Football (Serie A/B/C)
+    'serie a', 'serie b', 'serie c', 'calcio',
+    'inter', 'milan', 'roma', 'napoli', 'lazio', 'fiorentina',
+    'atalanta', 'torino', 'bologna', 'udinese', 'sampdoria',
+    'genoa', 'verona', 'empoli', 'sassuolo', 'monza', 'lecce',
+    'salernitana', 'spezia', 'cremonese', 'pisa', 'entella',
+
+    # Spanish Football (La Liga)
+    'la liga', 'almería', 'almeria', 'sevilla', 'valencia', 
+    'villarreal', 'athletic bilbao', 'real sociedad', 'betis',
+    'getafe', 'osasuna', 'celta', 'mallorca', 'cadiz',
+
     # Betting / Game Context
     'moneyline', 'spread', 'spreads', '1st half',
+    'draw', 'tie', 'o/u', 'over/under', 'totals',
 ]
 
 
@@ -81,15 +108,15 @@ def detect_category(title: str, slug: str = "", url: str = "") -> str:
     # Combine title and slug for search (slug is very useful for categories like /sports/nba/...)
     text_to_search = (title + " " + slug).lower()
     
+    # Check for sports keywords FIRST (priority over crypto for ambiguous terms like "kraken")
+    for keyword in SPORTS_KEYWORDS:
+        if keyword in text_to_search:
+            return 'sports'
+    
     # Check for crypto keywords
     for keyword in CRYPTO_KEYWORDS:
         if keyword in text_to_search:
             return 'crypto'
-    
-    # Check for sports keywords
-    for keyword in SPORTS_KEYWORDS:
-        if keyword in text_to_search:
-            return 'sports'
     
     return 'other'
 
