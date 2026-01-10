@@ -37,6 +37,10 @@ def single_instance_check():
     """Ensure only one instance of the bot is running."""
     pass
 
+async def start_insider_collector():
+    """Start all background tasks and return list of tasks."""
+    pass
+
 async def main():
     pass
 if __name__ == '__main__':
