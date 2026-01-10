@@ -157,7 +157,7 @@ async def btn_start_stop(message: types.Message):
     """Handle Start/Stop toggle button."""
     pass
 
-@dp.message(F.text.in_(['🇷🇺 RU / 🇬🇧 ENG', '🇬🇧 ENG / 🇷🇺 RU']))
+@dp.message(F.text.in_(['🇷🇺 / 🇬🇧', '🇬🇧 / 🇷🇺']))
 async def btn_language(message: types.Message):
     """Handle Language toggle button."""
     pass

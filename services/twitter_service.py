@@ -160,7 +160,7 @@ class TwitterService:
         pass
 
     def format_tweet(self, trade_data: dict) -> str:
-        """Format trade data as a tweet. English only, no emojis in header."""
+        """Format trade data as a tweet with dynamic labels for BUY trades only."""
         pass
 
     async def post_tweet(self, tweet_text: str) -> Optional[str]:
