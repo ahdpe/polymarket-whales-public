@@ -471,7 +471,7 @@ class TwitterService:
         return True, "ok"
     
     def format_tweet(self, trade_data: dict) -> str:
-        """Format trade data as a tweet. English only, no emojis in header."""
+        """Format trade data as a tweet with dynamic labels for BUY trades only."""
         # Extract data
         market_title = trade_data.get('title', 'Unknown Market')
         side = trade_data.get('side', 'UNKNOWN')
@@ -480,67 +480,219 @@ class TwitterService:
         size = float(trade_data.get('size', 0))
         value_usd = price * size
         
-        # For SPLIT/MERGE/REDEEM, use side if outcome is empty
         side_upper = side.upper()
+        is_buy = side_upper == 'BUY'
         is_special = side_upper in ('SPLIT', 'MERGE', 'REDEEM')
-        if is_special:
-            # For special events, use side name (SPLIT, MERGE, or REDEEM + outcome if available)
-            first_line_text = f"{side_upper} {outcome}".strip() if outcome else side_upper
-        else:
-            # For BUY/SELL, add side before outcome
-            if outcome:
-                first_line_text = f"{side_upper} {outcome}"  # "BUY Knicks"
+        
+        # Helper: Get probability label for BUY trades
+        def get_probability_label(prob_pct):
+            if prob_pct >= 80:
+                return "HIGH-CONVICTION BUY"
+            elif prob_pct >= 65:
+                return "CONFIDENT BUY"
+            elif prob_pct >= 50:
+                return "BALANCED BUY"
+            elif prob_pct >= 35:
+                return "RISKY BUY"
             else:
-                first_line_text = side_upper  # "BUY" or "SELL"
+                return "HIGH-RISK BUY"
+        
+        # Helper: Get size label
+        def get_size_label(usd):
+            if usd >= 300000:
+                return "MEGA Whale"
+            elif usd >= 150000:
+                return "Big Whale"
+            elif usd >= 100000:
+                return "Whale"
+            return None  # Only label if >= $100K
+        
+        # Helper: Get trader description (size × probability)
+        def get_trader_description(usd, prob_pct):
+            if 100000 <= usd < 150000:
+                if prob_pct >= 65:
+                    return "Conviction trader"
+                elif prob_pct >= 40:
+                    return "Directional trader"
+                else:
+                    return "Speculative trader"
+            elif 150000 <= usd < 300000:
+                if prob_pct >= 70:
+                    return "Strong-conviction whale"
+                elif prob_pct >= 45:
+                    return "Aggressive whale"
+                else:
+                    return "High-risk whale"
+            elif usd >= 300000:
+                if prob_pct >= 75:
+                    return "High-confidence mega whale"
+                elif prob_pct >= 40:
+                    return "Aggressive mega whale"
+                else:
+                    return "Extreme-risk mega whale"
+            return None
+        
+        # Helper: Get wallet age label
+        def get_wallet_age_label(age_str):
+            """Parse wallet age string and return label."""
+            if not age_str:
+                return None
+            
+            age_lower = age_str.lower()
+            
+            # Parse different formats: "2d", "3mo", "2y 3mo", "1y", etc.
+            if 'y' in age_lower:
+                # Extract years
+                years_match = None
+                for part in age_lower.split():
+                    if 'y' in part:
+                        try:
+                            years_match = float(part.replace('y', '').replace('mo', '').replace('d', ''))
+                            break
+                        except:
+                            pass
+                
+                if years_match is not None:
+                    if years_match >= 3:
+                        return "Very old wallet"
+                    elif years_match >= 1:
+                        return "Old wallet"
+            
+            if 'mo' in age_lower:
+                months_match = None
+                for part in age_lower.split():
+                    if 'mo' in part:
+                        try:
+                            months_match = float(part.replace('mo', '').replace('d', ''))
+                            break
+                        except:
+                            pass
+                
+                if months_match is not None:
+                    if months_match >= 6:
+                        return "Established wallet"
+                    elif months_match >= 1:
+                        return "Young wallet"
+            
+            if 'd' in age_lower or 'h' in age_lower:
+                days_match = None
+                hours_match = None
+                for part in age_lower.split():
+                    if 'd' in part:
+                        try:
+                            days_match = float(part.replace('d', '').replace('h', ''))
+                            break
+                        except:
+                            pass
+                    elif 'h' in part:
+                        try:
+                            hours_match = float(part.replace('h', ''))
+                            break
+                        except:
+                            pass
+                
+                if days_match is not None:
+                    if days_match >= 7:
+                        return "Young wallet"
+                    elif days_match >= 1:
+                        return "Fresh wallet"
+                elif hours_match is not None:
+                    return "Brand-new wallet"
+                else:
+                    # Check for "<1h" or similar
+                    if '<' in age_lower or 'less' in age_lower:
+                        return "Brand-new wallet"
+            
+            return None
+        
+        # Build first line
+        if is_buy:
+            # BUY trades: dynamic labels based on probability
+            prob_pct = price * 100
+            
+            # Check if binary market (YES/NO)
+            outcome_upper = outcome.upper() if outcome else ""
+            is_binary = outcome_upper in ('YES', 'NO')
+            
+            if is_binary:
+                # Binary market: YES @ X% or NO @ X%
+                first_line = f"{get_probability_label(prob_pct)} — {outcome_upper} @ {prob_pct:.1f}%"
+            else:
+                # Non-binary market: BUY <outcome> @ X%
+                outcome_text = outcome if outcome else "Unknown"
+                first_line = f"{get_probability_label(prob_pct)} — BUY {outcome_text} @ {prob_pct:.1f}%"
+        elif is_special:
+            # SPLIT/MERGE/REDEEM: neutral format
+            first_line = f"{side_upper} {outcome}".strip() if outcome else side_upper
+        else:
+            # SELL: neutral format
+            if outcome:
+                first_line = f"{side_upper} {outcome} @ {price*100:.1f}%"
+            else:
+                first_line = f"{side_upper} @ {price*100:.1f}%"
+        
+        # Build size line
+        size_label = get_size_label(value_usd)
+        if size_label:
+            money_line = f"Size: ${value_usd:,.0f} 💵 — {size_label}"
+        else:
+            money_line = f"Size: ${value_usd:,.0f} 💵"
         
         # Trader info
         trader_address = trade_data.get('trader_address', '')
         trader_name = trade_data.get('name', '') or trade_data.get('trader_name', '')
         
-        # Shorten address for display: 0xfffa…8864 (4-6 chars + … + 4 chars)
+        # Shorten address for display
         if trader_address and len(trader_address) > 12:
-            # Use 4-6 characters from start + … + 4 characters from end
             short_address = f"{trader_address[:4]}…{trader_address[-4:]}"
         else:
             short_address = trader_address or 'Unknown'
         
-        # Trader display: always "Trader: ... 🐋"
-        if trader_name and trader_name.strip():
-            trader_display = f"Trader: {trader_name} 🐋"
+        # Build trader display (description first, then colon and value)
+        if is_buy and value_usd >= 100000:
+            # BUY trades >= $100K: add description
+            prob_pct = price * 100
+            trader_desc = get_trader_description(value_usd, prob_pct)
+            if trader_desc:
+                if trader_name and trader_name.strip():
+                    trader_display = f"{trader_desc}: {trader_name} 🐋"
+                else:
+                    trader_display = f"{trader_desc}: {short_address} 🐋"
+            else:
+                # Fallback if no description (shouldn't happen for >= $100K BUY)
+                if trader_name and trader_name.strip():
+                    trader_display = f"Trader: {trader_name} 🐋"
+                else:
+                    trader_display = f"Trader: {short_address} 🐋"
         else:
-            trader_display = f"Trader: {short_address} 🐋"
+            # Non-BUY or < $100K: no description, use default format
+            if trader_name and trader_name.strip():
+                trader_display = f"Trader: {trader_name} 🐋"
+            else:
+                trader_display = f"Trader: {short_address} 🐋"
         
-        # Profile URL with https://
-        trader_url = f"https://polymarket.com/profile/{trader_address}" if trader_address else ""
+        # Wallet age (label first, then "age:", then value)
+        wallet_age_str = trade_data.get('wallet_age_str', '')
+        wallet_age_label = get_wallet_age_label(wallet_age_str) if wallet_age_str else None
         
-        # Wallet age
-        wallet_age = trade_data.get('wallet_age_str', '')
-        
-        # Money display - only first value with 💵
-        money_line = f"Size: ${value_usd:,.0f} 💵"
-        
-        # Build tweet lines - new format
-        # For SPLIT/MERGE/REDEEM, don't show price percentage
-        if is_special:
-            first_line = first_line_text  # Just "SPLIT", "MERGE", or "REDEEM"
-        else:
-            first_line = f"{first_line_text} @ {price*100:.1f}%"  # "YES @ 91.0%"
-        
+        # Build tweet lines (strictly multi-line with blank lines)
         lines = [
             first_line,
-            money_line,  # "Size: $189,596 💵"
+            money_line,
             "",
-            f"Market: {market_title}",  # Market title without URL
+            f"Market: {market_title}",
             "",
-            trader_display,  # "Trader: GoriIIa 🐋" or "Trader: 0xfffa…8864 🐋"
-            f"Profile: {trader_url}" if trader_url else None,  # "Profile: https://polymarket.com/profile/0xfffa..."
+            trader_display,
         ]
         
-        if wallet_age:
-            lines.append(f"Wallet age: {wallet_age}")  # Lowercase "age"
+        if wallet_age_str:
+            if wallet_age_label:
+                lines.append(f"{wallet_age_label}, age: {wallet_age_str}")
+            else:
+                lines.append(f"Wallet age: {wallet_age_str}")
         
-        # Filter None values and join
-        tweet = "\n".join(line for line in lines if line is not None)
+        # Join with newlines
+        tweet = "\n".join(lines)
         
         # Ensure tweet is under 280 chars
         if len(tweet) > 280:
@@ -548,8 +700,8 @@ class TwitterService:
             max_title_len = 280 - (len(tweet) - len(market_title)) - 3
             if max_title_len > 20:
                 market_title = market_title[:max_title_len] + "..."
-                lines[2] = market_title
-                tweet = "\n".join(line for line in lines if line is not None)
+                lines[3] = f"Market: {market_title}"
+                tweet = "\n".join(lines)
         
         return tweet
     

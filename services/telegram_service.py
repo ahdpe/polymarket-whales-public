@@ -128,9 +128,9 @@ def get_user_lang(chat_id):
 def get_language_button_text(current_lang: str) -> str:
     """Get language button text showing current language first, then switch option."""
     if current_lang == 'ru':
-        return "🇷🇺 RU / 🇬🇧 ENG"
+        return "🇷🇺 / 🇬🇧"
     else:
-        return "🇬🇧 ENG / 🇷🇺 RU"
+        return "🇬🇧 / 🇷🇺"
 
 def is_user_active(chat_id):
     """Check if user bot is active (started)."""
@@ -512,7 +512,7 @@ async def btn_start_stop(message: types.Message):
         reply_markup=get_main_keyboard(chat_id)
     )
 
-@dp.message(F.text.in_(["🇷🇺 RU / 🇬🇧 ENG", "🇬🇧 ENG / 🇷🇺 RU"]))
+@dp.message(F.text.in_(["🇷🇺 / 🇬🇧", "🇬🇧 / 🇷🇺"]))
 async def btn_language(message: types.Message):
     """Handle Language toggle button."""
     chat_id = message.chat.id

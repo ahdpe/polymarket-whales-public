@@ -2,7 +2,7 @@
 
 # Crypto-related keywords
 CRYPTO_KEYWORDS = [
-    'bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'solana', 'sol',
+    'bitcoin', 'btc', 'ethereum', ' eth ', 'crypto', 'solana', ' sol ',
     'dogecoin', 'doge', 'xrp', 'ripple', 'cardano', 'ada', 'polygon',
     'matic', 'chainlink', 'link', 'avalanche', 'avax', 'binance', 'bnb',
     'litecoin', 'ltc', 'polkadot', 'dot', 'shiba', 'pepe', 'memecoin',
@@ -63,6 +63,9 @@ SPORTS_KEYWORDS = [
     # Saudi Pro League
     'spl', 'saudi pro league', 'al nassr', 'al hilal', 
     'al ahli', 'al ittihad', 'al ettifaq', 'al shabab', 'saudi',
+
+    # Betting / Game Context
+    'moneyline', 'spread', 'spreads', '1st half',
 ]
 
 
