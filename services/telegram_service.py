@@ -9,9 +9,21 @@ import hashlib
 from config import TELEGRAM_BOT_TOKEN, FILTERS, OWNER_ID
 from core.localization import get_text
 from storage import saved_whales
+from services.report_service import generate_report
+_poly_service = None
+
+def set_poly_service(service):
+    """Store reference to PolymarketService for report generation."""
+    pass
 
 class NoteState(StatesGroup):
     waiting_for_note = State()
+
+class AgeFilterState(StatesGroup):
+    waiting_for_range = State()
+
+class PositionsFilterState(StatesGroup):
+    waiting_for_range = State()
 MAX_COMMENT_LEN = 240
 logger = logging.getLogger(__name__)
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
@@ -27,7 +39,7 @@ def load_settings():
 def save_settings():
     """Save user settings to file."""
     pass
-(user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types, bot_enabled) = load_settings()
+(user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types, user_wallet_ages, user_open_positions, bot_enabled) = load_settings()
 
 def is_bot_enabled():
     """Check if bot is enabled (not stopped by admin)."""
@@ -86,6 +98,22 @@ def get_probability_keyboard(chat_id):
     """Create inline keyboard for probability filter selection."""
     pass
 
+def get_age_keyboard(chat_id):
+    """Create inline keyboard for wallet age filter selection."""
+    pass
+
+def get_positions_keyboard(chat_id):
+    """Create inline keyboard for open positions filter selection."""
+    pass
+
+def format_age_range(age_filter, lang):
+    """Format age filter range for display."""
+    pass
+
+def format_positions_range(pos_filter, lang):
+    """Format positions filter range for display."""
+    pass
+
 def get_categories_keyboard(chat_id):
     """Create inline keyboard for category selection."""
     pass
@@ -96,6 +124,11 @@ def get_side_types_keyboard(chat_id):
 
 @dp.message(Command('start'))
 async def cmd_start(message: types.Message):
+    pass
+
+@dp.message(Command('report'))
+async def cmd_report(message: types.Message):
+    """Generate and send report on demand (admin only)."""
     pass
 
 @dp.message(Command('amount'))
@@ -131,6 +164,16 @@ async def btn_categories(message: types.Message):
 @dp.message(F.text.in_(['⚖️ Вероятность', '⚖️ Probability']))
 async def btn_probability(message: types.Message):
     """Handle Probability button press."""
+    pass
+
+@dp.message(F.text.in_(['🕐 Возраст', '🕐 Age']))
+async def btn_age(message: types.Message):
+    """Handle Age button press - show age filter menu."""
+    pass
+
+@dp.message(F.text.in_(['💼 Позиции', '💼 Positions']))
+async def btn_positions(message: types.Message):
+    """Handle Positions button press - show positions filter menu."""
     pass
 
 @dp.message(F.text.in_(['🔄 Типы событий', '🔄 Event Types']))
@@ -181,7 +224,7 @@ async def btn_show_menu(message: types.Message):
 async def cmd_menu(message: types.Message):
     """Command to show menu."""
     pass
-AQUARIUM_PAGE_SIZE = 5
+AQUARIUM_PAGE_SIZE = 10
 
 def get_aquarium_list(chat_id, page=0, edit_mode=False):
     """
@@ -278,6 +321,36 @@ async def callback_probability(callback: CallbackQuery):
     """Handle probability filter selection."""
     pass
 
+@dp.callback_query(F.data == 'age_any')
+async def callback_age_any(callback: CallbackQuery):
+    """Handle age filter 'any' selection."""
+    pass
+
+@dp.callback_query(F.data == 'age_custom')
+async def callback_age_custom(callback: CallbackQuery, state: FSMContext):
+    """Handle age filter 'custom' selection - start FSM."""
+    pass
+
+@dp.message(AgeFilterState.waiting_for_range)
+async def process_age_range(message: types.Message, state: FSMContext):
+    """Process age range input from user."""
+    pass
+
+@dp.callback_query(F.data == 'pos_any')
+async def callback_positions_any(callback: CallbackQuery):
+    """Handle positions filter 'any' selection."""
+    pass
+
+@dp.callback_query(F.data == 'pos_custom')
+async def callback_positions_custom(callback: CallbackQuery, state: FSMContext):
+    """Handle positions filter 'custom' selection - start FSM."""
+    pass
+
+@dp.message(PositionsFilterState.waiting_for_range)
+async def process_positions_range(message: types.Message, state: FSMContext):
+    """Process positions range input from user."""
+    pass
+
 @dp.callback_query(F.data.startswith('cat_'))
 async def callback_category(callback: CallbackQuery):
     """Handle category toggle callback."""
@@ -302,6 +375,14 @@ def get_user_probability_filter(chat_id):
 
 def get_user_side_types(chat_id):
     """Get user's side type preferences."""
+    pass
+
+def get_user_wallet_age_filter(chat_id):
+    """Get user's wallet age filter. Returns dict with min_days and max_days (or None)."""
+    pass
+
+def get_user_open_positions_filter(chat_id):
+    """Get user's open positions filter. Returns dict with min_count and max_count (or None)."""
     pass
 
 def is_user_active(chat_id):
@@ -396,6 +477,10 @@ async def cmd_twitter_merge(message: types.Message):
 @dp.message(Command('twitter_cat'))
 async def cmd_twitter_cat(message: types.Message):
     """Set category filters for Twitter (owner only)."""
+    pass
+
+async def send_admin_notification(message: str, parse_mode='HTML'):
+    """Send notification message to bot owner/admin."""
     pass
 
 async def start_telegram():
