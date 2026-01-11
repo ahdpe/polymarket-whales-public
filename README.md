@@ -1,4 +1,4 @@
-# Polymarket Whales Bot 🐋
+# Polymarket Whale Alerts 🐋
 
 [🇷🇺 Русский](#-русский) | [🇬🇧 English](#-english)
 

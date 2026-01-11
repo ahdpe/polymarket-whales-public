@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ===========================================
-# Polymarket Whales Bot Launcher
+# Polymarket Whale Alerts Launcher
 # ===========================================
 # Usage:
 #   ./run.sh dev   - Run with development environment
