@@ -1,7 +1,7 @@
 # PUBLIC SHELL REPOSITORY
 > This is a public demonstration shell. Core logic is stripped.
 
-# Polymarket Whales Bot 🐋
+# Polymarket Whale Alerts 🐋
 
 [🇷🇺 Русский](#-русский) | [🇬🇧 English](#-english)
 

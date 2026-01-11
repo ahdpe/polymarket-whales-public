@@ -3,7 +3,7 @@
 TRANSLATIONS = {
     'ru': {
         # Start message
-        'welcome': "🐋 *Polymarket Whales*\n\nКрупные сделки на Polymarket — в реальном времени.\n\n*Что умеет бот:*\n• 🔔 Уведомления от $500 до $100,000+\n• 🎯 Фильтры по сумме и категориям\n• 🔗 Быстрые ссылки на профили\n• ⭐ Избранное — сохранённые трейдеры и заметки\n\nНастрой уведомления кнопками ниже.",
+        'welcome': "🐋 *Polymarket Whale Alerts*\n\nКрупные сделки на Polymarket — в реальном времени.\n\n*Что умеет бот:*\n• 🔔 Уведомления от $500 до $100,000+\n• 🎯 Фильтры: сумма, категории, вероятность, типы, возраст, позиции\n• 📊 Аналитика: PnL, возраст кошелька, открытые позиции\n• 🔗 Быстрые ссылки на профили\n• ⭐ Избранное — сохранённые трейдеры и заметки\n\nНастрой уведомления кнопками ниже.",
         
         # Buttons
         'btn_filters': "⚙️ Фильтры",
@@ -93,7 +93,7 @@ TRANSLATIONS = {
         'cat_nothing': "Ничего",
         
         # About
-        'about': """*Polymarket Whales* 🐋
+        'about': """*Polymarket Whale Alerts* 🐋
 Мониторинг крупных сделок на [Polymarket](https://polymarket.com) в реальном времени.
 
 *Функционал:*
@@ -162,7 +162,7 @@ TRANSLATIONS = {
     
     'en': {
         # Start message
-        'welcome': "🐋 *Polymarket Whales*\n\nLarge trades on Polymarket — in real-time.\n\n*What the bot can do:*\n• 🔔 Alerts from $500 to $100,000+\n• 🎯 Amount and category filters\n• 🔗 Quick links to profiles\n• ⭐ Favorites — saved traders and notes\n\nConfigure alerts using the buttons below.",
+        'welcome': "🐋 *Polymarket Whale Alerts*\n\nLarge trades on Polymarket — in real-time.\n\n*What the bot can do:*\n• 🔔 Alerts from $500 to $100,000+\n• 🎯 Filters: amount, categories, probability, types, age, positions\n• 📊 Analytics: PnL, wallet age, open positions\n• 🔗 Quick links to profiles\n• ⭐ Favorites — saved traders and notes\n\nConfigure alerts using the buttons below.",
         
         # Buttons
         'btn_filters': "⚙️ Filters",
@@ -251,7 +251,7 @@ TRANSLATIONS = {
         'cat_nothing': "None",
         
         # About
-        'about': """*Polymarket Whales* 🐋
+        'about': """*Polymarket Whale Alerts* 🐋
 Real-time monitoring of large trades on [Polymarket](https://polymarket.com).
 
 *Functionality:*
