@@ -7,7 +7,7 @@ CRYPTO_KEYWORDS = [
     'matic', 'chainlink', 'link', 'avalanche', 'avax', 'binance', 'bnb',
     'litecoin', 'ltc', 'polkadot', 'dot', 'shiba', 'pepe', 'memecoin',
     'defi', 'nft', 'blockchain', 'altcoin', 'stablecoin', 'usdt', 'usdc',
-    'tether', 'coinbase', 'binance', 'kraken', 'spot etf', 'bitcoin etf',
+    'tether', 'coinbase', 'binance', 'kraken exchange', 'kraken.com', 'kraken crypto', 'spot etf', 'bitcoin etf',
     'halving', 'mining', 'satoshi', 'vitalik', 'crypto market',
 ]
 
@@ -125,17 +125,22 @@ def detect_category(title: str, slug: str = "", url: str = "") -> str:
                     return 'crypto'
             return 'other'
     
-    # Check for crypto keywords
-    for keyword in CRYPTO_KEYWORDS:
-        if keyword in text_to_search:
-            return 'crypto'
-    
-    # Check for sports keywords
+    # Check for sports context first (before crypto to handle ambiguous cases like "Kraken vs Hurricanes")
+    # If there's "vs" pattern + sports keywords, prioritize sports
+    has_vs_pattern = ' vs ' in text_to_search or ' vs' in text_to_search or 'vs ' in text_to_search
     has_sports_keyword = False
     for keyword in SPORTS_KEYWORDS:
         if keyword in text_to_search:
             has_sports_keyword = True
+            # If we have "vs" pattern and found sports keyword, it's definitely sports
+            if has_vs_pattern:
+                return 'sports'
             break
+    
+    # Check for crypto keywords (after sports context check)
+    for keyword in CRYPTO_KEYWORDS:
+        if keyword in text_to_search:
+            return 'crypto'
     
     # Only use URL /sports/ if there are actual sports keywords in the title
     # This prevents misclassified markets (e.g., Fed decisions in /sports/) from being marked as sports

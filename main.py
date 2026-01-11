@@ -4,12 +4,19 @@ import os
 import sys
 import fcntl
 import time
+import psutil
+from datetime import datetime, time as dt_time, timedelta
+import sqlite3
+import json
 from services.polymarket import PolymarketService
 from services.telegram_service import (
     start_telegram, send_trade_alert, user_filters, 
     get_user_categories, get_default_categories, get_user_lang,
-    get_user_probability_filter, get_user_side_types
+    get_user_probability_filter, get_user_side_types,
+    get_user_wallet_age_filter, get_user_open_positions_filter,
+    send_admin_notification, set_poly_service
 )
+from services.report_service import generate_report
 from core.filters import get_alert_level
 from core.categories import detect_category, should_show_trade
 from core.localization import get_text, get_trade_level_name, get_trade_level_emoji, get_trade_level_icon
@@ -34,6 +41,12 @@ DEFAULT_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # Module-level service reference (set in main())
 poly_service = None
+
+# Memory monitoring
+MEMORY_WARNING_THRESHOLD = 85.0  # Percentage
+MEMORY_CRITICAL_THRESHOLD = 95.0  # Percentage
+MEMORY_CHECK_INTERVAL = 300  # 5 minutes
+_last_memory_warning_time = {}  # Track last warning time per threshold level
 
 
 def format_position_stats(pos_data):
@@ -318,6 +331,30 @@ async def handle_trade(trade_data):
         
         # Send to all recipients
         for chat_id in recipients:
+             # Check wallet age filter (after other filters, data already fetched)
+             age_filter = get_user_wallet_age_filter(chat_id)
+             if age_filter and first_activity_ts:
+                 age_days = (time.time() - first_activity_ts) / 86400
+                 min_days = age_filter.get('min_days')
+                 max_days = age_filter.get('max_days')
+                 
+                 if min_days is not None and age_days < min_days:
+                     continue  # Skip this user
+                 if max_days is not None and age_days > max_days:
+                     continue  # Skip this user
+             
+             # Check open positions filter (after other filters, data already fetched)
+             positions_filter = get_user_open_positions_filter(chat_id)
+             if positions_filter and pos_data:
+                 open_count = pos_data.get('open_count', 0)
+                 min_count = positions_filter.get('min_count')
+                 max_count = positions_filter.get('max_count')
+                 
+                 if min_count is not None and open_count < min_count:
+                     continue  # Skip this user
+                 if max_count is not None and open_count > max_count:
+                     continue  # Skip this user
+             
              # Localization per user
              lang = get_user_lang(chat_id)
              level_emoji = get_trade_level_emoji(lang, alert_config['min'])
@@ -377,6 +414,116 @@ def single_instance_check():
         print("Another instance is already running. Exiting.")
         sys.exit(1)
 
+async def monitor_memory():
+    """Monitor memory usage and send alerts to admin if threshold exceeded."""
+    global _last_memory_warning_time
+    
+    while True:
+        try:
+            # Get memory usage
+            process = psutil.Process(os.getpid())
+            memory_info = process.memory_info()
+            memory_percent = process.memory_percent()
+            
+            # Get system memory info
+            system_memory = psutil.virtual_memory()
+            system_memory_percent = system_memory.percent
+            
+            # Use the higher of process or system memory
+            current_percent = max(memory_percent, system_memory_percent)
+            
+            now = time.time()
+            warning_sent = False
+            
+            # Check critical threshold (95%)
+            if current_percent >= MEMORY_CRITICAL_THRESHOLD:
+                last_warn = _last_memory_warning_time.get('critical', 0)
+                # Send warning max once per hour
+                if now - last_warn >= 3600:
+                    memory_mb = memory_info.rss / 1024 / 1024
+                    system_total_gb = system_memory.total / 1024 / 1024 / 1024
+                    system_used_gb = system_memory.used / 1024 / 1024 / 1024
+                    
+                    message = (
+                        f"🚨 **CRITICAL: High Memory Usage**\n\n"
+                        f"Process memory: {memory_mb:.1f} MB ({memory_percent:.1f}%)\n"
+                        f"System memory: {system_used_gb:.1f} GB / {system_total_gb:.1f} GB ({system_memory_percent:.1f}%)\n"
+                        f"**Current usage: {current_percent:.1f}%**\n\n"
+                        f"⚠️ Bot may become unstable!"
+                    )
+                    await send_admin_notification(message)
+                    _last_memory_warning_time['critical'] = now
+                    warning_sent = True
+                    logger.warning(f"CRITICAL memory usage: {current_percent:.1f}%")
+            
+            # Check warning threshold (85%)
+            elif current_percent >= MEMORY_WARNING_THRESHOLD:
+                last_warn = _last_memory_warning_time.get('warning', 0)
+                # Send warning max once per 2 hours
+                if now - last_warn >= 7200:
+                    memory_mb = memory_info.rss / 1024 / 1024
+                    system_total_gb = system_memory.total / 1024 / 1024 / 1024
+                    system_used_gb = system_memory.used / 1024 / 1024 / 1024
+                    
+                    message = (
+                        f"⚠️ **Memory Usage Warning**\n\n"
+                        f"Process memory: {memory_mb:.1f} MB ({memory_percent:.1f}%)\n"
+                        f"System memory: {system_used_gb:.1f} GB / {system_total_gb:.1f} GB ({system_memory_percent:.1f}%)\n"
+                        f"**Current usage: {current_percent:.1f}%**\n\n"
+                        f"Consider monitoring or restarting the bot."
+                    )
+                    await send_admin_notification(message)
+                    _last_memory_warning_time['warning'] = now
+                    warning_sent = True
+                    logger.warning(f"High memory usage: {current_percent:.1f}%")
+            
+            # If memory dropped below warning threshold, reset warning timers
+            if current_percent < MEMORY_WARNING_THRESHOLD:
+                if 'warning' in _last_memory_warning_time:
+                    del _last_memory_warning_time['warning']
+                if 'critical' in _last_memory_warning_time:
+                    del _last_memory_warning_time['critical']
+            
+            if not warning_sent:
+                logger.debug(f"Memory check: {current_percent:.1f}% (OK)")
+            
+        except Exception as e:
+            logger.error(f"Error in memory monitoring: {e}")
+        
+        await asyncio.sleep(MEMORY_CHECK_INTERVAL)
+
+
+async def daily_report_scheduler():
+    """Schedule daily report at 12:00."""
+    while True:
+        try:
+            now = datetime.now()
+            # Calculate next 12:00
+            target_time = dt_time(12, 0)
+            
+            if now.time() < target_time:
+                # Today at 12:00
+                next_report = datetime.combine(now.date(), target_time)
+            else:
+                # Tomorrow at 12:00
+                next_report = datetime.combine(now.date() + timedelta(days=1), target_time)
+            
+            wait_seconds = (next_report - now).total_seconds()
+            
+            logger.info(f"Next daily report scheduled for {next_report.strftime('%Y-%m-%d %H:%M:%S')} (in {wait_seconds/3600:.1f} hours)")
+            
+            await asyncio.sleep(wait_seconds)
+            
+            # Generate and send report
+            report = generate_report(poly_service)
+            await send_admin_notification(report)
+            logger.info("Daily report sent")
+            
+        except Exception as e:
+            logger.error(f"Error in daily report scheduler: {e}")
+            # Wait 1 hour before retry on error
+            await asyncio.sleep(3600)
+
 async def start_insider_collector():
     """Start all background tasks and return list of tasks."""
     tasks = []
@@ -388,6 +535,9 @@ async def start_insider_collector():
     # Start Polymarket Service
     global poly_service
     poly_service = PolymarketService()
+    
+    # Store reference in telegram service for /report command
+    set_poly_service(poly_service)
     
     logger.info("Starting PolyWhales...")
     logger.info("Using Polymarket Data API for whale trades...")
@@ -405,6 +555,16 @@ async def start_insider_collector():
     if twitter_service and twitter_service.is_configured:
         twitter_queue_task = asyncio.create_task(twitter_service.process_queue_periodically(interval=60))
         tasks.append(twitter_queue_task)
+    
+    # Start memory monitoring
+    memory_monitor_task = asyncio.create_task(monitor_memory())
+    tasks.append(memory_monitor_task)
+    logger.info("Memory monitoring started")
+    
+    # Start daily report scheduler
+    daily_report_task = asyncio.create_task(daily_report_scheduler())
+    tasks.append(daily_report_task)
+    logger.info("Daily report scheduler started")
     
     return tasks
 

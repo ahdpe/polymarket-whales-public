@@ -11,10 +11,26 @@ import hashlib
 from config import TELEGRAM_BOT_TOKEN, FILTERS, OWNER_ID
 from core.localization import get_text
 from storage import saved_whales
+from services.report_service import generate_report
+
+# Global reference to PolymarketService instance (set during startup)
+_poly_service = None
+
+def set_poly_service(service):
+    """Store reference to PolymarketService for report generation."""
+    global _poly_service
+    _poly_service = service
 
 # FSM States for note input
 class NoteState(StatesGroup):
     waiting_for_note = State()
+
+# FSM States for age and positions filter input
+class AgeFilterState(StatesGroup):
+    waiting_for_range = State()
+
+class PositionsFilterState(StatesGroup):
+    waiting_for_range = State()
 
 # Max comment length
 MAX_COMMENT_LEN = 240
@@ -43,11 +59,13 @@ def load_settings():
                 usernames = {int(k): v for k, v in data.get('usernames', {}).items()}
                 probabilities = {int(k): v for k, v in data.get('probabilities', {}).items()}
                 side_types = {int(k): v for k, v in data.get('side_types', {}).items()}
+                wallet_ages = {int(k): v for k, v in data.get('wallet_ages', {}).items()}
+                open_positions = {int(k): v for k, v in data.get('open_positions', {}).items()}
                 bot_enabled = data.get('bot_enabled', True)  # Default: enabled
-                return filters, categories, languages, statuses, usernames, probabilities, side_types, bot_enabled
+                return filters, categories, languages, statuses, usernames, probabilities, side_types, wallet_ages, open_positions, bot_enabled
     except Exception as e:
         logger.error(f"Error loading settings: {e}")
-    return {}, {}, {}, {}, {}, {}, {}, True  # Default: enabled
+    return {}, {}, {}, {}, {}, {}, {}, {}, {}, True  # Default: enabled
 
 def save_settings():
     """Save user settings to file."""
@@ -60,6 +78,8 @@ def save_settings():
             'usernames': {str(k): v for k, v in user_usernames.items()},
             'probabilities': {str(k): v for k, v in user_probabilities.items()},
             'side_types': {str(k): v for k, v in user_side_types.items()},
+            'wallet_ages': {str(k): v for k, v in user_wallet_ages.items()},
+            'open_positions': {str(k): v for k, v in user_open_positions.items()},
             'bot_enabled': bot_enabled
         }
         with open(SETTINGS_FILE, 'w') as f:
@@ -68,7 +88,7 @@ def save_settings():
         logger.error(f"Error saving settings: {e}")
 
 # Load settings on startup
-user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types, bot_enabled = load_settings()
+user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types, user_wallet_ages, user_open_positions, bot_enabled = load_settings()
 
 def is_bot_enabled():
     """Check if bot is enabled (not stopped by admin)."""
@@ -120,6 +140,12 @@ def ensure_user_exists(chat_id):
     if chat_id not in user_side_types:
         logger.info(f"Initialized side types for new/reset user {chat_id}")
         user_side_types[chat_id] = get_default_side_types()
+    
+    if chat_id not in user_wallet_ages:
+        user_wallet_ages[chat_id] = {'min_days': None, 'max_days': None}  # Default: unlimited
+    
+    if chat_id not in user_open_positions:
+        user_open_positions[chat_id] = {'min_count': None, 'max_count': None}  # Default: unlimited
 
 def get_user_lang(chat_id):
     """Get user's language preference."""
@@ -164,9 +190,11 @@ def get_filters_keyboard(chat_id):
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=get_text(lang, 'btn_amount')),
-             KeyboardButton(text=get_text(lang, 'btn_categories'))],
-            [KeyboardButton(text=get_text(lang, 'btn_probability')),
-             KeyboardButton(text=get_text(lang, 'btn_sides'))],
+             KeyboardButton(text=get_text(lang, 'btn_categories')),
+             KeyboardButton(text=get_text(lang, 'btn_probability'))],
+            [KeyboardButton(text=get_text(lang, 'btn_sides')),
+             KeyboardButton(text=get_text(lang, 'btn_age')),
+             KeyboardButton(text=get_text(lang, 'btn_positions'))],
             [KeyboardButton(text=get_text(lang, 'btn_back'))]
         ],
         resize_keyboard=True,
@@ -239,6 +267,93 @@ def get_probability_keyboard(chat_id):
         buttons.append([InlineKeyboardButton(text=text, callback_data=f"prob_{key}")])
     
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_age_keyboard(chat_id):
+    """Create inline keyboard for wallet age filter selection."""
+    lang = get_user_lang(chat_id)
+    current = user_wallet_ages.get(chat_id, {'min_days': None, 'max_days': None})
+    
+    # Check if filter is set (not unlimited)
+    is_unlimited = current.get('min_days') is None and current.get('max_days') is None
+    
+    buttons = []
+    
+    # "Any" option
+    any_text = get_text(lang, 'age_any')
+    if is_unlimited:
+        any_text = f"✅ {any_text}"
+    buttons.append([InlineKeyboardButton(text=any_text, callback_data="age_any")])
+    
+    # "Set interval" option
+    custom_text = get_text(lang, 'age_custom')
+    if not is_unlimited:
+        custom_text = f"✅ {custom_text}"
+    buttons.append([InlineKeyboardButton(text=custom_text, callback_data="age_custom")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_positions_keyboard(chat_id):
+    """Create inline keyboard for open positions filter selection."""
+    lang = get_user_lang(chat_id)
+    current = user_open_positions.get(chat_id, {'min_count': None, 'max_count': None})
+    
+    # Check if filter is set (not unlimited)
+    is_unlimited = current.get('min_count') is None and current.get('max_count') is None
+    
+    buttons = []
+    
+    # "Any" option
+    any_text = get_text(lang, 'pos_any')
+    if is_unlimited:
+        any_text = f"✅ {any_text}"
+    buttons.append([InlineKeyboardButton(text=any_text, callback_data="pos_any")])
+    
+    # "Set interval" option
+    custom_text = get_text(lang, 'pos_custom')
+    if not is_unlimited:
+        custom_text = f"✅ {custom_text}"
+    buttons.append([InlineKeyboardButton(text=custom_text, callback_data="pos_custom")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def format_age_range(age_filter, lang):
+    """Format age filter range for display."""
+    min_days = age_filter.get('min_days')
+    max_days = age_filter.get('max_days')
+    
+    if min_days is None and max_days is None:
+        return get_text(lang, 'age_any')
+    
+    days_text = get_text(lang, 'days')
+    
+    if min_days is not None and max_days is not None:
+        return f"{int(min_days)}-{int(max_days)} {days_text}"
+    elif min_days is not None:
+        return f">={int(min_days)} {days_text}"
+    elif max_days is not None:
+        return f"<={int(max_days)} {days_text}"
+    
+    return get_text(lang, 'age_any')
+
+def format_positions_range(pos_filter, lang):
+    """Format positions filter range for display."""
+    min_count = pos_filter.get('min_count')
+    max_count = pos_filter.get('max_count')
+    
+    if min_count is None and max_count is None:
+        return get_text(lang, 'pos_any')
+    
+    if min_count is not None and max_count is not None:
+        return f"{int(min_count)}-{int(max_count)}"
+    elif min_count is not None:
+        return f">={int(min_count)}"
+    elif max_count is not None:
+        return f"<={int(max_count)}"
+    
+    return get_text(lang, 'pos_any')
 
 
 def get_categories_keyboard(chat_id):
@@ -337,6 +452,24 @@ async def cmd_start(message: types.Message):
     )
     logger.info(f"User started bot. Chat ID: {chat_id}")
 
+@dp.message(Command("report"))
+async def cmd_report(message: types.Message):
+    """Generate and send report on demand (admin only)."""
+    chat_id = message.chat.id
+    if chat_id != OWNER_ID:
+        return  # Only owner can request reports
+    
+    # Send "Generating report..." message
+    status_msg = await message.answer("⏳ Генерирую отчет...")
+    
+    try:
+        report = generate_report(_poly_service)
+        await message.answer(report, parse_mode="HTML")
+        await status_msg.delete()
+    except Exception as e:
+        logger.error(f"Error in /report command: {e}")
+        await message.answer(f"❌ Ошибка генерации отчета: {e}")
+
 @dp.message(Command("amount"))
 async def cmd_amount(message: types.Message):
     """Show amount filter menu."""
@@ -405,6 +538,32 @@ async def btn_probability(message: types.Message):
     """Handle Probability button press."""
     await cmd_probability(message)
 
+@dp.message(F.text.in_(["🕐 Возраст", "🕐 Age"]))
+async def btn_age(message: types.Message):
+    """Handle Age button press - show age filter menu."""
+    chat_id = message.chat.id
+    ensure_user_exists(chat_id)
+    lang = get_user_lang(chat_id)
+    
+    await message.answer(
+        get_text(lang, 'age_menu_title'),
+        parse_mode="Markdown",
+        reply_markup=get_age_keyboard(chat_id)
+    )
+
+@dp.message(F.text.in_(["💼 Позиции", "💼 Positions"]))
+async def btn_positions(message: types.Message):
+    """Handle Positions button press - show positions filter menu."""
+    chat_id = message.chat.id
+    ensure_user_exists(chat_id)
+    lang = get_user_lang(chat_id)
+    
+    await message.answer(
+        get_text(lang, 'pos_menu_title'),
+        parse_mode="Markdown",
+        reply_markup=get_positions_keyboard(chat_id)
+    )
+
 @dp.message(F.text.in_(["🔄 Типы событий", "🔄 Event Types"]))
 async def btn_sides(message: types.Message):
     """Handle Side Types button press."""
@@ -457,6 +616,16 @@ def format_current_filters(chat_id):
             enabled.append("REDEEM")
         sides_text = ", ".join(enabled) if enabled else get_text(lang, 'side_nothing')
     lines.append(f"🔄 {'События' if lang == 'ru' else 'Events'}: {sides_text}")
+    
+    # 5. Wallet Age
+    age_filter = user_wallet_ages.get(chat_id, {'min_days': None, 'max_days': None})
+    age_text = format_age_range(age_filter, lang)
+    lines.append(f"🕐 {'Возраст' if lang == 'ru' else 'Age'}: {age_text}")
+    
+    # 6. Open Positions
+    pos_filter = user_open_positions.get(chat_id, {'min_count': None, 'max_count': None})
+    pos_text = format_positions_range(pos_filter, lang)
+    lines.append(f"💼 {'Позиции' if lang == 'ru' else 'Positions'}: {pos_text}")
     
     return "\n".join(lines)
 
@@ -579,7 +748,7 @@ async def cmd_menu(message: types.Message):
 
 # ============ SAVED TRADERS HANDLERS (LIST + EDIT MODE) ============
 
-AQUARIUM_PAGE_SIZE = 5
+AQUARIUM_PAGE_SIZE = 10
 
 def get_aquarium_list(chat_id, page=0, edit_mode=False):
     """
@@ -1109,6 +1278,204 @@ async def callback_probability(callback: CallbackQuery):
     )
     logger.info(f"User {chat_id} set probability filter to {prob_key}")
 
+@dp.callback_query(F.data == "age_any")
+async def callback_age_any(callback: CallbackQuery):
+    """Handle age filter 'any' selection."""
+    chat_id = callback.message.chat.id
+    ensure_user_exists(chat_id)
+    lang = get_user_lang(chat_id)
+    
+    user_wallet_ages[chat_id] = {'min_days': None, 'max_days': None}
+    save_settings()
+    
+    await callback.answer(get_text(lang, 'filter_toast'))
+    await callback.message.edit_text(
+        get_text(lang, 'age_set', range=get_text(lang, 'age_any')),
+        parse_mode="Markdown"
+    )
+    logger.info(f"User {chat_id} set age filter to unlimited")
+
+@dp.callback_query(F.data == "age_custom")
+async def callback_age_custom(callback: CallbackQuery, state: FSMContext):
+    """Handle age filter 'custom' selection - start FSM."""
+    chat_id = callback.message.chat.id
+    ensure_user_exists(chat_id)
+    lang = get_user_lang(chat_id)
+    
+    current = user_wallet_ages.get(chat_id, {'min_days': None, 'max_days': None})
+    current_text = format_age_range(current, lang)
+    
+    await callback.answer()
+    await callback.message.edit_text(
+        get_text(lang, 'age_prompt') + f"\n\n*{get_text(lang, 'current')}:* {current_text}",
+        parse_mode="Markdown"
+    )
+    
+    await state.set_state(AgeFilterState.waiting_for_range)
+    await state.update_data(chat_id=chat_id)
+
+@dp.message(AgeFilterState.waiting_for_range)
+async def process_age_range(message: types.Message, state: FSMContext):
+    """Process age range input from user."""
+    chat_id = message.chat.id
+    lang = get_user_lang(chat_id)
+    text = message.text.strip()
+    
+    # Reset filter if user sends "0" or "any"
+    if text.lower() in ['0', 'any', 'любой', 'неограничено']:
+        user_wallet_ages[chat_id] = {'min_days': None, 'max_days': None}
+        save_settings()
+        await message.answer(
+            get_text(lang, 'age_set', range=get_text(lang, 'age_any')),
+            parse_mode="Markdown"
+        )
+        await state.clear()
+        return
+    
+    # Parse range: "min-max", "min-", "-max", or just "min"
+    try:
+        min_days = None
+        max_days = None
+        
+        if '-' in text:
+            parts = text.split('-')
+            if len(parts) == 2:
+                min_part = parts[0].strip()
+                max_part = parts[1].strip()
+                
+                if min_part:
+                    min_days = float(min_part)
+                if max_part:
+                    max_days = float(max_part)
+        else:
+            # Single number means minimum
+            min_days = float(text)
+        
+        if min_days is not None and min_days < 0:
+            raise ValueError("Negative days")
+        if max_days is not None and max_days < 0:
+            raise ValueError("Negative days")
+        if min_days is not None and max_days is not None and min_days > max_days:
+            raise ValueError("Min > Max")
+        
+        user_wallet_ages[chat_id] = {'min_days': min_days, 'max_days': max_days}
+        save_settings()
+        
+        range_text = format_age_range(user_wallet_ages[chat_id], lang)
+        await message.answer(
+            get_text(lang, 'age_set', range=range_text),
+            parse_mode="Markdown"
+        )
+        logger.info(f"User {chat_id} set age filter to {min_days}-{max_days} days")
+        
+    except (ValueError, TypeError):
+        await message.answer(
+            get_text(lang, 'age_invalid'),
+            parse_mode="Markdown"
+        )
+        return
+    
+    await state.clear()
+
+@dp.callback_query(F.data == "pos_any")
+async def callback_positions_any(callback: CallbackQuery):
+    """Handle positions filter 'any' selection."""
+    chat_id = callback.message.chat.id
+    ensure_user_exists(chat_id)
+    lang = get_user_lang(chat_id)
+    
+    user_open_positions[chat_id] = {'min_count': None, 'max_count': None}
+    save_settings()
+    
+    await callback.answer(get_text(lang, 'filter_toast'))
+    await callback.message.edit_text(
+        get_text(lang, 'pos_set', range=get_text(lang, 'pos_any')),
+        parse_mode="Markdown"
+    )
+    logger.info(f"User {chat_id} set positions filter to unlimited")
+
+@dp.callback_query(F.data == "pos_custom")
+async def callback_positions_custom(callback: CallbackQuery, state: FSMContext):
+    """Handle positions filter 'custom' selection - start FSM."""
+    chat_id = callback.message.chat.id
+    ensure_user_exists(chat_id)
+    lang = get_user_lang(chat_id)
+    
+    current = user_open_positions.get(chat_id, {'min_count': None, 'max_count': None})
+    current_text = format_positions_range(current, lang)
+    
+    await callback.answer()
+    await callback.message.edit_text(
+        get_text(lang, 'pos_prompt') + f"\n\n*{get_text(lang, 'current')}:* {current_text}",
+        parse_mode="Markdown"
+    )
+    
+    await state.set_state(PositionsFilterState.waiting_for_range)
+    await state.update_data(chat_id=chat_id)
+
+@dp.message(PositionsFilterState.waiting_for_range)
+async def process_positions_range(message: types.Message, state: FSMContext):
+    """Process positions range input from user."""
+    chat_id = message.chat.id
+    lang = get_user_lang(chat_id)
+    text = message.text.strip()
+    
+    # Reset filter if user sends "0" or "any"
+    if text.lower() in ['0', 'any', 'любой', 'неограничено']:
+        user_open_positions[chat_id] = {'min_count': None, 'max_count': None}
+        save_settings()
+        await message.answer(
+            get_text(lang, 'pos_set', range=get_text(lang, 'pos_any')),
+            parse_mode="Markdown"
+        )
+        await state.clear()
+        return
+    
+    # Parse range: "min-max", "min-", "-max", or just "min"
+    try:
+        min_count = None
+        max_count = None
+        
+        if '-' in text:
+            parts = text.split('-')
+            if len(parts) == 2:
+                min_part = parts[0].strip()
+                max_part = parts[1].strip()
+                
+                if min_part:
+                    min_count = int(float(min_part))  # Allow float but convert to int
+                if max_part:
+                    max_count = int(float(max_part))
+        else:
+            # Single number means minimum
+            min_count = int(float(text))
+        
+        if min_count is not None and min_count < 0:
+            raise ValueError("Negative count")
+        if max_count is not None and max_count < 0:
+            raise ValueError("Negative count")
+        if min_count is not None and max_count is not None and min_count > max_count:
+            raise ValueError("Min > Max")
+        
+        user_open_positions[chat_id] = {'min_count': min_count, 'max_count': max_count}
+        save_settings()
+        
+        range_text = format_positions_range(user_open_positions[chat_id], lang)
+        await message.answer(
+            get_text(lang, 'pos_set', range=range_text),
+            parse_mode="Markdown"
+        )
+        logger.info(f"User {chat_id} set positions filter to {min_count}-{max_count}")
+        
+    except (ValueError, TypeError):
+        await message.answer(
+            get_text(lang, 'pos_invalid'),
+            parse_mode="Markdown"
+        )
+        return
+    
+    await state.clear()
+
 @dp.callback_query(F.data.startswith("cat_"))
 async def callback_category(callback: CallbackQuery):
     """Handle category toggle callback."""
@@ -1238,6 +1605,14 @@ def get_user_side_types(chat_id):
     """Get user's side type preferences."""
     return user_side_types.get(chat_id, get_default_side_types())
 
+def get_user_wallet_age_filter(chat_id):
+    """Get user's wallet age filter. Returns dict with min_days and max_days (or None)."""
+    return user_wallet_ages.get(chat_id, {'min_days': None, 'max_days': None})
+
+def get_user_open_positions_filter(chat_id):
+    """Get user's open positions filter. Returns dict with min_count and max_count (or None)."""
+    return user_open_positions.get(chat_id, {'min_count': None, 'max_count': None})
+
 def is_user_active(chat_id):
     """Check if user is active."""
     return user_statuses.get(chat_id, True)
@@ -1261,6 +1636,7 @@ async def cmd_admin(message: types.Message):
 `/stats` — статистика бота
 `/users` — список пользователей
 `/cache` — кэш возраста кошельков
+`/report` — полный отчет о системе
 
 📢 **Рассылка:**
 `/broadcast <текст>` — отправить всем
@@ -1814,6 +2190,19 @@ async def cmd_twitter_cat(message: types.Message):
     else:
         await message.answer("❌ Ошибка установки категории")
 
+
+async def send_admin_notification(message: str, parse_mode="HTML"):
+    """Send notification message to bot owner/admin."""
+    try:
+        if OWNER_ID:
+            await bot.send_message(
+                chat_id=OWNER_ID,
+                text=message,
+                parse_mode=parse_mode
+            )
+            logger.info("Admin notification sent")
+    except Exception as e:
+        logger.error(f"Failed to send admin notification: {e}")
 
 async def start_telegram():
     logger.info("Starting Telegram Bot Polling...")

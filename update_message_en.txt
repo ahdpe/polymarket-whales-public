@@ -1,0 +1,8 @@
+🚀 **New Filters Available**
+
+🕐 **Wallet Age Filter** — Filter by trader wallet age (days, min-max range)
+⚠️ *Beta mode — may have inaccuracies*
+
+💼 **Open Positions Filter** — Filter by number of open positions (min-max range)
+
+**To see new buttons:** Press ⚙️ Filters or send `/start`

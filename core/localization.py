@@ -58,6 +58,26 @@ TRANSLATIONS = {
         'prob_10_90': "🟠 10% — 90%",
         'filter_toast': "Настройки обновлены!",
         
+        # Filter - Wallet Age
+        'btn_age': "🕐 Возраст",
+        'age_menu_title': "🕐 **Возраст кошелька**\n\n🧪 *Тестовый режим* — возможны неточности\n\nФильтр по возрасту кошелька трейдера:",
+        'age_any': "🌐 Любой",
+        'age_custom': "📝 Настроить интервал",
+        'age_set': "✅ Фильтр возраста: *{range}*",
+        'age_prompt': "**Введите диапазон в днях:**\nФормат: мин-макс\nПримеры:\n• 7-365 (от 7 дней до 1 года)\n• 30- (от 30 дней)\n• -90 (до 90 дней)\n• 0 (сбросить)",
+        'age_invalid': "❌ Неверный формат. Попробуйте: 7-365 или 30- или -90",
+        'days': "дн.",
+        'current': "Текущее",
+        
+        # Filter - Open Positions
+        'btn_positions': "💼 Позиции",
+        'pos_menu_title': "💼 **Количество позиций**\n\nФильтр по количеству открытых позиций:",
+        'pos_any': "🌐 Любой",
+        'pos_custom': "📝 Настроить интервал",
+        'pos_set': "✅ Фильтр позиций: *{range}*",
+        'pos_prompt': "**Введите диапазон:**\nФормат: мин-макс\nПримеры:\n• 5-50 (от 5 до 50 позиций)\n• 10- (от 10 позиций)\n• -20 (до 20 позиций)\n• 0 (сбросить)",
+        'pos_invalid': "❌ Неверный формат. Попробуйте: 5-50 или 10- или -20",
+        
         # Settings
         'settings_title': "⚙️ **Настройки категорий**\n\nВыбери какие рынки отслеживать:",
         'settings_all': "Все сделки",
@@ -82,6 +102,8 @@ TRANSLATIONS = {
 • Выбор категорий (Крипто, Спорт, Остальное)
 • Фильтр вероятности (исключает почти решённые рынки)
 • Фильтр типов событий (BUY, SELL, SPLIT, MERGE, REDEEM)
+• Фильтр возраста кошелька (по дням, мин-макс)
+• Фильтр количества позиций (мин-макс)
 • ⭐ Избранное (Сохранение избранных трейдеров)
 
 *Классификация объемов:*
@@ -194,6 +216,26 @@ TRANSLATIONS = {
         'prob_5_95': "🟡 5% — 95%",
         'prob_10_90': "🟠 10% — 90%",
         
+        # Filter - Wallet Age
+        'btn_age': "🕐 Age",
+        'age_menu_title': "🕐 **Wallet Age**\n\n🧪 *Beta mode* — may have inaccuracies\n\nFilter by trader wallet age:",
+        'age_any': "🌐 Any",
+        'age_custom': "📝 Set interval",
+        'age_set': "✅ Age filter: *{range}*",
+        'age_prompt': "**Enter range in days:**\nFormat: min-max\nExamples:\n• 7-365 (7 days to 1 year)\n• 30- (from 30 days)\n• -90 (up to 90 days)\n• 0 (reset)",
+        'age_invalid': "❌ Invalid format. Try: 7-365 or 30- or -90",
+        'days': "days",
+        'current': "Current",
+        
+        # Filter - Open Positions
+        'btn_positions': "💼 Positions",
+        'pos_menu_title': "💼 **Open Positions**\n\nFilter by number of open positions:",
+        'pos_any': "🌐 Any",
+        'pos_custom': "📝 Set interval",
+        'pos_set': "✅ Positions filter: *{range}*",
+        'pos_prompt': "**Enter range:**\nFormat: min-max\nExamples:\n• 5-50 (5 to 50 positions)\n• 10- (from 10 positions)\n• -20 (up to 20 positions)\n• 0 (reset)",
+        'pos_invalid': "❌ Invalid format. Try: 5-50 or 10- or -20",
+        
         # Settings
         'settings_title': "⚙️ **Category Settings**\n\nSelect which markets to track:",
         'settings_all': "All trades",
@@ -218,6 +260,8 @@ Real-time monitoring of large trades on [Polymarket](https://polymarket.com).
 • Category selection (Crypto, Sports, Other)
 • Probability filter (excludes near-resolved markets)
 • Event type filter (BUY, SELL, SPLIT, MERGE, REDEEM)
+• Wallet age filter (in days, min-max range)
+• Open positions filter (min-max range)
 • ⭐ Favorites (Save favorite traders)
 
 *Volume classification:*

@@ -15,6 +15,8 @@ Telegram-бот для отслеживания крупных сделок ("к
 - 📂 **Фильтр по категориям** — Крипто, Спорт, Остальное
 - ⚖️ **Фильтр вероятности** — исключает почти решённые рынки (99.9%)
 - 🔄 **Фильтр типов событий** — выбирай какие сделки отслеживать: BUY, SELL, SPLIT, MERGE, REDEEM
+- 🕐 **Фильтр возраста кошелька** — фильтр по возрасту кошелька трейдера (в днях, мин-макс)
+- 💼 **Фильтр количества позиций** — фильтр по количеству открытых позиций (мин-макс)
 - 🌐 **Двуязычный интерфейс** — Русский / English
 - 🔗 **Ссылки на профиль трейдера** и рынок
 - 📈 **Расширенная аналитика:** Open PnL, активные позиции, возраст кошелька
@@ -82,13 +84,19 @@ Polymarket API часто обрезает историю сделок для а
   - **Минимальная сумма:** от $500 до $100,000
   - **Категории:** Крипто, Спорт, Остальное (определяются по ключевым словам)
   - **Вероятность:** Любая, 1%-99%, 5%-95%, 10%-90%
+  - **Типы событий:** BUY, SELL, SPLIT, MERGE, REDEEM
+  - **Возраст кошелька:** Фильтр по возрасту кошелька трейдера в днях (мин-макс диапазон, по умолчанию неограничено). ⚠️ Тестовый режим — возможны неточности.
+  - **Количество позиций:** Фильтр по количеству открытых позиций (мин-макс диапазон, по умолчанию неограничено)
   - **Язык:** Русский или Английский
 - **Интерфейс:**
   - `⚙️ Фильтры` — подменю со всеми настройками фильтров:
-    - `💰 Сумма сделки` — выбор минимального порога
-    - `📂 Категории` — выбор категорий рынков
-    - `⚖️ Вероятность` — фильтр по вероятности
-    - `🔄 Типы событий` — выбор типов сделок (BUY, SELL, SPLIT, MERGE, REDEEM)
+    - **Строка 1:** `💰 Сумма сделки`, `📂 Категории`, `⚖️ Вероятность`
+    - **Строка 2:** `🔄 Типы событий`, `🕐 Возраст`, `💼 Позиции`
+    - **Строка 3:** `⬅️ Назад`
+  - **Настройка фильтров возраста и позиций:**
+    - Выберите "🌐 Любой" для неограниченного фильтра
+    - Или "📝 Настроить интервал" для ввода диапазона
+    - Формат: `мин-макс` (например: `7-365`), `мин-` (от минимума), `-макс` (до максимума), или `0` (сбросить)
   - `▶️ Запустить / ⏸️ Остановить` — переключатель уведомлений
   - `⭐ Избранное` — список сохранённых трейдеров
 - **Уведомления:** Присылает сообщение с:
@@ -122,6 +130,7 @@ Polymarket API часто обрезает историю сделок для а
 - `/users` — список пользователей
 - `/broadcast <сообщение>` — рассылка всем пользователям
 - `/cache` — просмотр кэша возраста кошельков
+- `/report` — полный отчет о системе
 - `/admin` — памятка со всеми административными командами
 
 #### 7. Архитектура "Избранного" (Saved Traders)
@@ -177,6 +186,8 @@ Telegram bot for real-time tracking of large trades ("whales") on [Polymarket](h
 - 📂 **Category filter** — Crypto, Sports, Other
 - ⚖️ **Probability filter** — excludes near-resolved markets (99.9%)
 - 🔄 **Event type filter** — choose which trades to track: BUY, SELL, SPLIT, MERGE, REDEEM
+- 🕐 **Wallet age filter** — filter by trader wallet age (in days, min-max range)
+- 💼 **Open positions filter** — filter by number of open positions (min-max range)
 - 🌐 **Bilingual interface** — Russian / English
 - 🔗 **Links to trader profile** and market
 - 📈 **Advanced Analytics:** Open PnL, Active Positions, Wallet Age
@@ -234,8 +245,16 @@ A single large trade is often split into multiple fills. To avoid spam, the bot 
 - **Cleanup:** Records > 72h are deleted.
 
 #### 4. Telegram Bot (TelegramService)
-- **Filters:** Amount, Category, Probability, Event Types (BUY/SELL/SPLIT/MERGE/REDEEM), Language.
-- **Interface:** Compact menu with "⚙️ Filters" submenu for all filter settings.
+- **Filters:** Amount, Category, Probability, Event Types (BUY/SELL/SPLIT/MERGE/REDEEM), Wallet Age, Open Positions, Language.
+- **Interface:** Compact menu with "⚙️ Filters" submenu for all filter settings:
+  - **Row 1:** Amount, Categories, Probability
+  - **Row 2:** Event Types, Wallet Age, Open Positions
+  - **Row 3:** Back
+- **Filter Details:**
+  - **Wallet Age:** Filter by trader wallet age in days (min-max range, default: unlimited). ⚠️ Beta mode - may have inaccuracies.
+    - Format: `min-max` (e.g., `7-365`), `min-` (from minimum), `-max` (up to maximum), or `0` (reset)
+  - **Open Positions:** Filter by number of open positions (min-max range, default: unlimited).
+    - Format: `min-max` (e.g., `5-50`), `min-` (from minimum), `-max` (up to maximum), or `0` (reset)
 - **Alerts:** Rich messages with emojis, links, and trader stats:
   - Color-coded trade types: 🟢 BUY Yes, 🔴 BUY No, 🔵 SELL, ⚪ SPLIT, ↔️ MERGE, 🟣 REDEEM
 
@@ -262,6 +281,7 @@ The bot can automatically post large trades to Twitter/X:
 - `/users` — user list
 - `/broadcast <message>` — broadcast to all users
 - `/cache` — inspect wallet age cache
+- `/report` — full system status report
 - `/admin` — admin commands cheatsheet
 
 #### 7. Favorites Architecture (Saved Traders)
