@@ -21,6 +21,30 @@ ECONOMICS_KEYWORDS = [
     'rate decrease', 'policy decision', 'meeting decision',
 ]
 
+# Geopolitics/Military/Political keywords (exclude from sports before country name check)
+GEOPOLITICS_KEYWORDS = [
+    # Military/Geopolitics
+    'strike', 'military strike', 'airstrike', 'air strike', 'bomb', 'bombing',
+    'invasion', 'invade', 'war', 'conflict', 'attack', 'missile',
+    'sanctions', 'treaty', 'diplomacy', 'diplomatic', 'embassy', 'coup',
+    'nuclear', 'weapons', 'armed forces', 'military action',
+    'regime', 'insurgent', 'rebel', 'ceasefire', 'military',
+    
+    # Politics
+    'presidential election', 'presidential race', 'president', 'vice president',
+    'presidential nomination', 'nomination', 'republican', 'democrat', 'democratic',
+    'election', 'senate', 'senator', 'congress', 'congressman', 'congresswoman',
+    'governor', 'mayor', 'political', 'politics', 'campaign', 'voter',
+    'ballot', 'primary', 'caucus', 'electoral', 'impeach', 'legislative',
+    'parliament', 'prime minister', 'minister', 'cabinet',
+    
+    # Entertainment/Awards
+    'oscar', 'oscars', 'academy award', 'emmy', 'emmys', 'golden globe',
+    'best actress', 'best actor', 'best director', 'best picture', 'best film',
+    'grammy', 'grammys', 'tony', 'tonys', 'bafta', 'cannes', 'sundance',
+    'limited series', 'tv series', 'award ceremony',
+]
+
 # Sports-related keywords
 SPORTS_KEYWORDS = [
     'nfl', 'nba', 'mlb', 'nhl', 'fifa', 'uefa', 'premier league',
@@ -119,6 +143,16 @@ def detect_category(title: str, slug: str = "", url: str = "") -> str:
     for keyword in ECONOMICS_KEYWORDS:
         if keyword in text_to_search:
             # Economics/finance markets should be 'other', not 'sports'
+            # Check if it's also crypto-related
+            for crypto_kw in CRYPTO_KEYWORDS:
+                if crypto_kw in text_to_search:
+                    return 'crypto'
+            return 'other'
+    
+    # Check for geopolitics/military context
+    # These should override sports detection (e.g., "Will France strike Iran" vs "France vs Germany match")
+    for keyword in GEOPOLITICS_KEYWORDS:
+        if keyword in text_to_search:
             # Check if it's also crypto-related
             for crypto_kw in CRYPTO_KEYWORDS:
                 if crypto_kw in text_to_search:
