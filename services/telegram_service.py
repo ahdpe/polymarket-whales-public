@@ -797,7 +797,7 @@ def get_aquarium_list(chat_id, page=0, edit_mode=False):
         else:
             comment_part = ""
         
-        notif_status = " 🔔" if item.get('notifications_enabled') else ""
+        notif_status = " 🔔" if item.get('notifications_enabled') else " 🔕"
         line = f"*{idx}.* {icon} {link}{notif_status}{comment_part}"
         lines.append(line)
         
