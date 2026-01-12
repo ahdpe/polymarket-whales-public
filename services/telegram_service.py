@@ -797,7 +797,8 @@ def get_aquarium_list(chat_id, page=0, edit_mode=False):
         else:
             comment_part = ""
         
-        line = f"*{idx}.* {icon} {link}{comment_part}"
+        notif_status = " 🔔" if item.get('notifications_enabled') else ""
+        line = f"*{idx}.* {icon} {link}{notif_status}{comment_part}"
         lines.append(line)
         
     text = "\n".join(lines)
@@ -823,8 +824,12 @@ def get_aquarium_list(chat_id, page=0, edit_mode=False):
             # Truncate name for button (max ~10 chars)
             short_name = name[:10] if len(name) > 10 else name
             
+            notif_enabled = bool(item.get('notifications_enabled'))
+            notif_btn_text = get_text(lang, 'notif_on' if notif_enabled else 'notif_off')
+            
             btn_row = [
                 InlineKeyboardButton(text=f"✏️ {local_num} {short_name}", callback_data=f"edit:{key}:{page}:1"),
+                InlineKeyboardButton(text=notif_btn_text, callback_data=f"toggle_notif:{key}:{page}:1"),
                 InlineKeyboardButton(text=f"❌ {local_num}", callback_data=f"delete:{key}:{page}:1")
             ]
             buttons.append(btn_row)
@@ -1138,6 +1143,42 @@ async def callback_cancel_clear(callback: types.CallbackQuery):
         lang = get_user_lang(chat_id)
         await callback.message.edit_text(get_text(lang, 'saved_empty'))
     await callback.answer()
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("toggle_notif:"))
+async def callback_toggle_notif(callback: types.CallbackQuery):
+    """Toggle notifications for a saved trader."""
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+    
+    parts = callback.data.split(':')
+    key = parts[1]
+    page = int(parts[2]) if len(parts) > 2 else 0
+    edit_mode = int(parts[3]) if len(parts) > 3 else 0
+    
+    whale_id = saved_whales.get_whale_id(key)
+    if not whale_id:
+        await callback.answer("Error: trader not found")
+        return
+    
+    new_state = saved_whales.toggle_notifications(chat_id, whale_id)
+    
+    msg_key = 'notif_enabled' if new_state else 'notif_disabled'
+    await callback.answer(get_text(lang, msg_key))
+    
+    # Refresh View
+    is_edit = bool(edit_mode)
+    text, reply_markup = get_aquarium_list(chat_id, page, edit_mode=is_edit)
+    
+    if text:
+        from contextlib import suppress
+        with suppress(Exception):
+            await callback.message.edit_text(
+                text, 
+                reply_markup=reply_markup, 
+                parse_mode="Markdown", 
+                disable_web_page_preview=True
+            )
 
 
 @dp.callback_query(F.data == "noop")

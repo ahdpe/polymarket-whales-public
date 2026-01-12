@@ -194,39 +194,50 @@ async def handle_trade(trade_data):
             return side_types_prefs.get('all', True)
 
         # Helper to check if a user qualifies
+        # Returns: (qualified: bool, is_bypass: bool)
         def check_user(chat_id, min_threshold):
-             if value_usd < min_threshold:
-                 return False
-
-             # Check active status
+             # Check active status FIRST (must be stopped if disabled)
              from services.telegram_service import is_user_active
              if not is_user_active(chat_id):
-                 return False
+                 return (False, False)
+
+             # Check if notifications are enabled for this trader (BYPASS ALL FILTERS)
+             trader_address = trade_data.get('proxyWallet', '') or trade_data.get('maker', '')
+             if trader_address and saved_whales.is_notifications_enabled(chat_id, trader_address):
+                 logger.info(f"Notification BYPASS for trader {trader_address} (chat_id: {chat_id})")
+                 return (True, True)  # Qualified via bypass
+
+             if value_usd < min_threshold:
+                 return (False, False)
 
              # Check category filter
              user_prefs = get_user_categories(chat_id)
              if not should_show_trade(category, user_prefs):
-                 return False
+                 return (False, False)
              
              # Check probability filter
              prob_range = get_user_probability_filter(chat_id)
              if prob_range:
                  min_prob, max_prob = prob_range
                  if price < min_prob or price > max_prob:
-                     return False
+                     return (False, False)
              
              # Check side type filter
              side_types_prefs = get_user_side_types(chat_id)
              if not should_show_side_type(side, trade_data, side_types_prefs):
                  logger.debug(f"Trade filtered by side type: chat_id={chat_id}, side={side}, type={trade_data.get('type')}, prefs={side_types_prefs}")
-                 return False
+                 return (False, False)
              
-             return True
+             return (True, False)  # Qualified via filters
 
         # 1. Check registered users
+        bypass_users = set()  # Users receiving via notification bypass
         for chat_id, min_threshold in user_filters.items():
-            if check_user(chat_id, min_threshold):
+            qualified, is_bypass = check_user(chat_id, min_threshold)
+            if qualified:
                 recipients.add(chat_id)
+                if is_bypass:
+                    bypass_users.add(chat_id)
         
         # 2. Check if Twitter wants this trade (independent of Telegram)
         # Use wants_trade (filters only) - post_trade_alert will handle queue/rate limits
@@ -370,11 +381,15 @@ async def handle_trade(trade_data):
              else:
                  side_line = f"{side_display} @ {price_pct:.1f}%\n"
              
+             # Check if this is a bypass notification
+             is_bypass = chat_id in bypass_users
+             bypass_indicator = " 🔔" if is_bypass else ""
+             
              msg = (
                 f"{cat_emoji} [{market_title[:80]}]({market_url})\n"
                 f"{side_line}"
                 f"💵 {money_text}\n"
-                f"{level_emoji} {trader_text}{position_stats_line}{wallet_age_line}\n"
+                f"{level_emoji} {trader_text}{bypass_indicator}{position_stats_line}{wallet_age_line}\n"
             )
              # Get level icon for button
              level_icon = get_trade_level_icon(alert_config['min'])

@@ -3,7 +3,7 @@
 TRANSLATIONS = {
     'ru': {
         # Start message
-        'welcome': "🐋 *Polymarket Whale Alerts*\n\nКрупные сделки на Polymarket — в реальном времени.\n\n*Что умеет бот:*\n• 🔔 Уведомления от $500 до $100,000+\n• 🎯 Фильтры: сумма, категории, вероятность, типы, возраст, позиции\n• 📊 Аналитика: PnL, возраст кошелька, открытые позиции\n• 🔗 Быстрые ссылки на профили\n• ⭐ Избранное — сохранённые трейдеры и заметки\n\nНастрой уведомления кнопками ниже.",
+        'welcome': "🐋 *Polymarket Whale Alerts*\n\nКрупные сделки на Polymarket — в реальном времени.\n\n*Что умеет бот:*\n• 🔔 Уведомления от $500 до $100,000+\n• 🎯 Фильтры: сумма, категории, вероятность, типы, возраст, позиции\n• 📊 Аналитика: PnL, возраст кошелька, открытые позиции\n• 🔗 Быстрые ссылки на профили\n• ⭐ Избранное — сохранённые трейдеры, заметки и 🔔 уведомления об их сделках\n\nНастрой уведомления кнопками ниже.",
         
         # Buttons
         'btn_filters': "⚙️ Фильтры",
@@ -97,14 +97,14 @@ TRANSLATIONS = {
 Мониторинг крупных сделок на [Polymarket](https://polymarket.com) в реальном времени.
 
 *Функционал:*
-• Уведомления о сделках от $500 до $100,000+
-• Фильтр минимальной суммы (настраивается пользователем)
-• Выбор категорий (Крипто, Спорт, Остальное)
-• Фильтр вероятности (исключает почти решённые рынки)
-• Фильтр типов событий (BUY, SELL, SPLIT, MERGE, REDEEM)
-• Фильтр возраста кошелька (по дням, мин-макс)
-• Фильтр количества позиций (мин-макс)
-• ⭐ Избранное (Сохранение избранных трейдеров)
+• 🔔 Уведомления о сделках от $500 до $100,000+
+• 💰 Фильтр минимальной суммы (настраивается пользователем)
+• 📂 Выбор категорий (Крипто, Спорт, Остальное)
+• ⚖️ Фильтр вероятности (исключает почти решённые рынки)
+• 🔄 Фильтр типов событий (BUY, SELL, SPLIT, MERGE, REDEEM)
+• 🕐 Фильтр возраста кошелька (по дням, мин-макс)
+• 💼 Фильтр количества позиций (мин-макс)
+• ⭐ Избранное (Сохранение избранных трейдеров + 🔔 Персональные уведомления)
 
 *Классификация объемов:*
 🔥 МЕГА КИТ — >$100,000
@@ -158,11 +158,15 @@ TRANSLATIONS = {
         'note_too_long': "❌ Слишком длинный! Макс. 240 символов. Попробуй ещё раз:",
         'note_removed': "✅ Комментарий удалён",
         'page_info': "Стр. {page}/{total}",
+        'notif_on': "🔔 Вкл",
+        'notif_off': "🔕 Выкл",
+        'notif_enabled': "🔔 Уведомления включены (без фильтров)",
+        'notif_disabled': "🔕 Уведомления выключены (по общим фильтрам)",
     },
     
     'en': {
         # Start message
-        'welcome': "🐋 *Polymarket Whale Alerts*\n\nLarge trades on Polymarket — in real-time.\n\n*What the bot can do:*\n• 🔔 Alerts from $500 to $100,000+\n• 🎯 Filters: amount, categories, probability, types, age, positions\n• 📊 Analytics: PnL, wallet age, open positions\n• 🔗 Quick links to profiles\n• ⭐ Favorites — saved traders and notes\n\nConfigure alerts using the buttons below.",
+        'welcome': "🐋 *Polymarket Whale Alerts*\n\nLarge trades on Polymarket — in real-time.\n\n*What the bot can do:*\n• 🔔 Alerts from $500 to $100,000+\n• 🎯 Filters: amount, categories, probability, types, age, positions\n• 📊 Analytics: PnL, wallet age, open positions\n• 🔗 Quick links to profiles\n• ⭐ Favorites — saved traders, notes and 🔔 notifications about their trades\n\nConfigure alerts using the buttons below.",
         
         # Buttons
         'btn_filters': "⚙️ Filters",
@@ -255,14 +259,14 @@ TRANSLATIONS = {
 Real-time monitoring of large trades on [Polymarket](https://polymarket.com).
 
 *Functionality:*
-• Trade alerts from $500 to $100,000+
-• Customizable amount threshold
-• Category selection (Crypto, Sports, Other)
-• Probability filter (excludes near-resolved markets)
-• Event type filter (BUY, SELL, SPLIT, MERGE, REDEEM)
-• Wallet age filter (in days, min-max range)
-• Open positions filter (min-max range)
-• ⭐ Favorites (Save favorite traders)
+• 🔔 Trade alerts from $500 to $100,000+
+• 💰 Customizable amount threshold
+• 📂 Category selection (Crypto, Sports, Other)
+• ⚖️ Probability filter (excludes near-resolved markets)
+• 🔄 Event type filter (BUY, SELL, SPLIT, MERGE, REDEEM)
+• 🕐 Wallet age filter (in days, min-max range)
+• 💼 Open positions filter (min-max range)
+• ⭐ Favorites (Save favorite traders + 🔔 Direct notifications)
 
 *Volume classification:*
 🔥 MEGA WHALE — >$100,000
@@ -316,6 +320,10 @@ Keywords: nfl, nba, football, soccer, ufc, f1, lakers, goal, etc.
         'note_too_long': "❌ Too long! Max 240 characters. Try again:",
         'note_removed': "✅ Note removed",
         'page_info': "Page {page}/{total}",
+        'notif_on': "🔔 On",
+        'notif_off': "🔕 Off",
+        'notif_enabled': "🔔 Notifications enabled (bypassing filters)",
+        'notif_disabled': "🔕 Notifications disabled (using general filters)",
     }
 }
 

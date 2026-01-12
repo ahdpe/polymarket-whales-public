@@ -80,6 +80,14 @@ def init_db():
             logger.info("Added 'level_icon' column to whale_keys")
         except sqlite3.OperationalError:
             pass  # Column already exists
+            
+        # Migration: add notifications_enabled column if not exists
+        try:
+            conn.execute("ALTER TABLE saved_whales ADD COLUMN notifications_enabled INTEGER DEFAULT 0;")
+            conn.commit()
+            logger.info("Added 'notifications_enabled' column to saved_whales")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         
         conn.commit()
         logger.info("Saved whales DB initialized")
@@ -223,8 +231,41 @@ def is_saved(user_id: str | int, whale_id: str) -> bool:
         conn.close()
 
 
-def save(user_id: str | int, whale_id: str, name: str = None, level_icon: str = None) -> None:
-    """Save whale for user with optional name and level_icon."""
+def is_notifications_enabled(user_id: str | int, whale_id: str) -> bool:
+    """Check if notifications are enabled for this trader for this user."""
+    conn = _get_connection()
+    try:
+        row = conn.execute(
+            "SELECT notifications_enabled FROM saved_whales WHERE user_id = ? AND whale_id = ?",
+            (str(user_id), whale_id)
+        ).fetchone()
+        return bool(row["notifications_enabled"]) if row else False
+    finally:
+        conn.close()
+
+
+def toggle_notifications(user_id: str | int, whale_id: str) -> bool:
+    """Toggle notification status and return the new state."""
+    current = is_notifications_enabled(user_id, whale_id)
+    new_state = not current
+    now = int(time.time())
+    
+    conn = _get_connection()
+    try:
+        conn.execute(
+            """UPDATE saved_whales 
+               SET notifications_enabled = ?, updated_at = ?
+               WHERE user_id = ? AND whale_id = ?""",
+            (1 if new_state else 0, now, str(user_id), whale_id)
+        )
+        conn.commit()
+        return new_state
+    finally:
+        conn.close()
+
+
+def save(user_id: str | int, whale_id: str, name: str = None, level_icon: str = None, notifications_enabled: int = None) -> None:
+    """Save whale for user with optional name, level_icon, and notification settings."""
     # If name or level_icon not provided, try to get them from whale_keys
     if not name or not level_icon:
         whale_data = get_whale_data_by_id(whale_id)
@@ -239,16 +280,23 @@ def save(user_id: str | int, whale_id: str, name: str = None, level_icon: str = 
     try:
         # Try to insert, if exists - update name/icon if provided
         query = """INSERT INTO saved_whales 
-               (user_id, whale_id, name, level_icon, comment, created_at, updated_at)
-               VALUES (?, ?, ?, ?, NULL, ?, ?)
+               (user_id, whale_id, name, level_icon, notifications_enabled, comment, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
                ON CONFLICT(user_id, whale_id) DO UPDATE SET """
-        params = [str(user_id), whale_id, name, level_icon, now, now]
+        
+        # Default to current if not provided and exists, or 0
+        if notifications_enabled is None:
+            notifications_enabled = 0 # Default for new
+            
+        params = [str(user_id), whale_id, name, level_icon, notifications_enabled, now, now]
         
         updates = ["updated_at = excluded.updated_at"]
         if name:
             updates.append("name = excluded.name")
-        if level_icon:
-            updates.append("level_icon = excluded.level_icon")
+        # Note: we explicitly DO NOT update notifications_enabled if already exists, 
+        # unless specifically passed as an argument (preserve user's toggle)
+        if notifications_enabled is not None:
+             pass 
             
         query += ", ".join(updates)
         
@@ -291,7 +339,7 @@ def list_saved(user_id: str | int, offset: int = 0, limit: int = 10) -> list[dic
     conn = _get_connection()
     try:
         rows = conn.execute(
-            """SELECT whale_id, name, level_icon, comment, created_at, updated_at 
+            """SELECT whale_id, name, level_icon, notifications_enabled, comment, created_at, updated_at 
                FROM saved_whales 
                WHERE user_id = ?
                ORDER BY updated_at DESC
