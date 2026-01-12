@@ -10,13 +10,16 @@
         "824083959": 50000,
         "884863632": 50000,
         "439082374": 25000,
+        "190753236": 100000,
         "1316914114": 10000,
         "147498744": 50000,
         "1789195085": 50000,
+        "330042477": 50000,
         "832856447": 5000,
         "1049732181": 50000,
         "7790398417": 25000,
         "841355371": 50000,
+        "856055740": 50000,
         "5428353345": 50000,
         "6569634879": 100000,
         "861432848": 10000,
@@ -83,6 +86,12 @@
             "crypto": false,
             "sports": false
         },
+        "190753236": {
+            "all": true,
+            "other": true,
+            "crypto": true,
+            "sports": true
+        },
         "1316914114": {
             "all": false,
             "other": true,
@@ -96,6 +105,12 @@
             "sports": true
         },
         "1789195085": {
+            "all": true,
+            "other": true,
+            "crypto": true,
+            "sports": true
+        },
+        "330042477": {
             "all": true,
             "other": true,
             "crypto": true,
@@ -124,6 +139,12 @@
             "other": true,
             "crypto": true,
             "sports": true
+        },
+        "856055740": {
+            "all": false,
+            "other": true,
+            "crypto": false,
+            "sports": false
         },
         "5428353345": {
             "all": true,
@@ -161,13 +182,16 @@
         "824083959": "ru",
         "884863632": "en",
         "439082374": "ru",
+        "190753236": "ru",
         "1316914114": "ru",
         "147498744": "ru",
         "1789195085": "en",
+        "330042477": "ru",
         "832856447": "en",
         "1049732181": "en",
         "7790398417": "en",
         "841355371": "en",
+        "856055740": "en",
         "5428353345": "ru",
         "6569634879": "en",
         "861432848": "en",
@@ -184,13 +208,16 @@
         "824083959": true,
         "884863632": false,
         "439082374": true,
+        "190753236": true,
         "1316914114": true,
         "147498744": true,
         "1789195085": true,
+        "330042477": true,
         "832856447": true,
         "1049732181": true,
         "7790398417": true,
         "841355371": true,
+        "856055740": true,
         "5428353345": true,
         "6569634879": true,
         "861432848": true,
@@ -207,13 +234,16 @@
         "824083959": "dimsaewel",
         "884863632": "Ulyana80",
         "439082374": "klimfalin",
+        "190753236": "VILvict",
         "1316914114": "Kirillooool",
         "147498744": "corefather",
         "1789195085": "Favvylewy",
+        "330042477": "G0ld9n",
         "832856447": "Kobi_Shalom",
         "1049732181": "hayatearmy1234",
         "7790398417": "zzzzrrrrooo",
         "841355371": "Kevin",
+        "856055740": "yinonkn",
         "5428353345": "ArtemidaProgrev",
         "6569634879": "AA",
         "861432848": "traderibo123",
@@ -229,14 +259,17 @@
         "824083959": "any",
         "884863632": "any",
         "439082374": "10_90",
+        "190753236": "any",
         "435679503": "any",
         "1316914114": "any",
         "147498744": "any",
         "1789195085": "1_99",
+        "330042477": "1_99",
         "832856447": "1_99",
         "1049732181": "1_99",
         "7790398417": "1_99",
         "841355371": "1_99",
+        "856055740": "1_99",
         "5428353345": "1_99",
         "6569634879": "1_99",
         "861432848": "1_99",
@@ -312,6 +345,14 @@
             "MERGE": false,
             "REDEEM": false
         },
+        "330042477": {
+            "all": false,
+            "BUY": true,
+            "SELL": true,
+            "SPLIT": false,
+            "MERGE": false,
+            "REDEEM": false
+        },
         "832856447": {
             "all": false,
             "BUY": true,
@@ -344,6 +385,14 @@
             "MERGE": false,
             "REDEEM": false
         },
+        "856055740": {
+            "all": false,
+            "BUY": true,
+            "SELL": true,
+            "SPLIT": false,
+            "MERGE": false,
+            "REDEEM": false
+        },
         "5428353345": {
             "all": false,
             "BUY": true,
@@ -353,6 +402,14 @@
             "REDEEM": false
         },
         "6569634879": {
+            "all": false,
+            "BUY": true,
+            "SELL": true,
+            "SPLIT": false,
+            "MERGE": false,
+            "REDEEM": false
+        },
+        "190753236": {
             "all": false,
             "BUY": true,
             "SELL": true,
@@ -394,11 +451,19 @@
             "min_days": null,
             "max_days": null
         },
+        "856055740": {
+            "min_days": null,
+            "max_days": null
+        },
         "5428353345": {
             "min_days": null,
             "max_days": null
         },
         "6569634879": {
+            "min_days": null,
+            "max_days": null
+        },
+        "190753236": {
             "min_days": null,
             "max_days": null
         },
@@ -428,11 +493,19 @@
             "min_count": null,
             "max_count": null
         },
+        "856055740": {
+            "min_count": null,
+            "max_count": null
+        },
         "5428353345": {
             "min_count": null,
             "max_count": null
         },
         "6569634879": {
+            "min_count": null,
+            "max_count": null
+        },
+        "190753236": {
             "min_count": null,
             "max_count": null
         },

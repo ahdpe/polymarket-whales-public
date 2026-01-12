@@ -1,8 +1,28 @@
-🚀 **New Filters Available**
+🆕 Bot Update!
 
-🕐 **Wallet Age Filter** — Filter by trader wallet age (days, min-max range)
-⚠️ *Beta mode — may have inaccuracies*
+🚀 New Feature: Track Saved Traders
+You can now enable direct notifications for specific saved traders.
 
-💼 **Open Positions Filter** — Filter by number of open positions (min-max range)
+How it works:
+- Bypasses Filters: When enabled, you'll receive ALL trades from that trader, regardless of your amount, category, or probability settings.
+- Special Indicator: Alerts from your notification list will have a 🔔 icon next to the trader's name.
 
-**To see new buttons:** Press ⚙️ Filters or send `/start`
+How to enable:
+1. Go to ⭐ Favorites
+2. Click ✏️ Edit (pencil button)
+3. Tap 🔔 On next to the trader you want to track
+--------------------------
+
+🆕 Обновление бота!
+
+🚀 Новая функция: Следите за избранными трейдерами
+Теперь можно включить прямые уведомления для конкретных сохраненных трейдеров.
+
+Как это работает:
+- Обход фильтров: Вы будете получать ВСЕ сделки от этого трейдера, независимо от ваших настроек фильтров.
+- Особая отметка: В оповещениях рядом с именем отслеживаемого трейдера появится значок 🔔.
+
+Как включить:
+1. Перейдите в ⭐ Избранное (Favorites)
+2. Нажмите ✏️ Редактировать (Edit)
+3. Нажмите 🔔 Вкл (On) напротив нужного трейдера

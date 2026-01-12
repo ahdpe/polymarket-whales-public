@@ -23,7 +23,7 @@ Telegram-бот для отслеживания крупных сделок ("к
 - 🌐 **Двуязычный интерфейс** — Русский / English
 - 🔗 **Ссылки на профиль трейдера** и рынок
 - 📈 **Расширенная аналитика:** Open PnL, активные позиции, возраст кошелька
-- ⭐ **Избранное:** Сохранение интересных трейдеров с их текущим "уровнем" (🦐-🔥)
+- ⭐ **Избранное:** Сохранение интересных трейдеров с их текущим "уровнем" (🦐-🔥) + **🔔 Уведомления** (персональная подписка на трейдера)
 - 🐦 **Twitter интеграция** — автоматическая публикация крупных сделок в Twitter/X
 
 ### Классификация объёмов
@@ -148,6 +148,9 @@ Polymarket API часто обрезает историю сделок для а
 3. **Хранение данных (SQLite):**
    - `saved_whales`: Связь `user_id` <-> `whale_id` + комментарий пользователя.
    - `whale_keys`: Общая таблица метаданных (адрес, имя, уровень).
+4. **Персональные уведомления (Bell Feature):**
+   - Возможность включить уведомления (🔔) для конкретного трейдера.
+   - Такие уведомления **игнорируют общие фильтры** (сумма, категория, вероятность) и приходят всегда.
 
 ### Установка
 
@@ -194,7 +197,7 @@ Telegram bot for real-time tracking of large trades ("whales") on [Polymarket](h
 - 🌐 **Bilingual interface** — Russian / English
 - 🔗 **Links to trader profile** and market
 - 📈 **Advanced Analytics:** Open PnL, Active Positions, Wallet Age
-- ⭐ **Favorites:** Save interesting traders with their current "level" (🦐-🔥)
+- ⭐ **Favorites:** Save interesting traders with their current "level" (🦐-🔥) + **🔔 Notifications** (subscribe to specific trader)
 - 🐦 **Twitter integration** — automatic posting of large trades to Twitter/X
 
 ### Volume Classification
@@ -299,6 +302,9 @@ The saved traders implementation is optimized for Telegram API constraints:
 3. **Data Storage (SQLite):**
    - `saved_whales`: Maps `user_id` <-> `whale_id` + user comment.
    - `whale_keys`: Shared metadata table (address, name, level).
+4. **Direct Notifications (Bell Feature):**
+   - Toggle notifications (🔔) for specific saved traders.
+   - These alerts **bypass general filters** (amount, category, probability) and are always delivered.
 
 ### Installation
 

@@ -291,6 +291,11 @@ async def callback_cancel_clear(callback: types.CallbackQuery):
     """Cancel clear all - ensure return to list."""
     pass
 
+@dp.callback_query(lambda c: c.data and c.data.startswith('toggle_notif:'))
+async def callback_toggle_notif(callback: types.CallbackQuery):
+    """Toggle notifications for a saved trader."""
+    pass
+
 @dp.callback_query(F.data == 'noop')
 async def callback_noop(callback: CallbackQuery):
     """Handle noop callback (page info button)."""
