@@ -642,6 +642,10 @@ class TwitterService:
         trader_address = trade_data.get('trader_address', '')
         trader_name = trade_data.get('name', '') or trade_data.get('trader_name', '')
         
+        # Strip timestamp suffix if present (e.g. 0x...-123456789)
+        if trader_name and trader_name.startswith('0x') and '-' in trader_name:
+             trader_name = trader_name.split('-')[0]
+        
         # Shorten address for display
         if trader_address and len(trader_address) > 12:
             short_address = f"{trader_address[:4]}…{trader_address[-4:]}"

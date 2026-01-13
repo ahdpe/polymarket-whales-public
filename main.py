@@ -115,6 +115,30 @@ def format_wallet_age(first_activity_ts):
     
     return f"\n🕐 Wallet Age: {age_str}"
 
+
+def shorten_trader_name(name):
+    """
+    Shorten trader name:
+    1. Remove timestamp suffix (starting with '-') if present.
+    2. detailed: 0xB0B1Ecb5eD8a22d38Ee89f20b196246005d37507-1768254109767 -> 0xB0B1E...d3750
+    """
+    if not name:
+        return "Unknown"
+    
+    # Check if it looks like a wallet address (starts with 0x)
+    clean_name = name
+    if name.startswith("0x"):
+        # Split by '-' to remove potential timestamp suffix
+        parts = name.split('-')
+        clean_name = parts[0]
+        
+        # If it's a long wallet address, truncate it
+        if len(clean_name) > 15:
+            return f"{clean_name[:7]}...{clean_name[-5:]}"
+            
+    return clean_name
+
+
 async def handle_trade(trade_data):
     """
     Callback for when a trade is received from Data API.
@@ -259,8 +283,8 @@ async def handle_trade(trade_data):
         emoji = alert_config['emoji']
         # side already defined above
         outcome = trade_data.get('outcome', '')
-        trader = trade_data.get('name') or trade_data.get('pseudonym', 'Unknown')
         trader_address = trade_data.get('proxyWallet', '') or trade_data.get('maker', '')
+        trader = trade_data.get('name') or trade_data.get('pseudonym') or trader_address or 'Unknown'
         
         # Check if this is a Split position
         is_split = side.upper() == 'SPLIT' or trade_data.get('type', '').upper() == 'SPLIT'
@@ -373,7 +397,11 @@ async def handle_trade(trade_data):
              # Check if trader is saved by this user
              is_saved = saved_whales.is_saved(chat_id, trader_address) if trader_address else False
              
-             trader_text = f"[{trader}]({trader_url})" if trader_url else trader
+             # Shorten trader name/address for display
+             display_trader = shorten_trader_name(trader)
+             trader_text = f"[{display_trader}]({trader_url})" if trader_url else display_trader
+             
+
              
              # Format side_display - skip price % for SPLIT/MERGE/REDEEM
              if is_split or is_merge or is_redeem:

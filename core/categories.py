@@ -1,5 +1,27 @@
 """Category detection for Polymarket trades."""
 
+import re
+
+# Compile regex patterns for word boundary matching
+_word_boundary_cache = {}
+
+def _matches_keyword(text: str, keyword: str) -> bool:
+    """
+    Check if keyword matches in text using word boundaries.
+    This prevents false positives like 'war' matching in 'Howard'.
+    """
+    # For multi-word keywords or keywords with spaces, use simple containment
+    if ' ' in keyword:
+        return keyword in text
+    
+    # For single words, use word boundary regex
+    if keyword not in _word_boundary_cache:
+        # \b = word boundary, re.escape handles special chars
+        _word_boundary_cache[keyword] = re.compile(r'\b' + re.escape(keyword) + r'\b', re.IGNORECASE)
+    
+    return bool(_word_boundary_cache[keyword].search(text))
+
+
 # Crypto-related keywords
 CRYPTO_KEYWORDS = [
     'bitcoin', 'btc', 'ethereum', ' eth ', 'crypto', 'solana', ' sol ',
@@ -141,21 +163,21 @@ def detect_category(title: str, slug: str = "", url: str = "") -> str:
     # First, check for explicit non-sports categories (economics, politics, etc.)
     # These should override URL-based sports detection
     for keyword in ECONOMICS_KEYWORDS:
-        if keyword in text_to_search:
+        if _matches_keyword(text_to_search, keyword):
             # Economics/finance markets should be 'other', not 'sports'
             # Check if it's also crypto-related
             for crypto_kw in CRYPTO_KEYWORDS:
-                if crypto_kw in text_to_search:
+                if _matches_keyword(text_to_search, crypto_kw):
                     return 'crypto'
             return 'other'
     
     # Check for geopolitics/military context
     # These should override sports detection (e.g., "Will France strike Iran" vs "France vs Germany match")
     for keyword in GEOPOLITICS_KEYWORDS:
-        if keyword in text_to_search:
+        if _matches_keyword(text_to_search, keyword):
             # Check if it's also crypto-related
             for crypto_kw in CRYPTO_KEYWORDS:
-                if crypto_kw in text_to_search:
+                if _matches_keyword(text_to_search, crypto_kw):
                     return 'crypto'
             return 'other'
     
@@ -164,7 +186,7 @@ def detect_category(title: str, slug: str = "", url: str = "") -> str:
     has_vs_pattern = ' vs ' in text_to_search or ' vs' in text_to_search or 'vs ' in text_to_search
     has_sports_keyword = False
     for keyword in SPORTS_KEYWORDS:
-        if keyword in text_to_search:
+        if _matches_keyword(text_to_search, keyword):
             has_sports_keyword = True
             # If we have "vs" pattern and found sports keyword, it's definitely sports
             if has_vs_pattern:
@@ -173,7 +195,7 @@ def detect_category(title: str, slug: str = "", url: str = "") -> str:
     
     # Check for crypto keywords (after sports context check)
     for keyword in CRYPTO_KEYWORDS:
-        if keyword in text_to_search:
+        if _matches_keyword(text_to_search, keyword):
             return 'crypto'
     
     # Only use URL /sports/ if there are actual sports keywords in the title

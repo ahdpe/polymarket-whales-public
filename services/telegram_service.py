@@ -13,6 +13,29 @@ from core.localization import get_text
 from storage import saved_whales
 from services.report_service import generate_report
 
+
+def shorten_trader_name(name):
+    """
+    Shorten trader name:
+    1. Remove timestamp suffix (starting with '-') if present.
+    2. Truncate long addresses: 0xB0B1Ecb5eD8a22d38Ee89f20b196246005d37507 -> 0xB0B1E...37507
+    """
+    if not name:
+        return "Unknown"
+    
+    # Check if it looks like a wallet address (starts with 0x)
+    clean_name = name
+    if name.startswith("0x"):
+        # Split by '-' to remove potential timestamp suffix
+        parts = name.split('-')
+        clean_name = parts[0]
+        
+        # If it's a long wallet address, truncate it
+        if len(clean_name) > 15:
+            return f"{clean_name[:7]}...{clean_name[-5:]}"
+            
+    return clean_name
+
 # Global reference to PolymarketService instance (set during startup)
 _poly_service = None
 
@@ -152,11 +175,9 @@ def get_user_lang(chat_id):
     return user_languages.get(chat_id, 'en')
 
 def get_language_button_text(current_lang: str) -> str:
-    """Get language button text showing current language first, then switch option."""
-    if current_lang == 'ru':
-        return "🇷🇺 / 🇬🇧"
-    else:
-        return "🇬🇧 / 🇷🇺"
+    """Get language button text - English always first as primary language."""
+    # English is primary, always show first
+    return "🇬🇧 / 🇷🇺"
 
 def is_user_active(chat_id):
     """Check if user bot is active (started)."""
@@ -174,10 +195,7 @@ def get_main_keyboard(chat_id):
         keyboard=[
             [KeyboardButton(text=btn_toggle),
              KeyboardButton(text=get_text(lang, 'btn_filters')),
-             KeyboardButton(text=get_text(lang, 'btn_saved'))],
-            [KeyboardButton(text=get_text(lang, 'btn_about')),
-             KeyboardButton(text=get_language_button_text(lang)),
-             KeyboardButton(text=get_text(lang, 'btn_hide_menu'))]
+             KeyboardButton(text=get_text(lang, 'btn_saved'))]
         ],
         resize_keyboard=True,
         is_persistent=True
@@ -538,6 +556,7 @@ async def btn_probability(message: types.Message):
     """Handle Probability button press."""
     await cmd_probability(message)
 
+@dp.message(Command("age"))
 @dp.message(F.text.in_(["🕐 Возраст", "🕐 Age"]))
 async def btn_age(message: types.Message):
     """Handle Age button press - show age filter menu."""
@@ -551,6 +570,7 @@ async def btn_age(message: types.Message):
         reply_markup=get_age_keyboard(chat_id)
     )
 
+@dp.message(Command("positions"))
 @dp.message(F.text.in_(["💼 Позиции", "💼 Positions"]))
 async def btn_positions(message: types.Message):
     """Handle Positions button press - show positions filter menu."""
@@ -649,6 +669,7 @@ async def btn_filters(message: types.Message):
         reply_markup=get_filters_keyboard(chat_id)
     )
 
+@dp.message(Command("back"))
 @dp.message(F.text.in_(["⬅️ Назад", "⬅️ Back"]))
 async def btn_back(message: types.Message):
     """Handle Back button press - return to main menu."""
@@ -681,7 +702,7 @@ async def btn_start_stop(message: types.Message):
         reply_markup=get_main_keyboard(chat_id)
     )
 
-@dp.message(F.text.in_(["🇷🇺 / 🇬🇧", "🇬🇧 / 🇷🇺"]))
+@dp.message(F.text.in_(["🇬🇧 / 🇷🇺"]))
 async def btn_language(message: types.Message):
     """Handle Language toggle button."""
     chat_id = message.chat.id
@@ -743,7 +764,102 @@ async def cmd_menu(message: types.Message):
         reply_markup=get_main_keyboard(chat_id)
     )
 
+@dp.message(Command("about"))
+async def cmd_about(message: types.Message):
+    """Command to show about info."""
+    chat_id = message.chat.id
+    ensure_user_exists(chat_id)
+    lang = get_user_lang(chat_id)
+    
+    await message.answer(
+        get_text(lang, 'about'),
+        parse_mode="Markdown",
+        disable_web_page_preview=True
+    )
 
+@dp.message(Command("lang"))
+async def cmd_lang(message: types.Message):
+    """Command to toggle language."""
+    chat_id = message.chat.id
+    ensure_user_exists(chat_id)
+    current_lang = get_user_lang(chat_id)
+    
+    # Toggle language
+    new_lang = 'en' if current_lang == 'ru' else 'ru'
+    user_languages[chat_id] = new_lang
+    save_settings()
+    
+    await message.answer(
+        get_text(new_lang, 'welcome', chat_id=chat_id),
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard(chat_id)
+    )
+
+@dp.message(Command("hide"))
+async def cmd_hide(message: types.Message):
+    """Command to hide menu."""
+    chat_id = message.chat.id
+    ensure_user_exists(chat_id)
+    lang = get_user_lang(chat_id)
+    
+    await message.answer(
+        get_text(lang, 'menu_hidden'),
+        reply_markup=get_collapsed_keyboard(chat_id)
+    )
+
+@dp.message(Command("stop"))
+async def cmd_stop(message: types.Message):
+    """Command to toggle bot state (start/stop alerts)."""
+    chat_id = message.chat.id
+    ensure_user_exists(chat_id)
+    lang = get_user_lang(chat_id)
+    active = is_user_active(chat_id)
+    
+    # Toggle state
+    new_state = not active
+    user_statuses[chat_id] = new_state
+    save_settings()
+    
+    msg_key = 'bot_started' if new_state else 'bot_stopped'
+    
+    await message.answer(
+        get_text(lang, msg_key),
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard(chat_id)
+    )
+
+@dp.message(Command("filters"))
+async def cmd_filters(message: types.Message):
+    """Command to show filters menu."""
+    chat_id = message.chat.id
+    ensure_user_exists(chat_id)
+    lang = get_user_lang(chat_id)
+    
+    current_filters = format_current_filters(chat_id)
+    title = "⚙️ *Фильтры*" if lang == 'ru' else "⚙️ *Filters*"
+    subtitle = "📋 *Текущие настройки:*" if lang == 'ru' else "📋 *Current settings:*"
+    
+    msg_text = f"{title}\n\n{subtitle}\n{current_filters}"
+    
+    await message.answer(
+        msg_text,
+        parse_mode="Markdown",
+        reply_markup=get_filters_keyboard(chat_id)
+    )
+
+@dp.message(Command("saved"))
+async def cmd_saved(message: types.Message):
+    """Command to show saved traders list."""
+    chat_id = message.chat.id
+    ensure_user_exists(chat_id)
+    lang = get_user_lang(chat_id)
+    
+    text, reply_markup = get_aquarium_list(chat_id, 0)
+    
+    if text:
+        await message.answer(text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
+    else:
+        await message.answer(get_text(lang, 'saved_empty'))
 
 
 # ============ SAVED TRADERS HANDLERS (LIST + EDIT MODE) ============
@@ -778,6 +894,8 @@ def get_aquarium_list(chat_id, page=0, edit_mode=False):
         name = item.get('name')
         if not name and whale_data: name = whale_data.get('name')
         display_name = name if name else whale_id
+        # Shorten address if it's a wallet ID
+        display_name = shorten_trader_name(display_name)
         
         # Escape markdown symbols in name
         safe_name = display_name.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[")
