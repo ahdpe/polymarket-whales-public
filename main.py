@@ -325,6 +325,24 @@ async def handle_trade(trade_data):
         if poly_service and trader_address:
             pos_data = await poly_service.get_trader_positions(trader_address)
             first_activity_ts = await poly_service.get_trader_first_activity(trader_address)
+
+        # RE-CHECK TWITTER: Now that we have expensive stats (Age, Positions), 
+        # we might qualify for "Insider" Twitter alerts that were skipped initially.
+        if twitter_service and not twitter_wants:
+            # Inject stats into trade_data
+            if pos_data:
+                trade_data['open_positions_count'] = pos_data.get('open_count', 999)
+            
+            if first_activity_ts:
+                # Format exactly as Twitter service expects (stripped string)
+                raw_age = format_wallet_age(first_activity_ts).replace('\n🕐 Wallet Age: ', '')
+                trade_data['wallet_age_str'] = raw_age
+            
+            # check again
+            twitter_wants, new_reason = twitter_service.wants_trade(trade_data)
+            if twitter_wants:
+                logger.info(f"Twitter ACCEPTED trade after fetching stats (was: {twitter_reason})")
+
         position_stats_line = format_position_stats(pos_data)
         wallet_age_line = format_wallet_age(first_activity_ts)
         
@@ -438,7 +456,8 @@ async def handle_trade(trade_data):
                 'trader_name': trader,  # Full trader name if available
                 'level_name': alert_config.get('name', 'WHALE'),
                 'position_stats': pos_data,
-                'wallet_age_str': format_wallet_age(first_activity_ts).replace('\n🕐 Wallet Age: ', '') if first_activity_ts else ''
+                'wallet_age_str': format_wallet_age(first_activity_ts).replace('\n🕐 Wallet Age: ', '') if first_activity_ts else '',
+                'open_positions_count': pos_data.get('open_count', 999) if pos_data else 999
             }
             await twitter_service.post_trade_alert(twitter_data)
                     

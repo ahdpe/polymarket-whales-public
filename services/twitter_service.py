@@ -13,6 +13,7 @@ import json
 import os
 import asyncio
 import time
+import random
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -38,10 +39,36 @@ PROBABILITY_OPTIONS = {
 MAX_TWEETS_PER_24H = 17  # Maximum tweets per 24-hour rolling window
 TWEET_WINDOW_SEC = 24 * 60 * 60  # 24 hours in seconds
 
+# Insider Tweet Templates (Safe versions)
+INSIDER_TEMPLATES = [
+    # Group 1: Focus
+    "Fresh wallet with heavy focus. Only {pos_count} active position(s). Betting {amount} straight out of the gate. 👀",
+    "Laser focus? 🎯 Brand new wallet ignoring everything else to deploy {amount} on this outcome.",
+    "Single target detected. No history, minimal positions. Just a massive {amount} bet on this specific market.",
+    
+    # Group 2: Anomaly
+    "Unusual market pattern. Large volume ({amount}) from a source with zero prior history.",
+    "Anomaly detected. A silent wallet suddenly wakes up with a major position. Worth monitoring.",
+    "Pattern watch: High-confidence trade from a completely fresh wallet. No previous track record.",
+    
+    # Group 3: Speed
+    "Straight to business. 💼 Fresh wallet, no warmup trades. Starts directly with a {amount} position.",
+    "Big entry, zero history. Just activated and dropping {amount}. Who is this?",
+    "Aggressive newcomer. Skipping the small trades. First major move is a {amount} bet here.",
+    
+    # Group 4: Question
+    "Smart tracking or something else? 🤔 Brand new wallet bets {amount} on this single outcome.",
+    "Gut feeling or calculations? Fresh wallet stakes {amount} immediately after funding.",
+    "What did they see? 👀 {amount} flows into this market from a wallet with no history."
+]
+
 # Default settings
 DEFAULT_SETTINGS = {
     'enabled': False,              # Default: Disabled
     'min_alert_usd': 100000,       # Default: $100K minimum for Twitter
+    'min_alert_insider_usd': 20000,# Default: $20K minimum for Insider tweets
+    'max_insider_age_days': 2.0,   # Default: 2 days max for Insider
+    'max_insider_positions': 3,    # Default: 3 positions max for Insider
     'tweet_timestamps': [],        # List of timestamps of successful tweets (for 24h rolling window)
     'paused_until': 0,            # Timestamp until which posting is paused (403 protection)
     'interval_minutes': 25,       # Minutes between tweets (minimum interval, but 24h limit takes priority)
@@ -137,6 +164,45 @@ def is_twitter_enabled() -> bool:
 def get_twitter_min_alert() -> int:
     """Get minimum USD value for Twitter alerts."""
     return _load_settings().get('min_alert_usd', 25000)
+
+
+def get_twitter_insider_min() -> int:
+    """Get minimum USD value for INSIDER Twitter alerts."""
+    return _load_settings().get('min_alert_insider_usd', 20000)
+
+
+def set_twitter_insider_min(min_usd: int) -> None:
+    """Set minimum USD value for INSIDER Twitter alerts."""
+    settings = _load_settings()
+    settings['min_alert_insider_usd'] = min_usd
+    _save_settings()
+    logger.info(f"Twitter INSIDER min alert set to ${min_usd:,}")
+
+
+def get_twitter_insider_max_age() -> float:
+    """Get max wallet age (days) for INSIDER Twitter alerts."""
+    return _load_settings().get('max_insider_age_days', 2.0)
+
+
+def set_twitter_insider_max_age(days: float) -> None:
+    """Set max wallet age (days) for INSIDER Twitter alerts."""
+    settings = _load_settings()
+    settings['max_insider_age_days'] = float(days)
+    _save_settings()
+    logger.info(f"Twitter INSIDER max age set to {days} days")
+
+
+def get_twitter_insider_max_positions() -> int:
+    """Get max positions for INSIDER Twitter alerts."""
+    return _load_settings().get('max_insider_positions', 3)
+
+
+def set_twitter_insider_max_positions(count: int) -> None:
+    """Set max positions for INSIDER Twitter alerts."""
+    settings = _load_settings()
+    settings['max_insider_positions'] = int(count)
+    _save_settings()
+    logger.info(f"Twitter INSIDER max positions set to {count}")
 
 
 def get_twitter_interval() -> int:
@@ -439,8 +505,67 @@ class TwitterService:
         
         # Check minimum amount
         value_usd = price * float(trade_data.get('size', 0))
-        if value_usd < get_twitter_min_alert():
-            return False, f"amount_{value_usd:.0f}_below_min"
+        
+        # Check if this qualifies as an "Insider Candidate"
+        # (Conditions must match logic in format_tweet)
+        wallet_age_str = trade_data.get('wallet_age_str', '')
+        pos_count = trade_data.get('open_positions_count', 999)
+        is_fresh = False
+        if wallet_age_str:
+            age_lower = wallet_age_str.lower()
+            if 'h' in age_lower or '<' in age_lower or 'less' in age_lower:
+                is_fresh = True
+            elif 'd' in age_lower:
+                try:
+                    days = float(age_lower.replace('d', '').split()[0])
+                    # Check against configured max age
+                    max_days = get_twitter_insider_max_age()
+                    if days <= max_days:
+                        is_fresh = True
+                except:
+                    pass
+        
+        # Check against configured max positions
+        max_pos = get_twitter_insider_max_positions()
+        
+        is_insider_candidate = (
+            is_fresh and 
+            side == 'BUY' and 
+            pos_count <= max_pos
+        )
+        
+        # Filter Logic:
+        # 1. If Insider Candidate -> Check Insider Min
+        # 2. If NOT Insider Candidate -> Check Global Min
+        
+        min_required = get_twitter_min_alert()
+        
+        if is_insider_candidate:
+            insider_min = get_twitter_insider_min()
+            # If insider min is LOWER than global min, we allow it to bypass global min
+            # If insider min is HIGHER (unlikely but possible), strict check
+            
+            # Actually, the user wants "separate" logic.
+            # If it's insider -> accepted if > insider_min
+            # If standard -> accepted if > global_min
+            
+            if value_usd >= insider_min:
+                return True, "ok_insider"
+            # If < insider_min, fall through to check global min?
+            # Or fail? Usually 'insider min' is lower, so if it fails insider min, it likely fails global min too ($100k).
+            # But let's be safe: if fails insider criteria (amount), it shouldn't auto-fail if it somehow passes global
+            # although conventionally insider_min < global_min.
+            
+            if value_usd < min_required and value_usd < insider_min:
+                 return False, f"amount_{value_usd:.0f}_below_mins"
+            elif value_usd < min_required:
+                 # It was candidate but failed insider min, and is below global min
+                 return False, f"amount_{value_usd:.0f}_below_global_min"
+                 
+        else:
+            # Standard trade
+            if value_usd < min_required:
+                return False, f"amount_{value_usd:.0f}_below_min"
         
         return True, "ok"
     
@@ -483,19 +608,121 @@ class TwitterService:
         side_upper = side.upper()
         is_buy = side_upper == 'BUY'
         is_special = side_upper in ('SPLIT', 'MERGE', 'REDEEM')
+
+        # Trader info extraction (needed early for Insider logic)
+        trader_address = trade_data.get('trader_address', '')
+        trader_name = trade_data.get('name', '') or trade_data.get('trader_name', '')
+        
+        # Strip timestamp suffix
+        if trader_name and trader_name.startswith('0x') and '-' in trader_name:
+             trader_name = trader_name.split('-')[0]
+
+        # Wallet age
+        wallet_age_str = trade_data.get('wallet_age_str', '')
+
+        # --- INSIDER LOGIC START ---
+        # 1. Fresh wallet check
+        is_fresh = False
+        if wallet_age_str:
+            age_lower = wallet_age_str.lower()
+            if 'h' in age_lower or '<' in age_lower or 'less' in age_lower:
+                is_fresh = True
+            elif 'd' in age_lower:
+                try:
+                    # simplistic parse: "4d" -> 4.0
+                    days = float(age_lower.replace('d', '').split()[0])
+                    # Check against configured max age
+                    max_days = get_twitter_insider_max_age()
+                    if days <= max_days:
+                        is_fresh = True
+                except:
+                    pass
+
+        # 2. Position count (default high to avoid false positive if missing)
+        pos_count = trade_data.get('open_positions_count', 999) 
+        max_pos = get_twitter_insider_max_positions()
+        
+        # 3. Trade size (Check against configured insider min)
+        insider_min_val = get_twitter_insider_min()
+        is_large = value_usd >= insider_min_val
+
+        # Check condition: Fresh + Large + Few Positions + BUY
+        if is_fresh and is_large and pos_count <= max_pos and is_buy:
+             try:
+                 template = random.choice(INSIDER_TEMPLATES)
+                 
+                 # Format amount
+                 amount_str = f"${value_usd:,.0f}"
+                 if value_usd >= 1000:
+                      amount_str = f"${value_usd/1000:.1f}k"
+                 
+                 insider_text = template.format(
+                     amount=amount_str,
+                     pos_count=pos_count,
+                     wallet_age=wallet_age_str
+                 )
+                 
+                 # Construct valid profile link
+                 profile_link = ""
+                 if trader_address and trader_address.startswith('0x'):
+                      profile_link = f"Profile: polymarket.com/profile/{trader_address}"
+                 
+                 # Build display for trader
+                 # Use same logic as standard but maybe simpler or consistent
+                 if trader_name and trader_name.strip():
+                      t_display = f"{trader_name} 🐋" # Simplified for insider view
+                 elif trader_address and len(trader_address) > 12:
+                      short = f"{trader_address[:4]}…{trader_address[-4:]}"
+                      t_display = f"Fresh wallet: {short} 🐋"
+                 else:
+                      t_display = f"Fresh wallet: {trader_address} 🐋"
+
+                 lines = [
+                    f"Market: {market_title}",
+                    "",
+                    insider_text,
+                    "",
+                    f"{side_upper} {outcome} @ {price*100:.1f}%",
+                    f"Traded: ${value_usd:,.0f} 💵",
+                    "",
+                    t_display
+                 ]
+                 
+                 if profile_link:
+                     lines.append(profile_link)
+
+                 if wallet_age_str:
+                     lines.append(f"Wallet age: {wallet_age_str}")
+                
+                 tweet = "\n".join(lines)
+                 
+                 # Truncation logic (same as standard)
+                 if len(tweet) > 280:
+                    max_title_len = 280 - (len(tweet) - len(market_title)) - 3
+                    if max_title_len > 20:
+                        market_title = market_title[:max_title_len] + "..."
+                        lines[0] = f"Market: {market_title}"
+                        tweet = "\n".join(lines)
+                 
+                 return tweet
+
+             except Exception as e:
+                 logger.error(f"Error formatting insider tweet: {e}")
+                 # Fallback to standard
+        # --- INSIDER LOGIC END ---
         
         # Helper: Get probability label for BUY trades
         def get_probability_label(prob_pct):
             if prob_pct >= 80:
-                return "HIGH-CONVICTION BUY"
+                return "High-conviction buy"
             elif prob_pct >= 65:
-                return "CONFIDENT BUY"
+                return "Confident buy"
             elif prob_pct >= 50:
-                return "BALANCED BUY"
+                return "Balanced buy"
             elif prob_pct >= 35:
-                return "RISKY BUY"
+                return "Risky buy"
             else:
-                return "HIGH-RISK BUY"
+                return "High-risk buy"
         
         # Helper: Get size label
         def get_size_label(usd):
@@ -681,10 +908,10 @@ class TwitterService:
         
         # Build tweet lines (strictly multi-line with blank lines)
         lines = [
+            f"Market: {market_title}",
+            "",
             first_line,
             money_line,
-            "",
-            f"Market: {market_title}",
             "",
             trader_display,
         ]
@@ -704,7 +931,7 @@ class TwitterService:
             max_title_len = 280 - (len(tweet) - len(market_title)) - 3
             if max_title_len > 20:
                 market_title = market_title[:max_title_len] + "..."
-                lines[3] = f"Market: {market_title}"
+                lines[0] = f"Market: {market_title}"
                 tweet = "\n".join(lines)
         
         return tweet
