@@ -14,6 +14,7 @@ import json
 import os
 import asyncio
 import time
+import random
 from typing import Optional
 logger = logging.getLogger(__name__)
 TWITTER_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), '..', 'twitter_settings.json')
@@ -23,7 +24,8 @@ PAUSE_ON_403_SEC = 6 * 60 * 60
 PROBABILITY_OPTIONS = {'any': None, '1_99': (0.01, 0.99), '5_95': (0.05, 0.95), '10_90': (0.1, 0.9)}
 MAX_TWEETS_PER_24H = 17
 TWEET_WINDOW_SEC = 24 * 60 * 60
-DEFAULT_SETTINGS = {'enabled': False, 'min_alert_usd': 100000, 'tweet_timestamps': [], 'paused_until': 0, 'interval_minutes': 25, 'probability_filter': '1_99', 'allow_sell': False, 'allow_split': False, 'allow_merge': False, 'allow_redeem': False, 'categories': {'crypto': True, 'sports': True, 'other': True}}
+INSIDER_TEMPLATES = ['Fresh wallet with heavy focus. Only {pos_count} active position(s). Betting {amount} straight out of the gate. 👀', 'Laser focus? 🎯 Brand new wallet ignoring everything else to deploy {amount} on this outcome.', 'Single target detected. No history, minimal positions. Just a massive {amount} bet on this specific market.', 'Unusual market pattern. Large volume ({amount}) from a source with zero prior history.', 'Anomaly detected. A silent wallet suddenly wakes up with a major position. Worth monitoring.', 'Pattern watch: High-confidence trade from a completely fresh wallet. No previous track record.', 'Straight to business. 💼 Fresh wallet, no warmup trades. Starts directly with a {amount} position.', 'Big entry, zero history. Just activated and dropping {amount}. Who is this?', 'Aggressive newcomer. Skipping the small trades. First major move is a {amount} bet here.', 'Smart tracking or something else? 🤔 Brand new wallet bets {amount} on this single outcome.', 'Gut feeling or calculations? Fresh wallet stakes {amount} immediately after funding.', 'What did they see? 👀 {amount} flows into this market from a wallet with no history.']
+DEFAULT_SETTINGS = {'enabled': False, 'min_alert_usd': 100000, 'min_alert_insider_usd': 20000, 'max_insider_age_days': 2.0, 'max_insider_positions': 3, 'tweet_timestamps': [], 'paused_until': 0, 'interval_minutes': 25, 'probability_filter': '1_99', 'allow_sell': False, 'allow_split': False, 'allow_merge': False, 'allow_redeem': False, 'categories': {'crypto': True, 'sports': True, 'other': True}}
 _twitter_settings = None
 
 def _load_settings() -> dict:
@@ -52,6 +54,30 @@ def is_twitter_enabled() -> bool:
 
 def get_twitter_min_alert() -> int:
     """Get minimum USD value for Twitter alerts."""
+    pass
+
+def get_twitter_insider_min() -> int:
+    """Get minimum USD value for INSIDER Twitter alerts."""
+    pass
+
+def set_twitter_insider_min(min_usd: int) -> None:
+    """Set minimum USD value for INSIDER Twitter alerts."""
+    pass
+
+def get_twitter_insider_max_age() -> float:
+    """Get max wallet age (days) for INSIDER Twitter alerts."""
+    pass
+
+def set_twitter_insider_max_age(days: float) -> None:
+    """Set max wallet age (days) for INSIDER Twitter alerts."""
+    pass
+
+def get_twitter_insider_max_positions() -> int:
+    """Get max positions for INSIDER Twitter alerts."""
+    pass
+
+def set_twitter_insider_max_positions(count: int) -> None:
+    """Set max positions for INSIDER Twitter alerts."""
     pass
 
 def get_twitter_interval() -> int:

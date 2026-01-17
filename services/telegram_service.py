@@ -10,6 +10,14 @@ from config import TELEGRAM_BOT_TOKEN, FILTERS, OWNER_ID
 from core.localization import get_text
 from storage import saved_whales
 from services.report_service import generate_report
+
+def shorten_trader_name(name):
+    """
+    Shorten trader name:
+    1. Remove timestamp suffix (starting with '-') if present.
+    2. Truncate long addresses: 0xB0B1Ecb5eD8a22d38Ee89f20b196246005d37507 -> 0xB0B1E...37507
+    """
+    pass
 _poly_service = None
 
 def set_poly_service(service):
@@ -18,6 +26,9 @@ def set_poly_service(service):
 
 class NoteState(StatesGroup):
     waiting_for_note = State()
+
+class ManualAddState(StatesGroup):
+    waiting_for_input = State()
 
 class AgeFilterState(StatesGroup):
     waiting_for_range = State()
@@ -67,7 +78,7 @@ def get_user_lang(chat_id):
     pass
 
 def get_language_button_text(current_lang: str) -> str:
-    """Get language button text showing current language first, then switch option."""
+    """Get language button text - English always first as primary language."""
     pass
 
 def is_user_active(chat_id):
@@ -166,11 +177,13 @@ async def btn_probability(message: types.Message):
     """Handle Probability button press."""
     pass
 
+@dp.message(Command('age'))
 @dp.message(F.text.in_(['🕐 Возраст', '🕐 Age']))
 async def btn_age(message: types.Message):
     """Handle Age button press - show age filter menu."""
     pass
 
+@dp.message(Command('positions'))
 @dp.message(F.text.in_(['💼 Позиции', '💼 Positions']))
 async def btn_positions(message: types.Message):
     """Handle Positions button press - show positions filter menu."""
@@ -190,6 +203,7 @@ async def btn_filters(message: types.Message):
     """Handle Filters button press - show filters submenu."""
     pass
 
+@dp.message(Command('back'))
 @dp.message(F.text.in_(['⬅️ Назад', '⬅️ Back']))
 async def btn_back(message: types.Message):
     """Handle Back button press - return to main menu."""
@@ -200,7 +214,7 @@ async def btn_start_stop(message: types.Message):
     """Handle Start/Stop toggle button."""
     pass
 
-@dp.message(F.text.in_(['🇷🇺 / 🇬🇧', '🇬🇧 / 🇷🇺']))
+@dp.message(F.text.in_(['🇬🇧 / 🇷🇺']))
 async def btn_language(message: types.Message):
     """Handle Language toggle button."""
     pass
@@ -223,6 +237,36 @@ async def btn_show_menu(message: types.Message):
 @dp.message(Command('menu'))
 async def cmd_menu(message: types.Message):
     """Command to show menu."""
+    pass
+
+@dp.message(Command('about'))
+async def cmd_about(message: types.Message):
+    """Command to show about info."""
+    pass
+
+@dp.message(Command('lang'))
+async def cmd_lang(message: types.Message):
+    """Command to toggle language."""
+    pass
+
+@dp.message(Command('hide'))
+async def cmd_hide(message: types.Message):
+    """Command to hide menu."""
+    pass
+
+@dp.message(Command('stop'))
+async def cmd_stop(message: types.Message):
+    """Command to toggle bot state (start/stop alerts)."""
+    pass
+
+@dp.message(Command('filters'))
+async def cmd_filters(message: types.Message):
+    """Command to show filters menu."""
+    pass
+
+@dp.message(Command('saved'))
+async def cmd_saved(message: types.Message):
+    """Command to show saved traders list."""
     pass
 AQUARIUM_PAGE_SIZE = 10
 
@@ -299,6 +343,21 @@ async def callback_toggle_notif(callback: types.CallbackQuery):
 @dp.callback_query(F.data == 'noop')
 async def callback_noop(callback: CallbackQuery):
     """Handle noop callback (page info button)."""
+    pass
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('manual_add:'))
+async def callback_manual_add(callback: types.CallbackQuery, state: FSMContext):
+    """Handle manual add button - start FSM for trader input."""
+    pass
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('cancel_manual_add:'))
+async def callback_cancel_manual_add(callback: types.CallbackQuery, state: FSMContext):
+    """Cancel manual add operation."""
+    pass
+
+@dp.message(ManualAddState.waiting_for_input)
+async def process_manual_add_input(message: types.Message, state: FSMContext):
+    """Handle manual add text input from FSM."""
     pass
 
 @dp.message(NoteState.waiting_for_note)
@@ -406,7 +465,7 @@ async def cmd_stats(message: types.Message):
 
 @dp.message(Command('users'))
 async def cmd_users(message: types.Message):
-    """List all users (owner only)."""
+    """List all users as a text file (owner only)."""
     pass
 
 @dp.message(Command('broadcast'))
@@ -444,9 +503,24 @@ async def cmd_twitter_off(message: types.Message):
     """Disable Twitter posting (owner only)."""
     pass
 
+@dp.message(Command('twitter_ins_min'))
+async def cmd_twitter_ins_min(message: types.Message):
+    """Set Twitter minimum amount for Insider tweets."""
+    pass
+
 @dp.message(Command('twitter_min'))
 async def cmd_twitter_min(message: types.Message):
     """Set minimum USD for Twitter alerts (owner only)."""
+    pass
+
+@dp.message(Command('twitter_age_ins'))
+async def cmd_twitter_age_ins(message: types.Message):
+    """Set Twitter max wallet age (days) for Insider tweets."""
+    pass
+
+@dp.message(Command('twitter_pos_ins'))
+async def cmd_twitter_pos_ins(message: types.Message):
+    """Set Twitter max positions needed for Insider tweets."""
     pass
 
 @dp.message(Command('twitter_interval'))

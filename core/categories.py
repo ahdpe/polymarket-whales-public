@@ -1,5 +1,14 @@
 # PUBLIC SHELL VERSION
 """Category detection for Polymarket trades."""
+import re
+_word_boundary_cache = {}
+
+def _matches_keyword(text: str, keyword: str) -> bool:
+    """
+    Check if keyword matches in text using word boundaries.
+    This prevents false positives like 'war' matching in 'Howard'.
+    """
+    pass
 CRYPTO_KEYWORDS = ['bitcoin', 'btc', 'ethereum', ' eth ', 'crypto', 'solana', ' sol ', 'dogecoin', 'doge', 'xrp', 'ripple', 'cardano', 'ada', 'polygon', 'matic', 'chainlink', 'link', 'avalanche', 'avax', 'binance', 'bnb', 'litecoin', 'ltc', 'polkadot', 'dot', 'shiba', 'pepe', 'memecoin', 'defi', 'nft', 'blockchain', 'altcoin', 'stablecoin', 'usdt', 'usdc', 'tether', 'coinbase', 'binance', 'kraken exchange', 'kraken.com', 'kraken crypto', 'spot etf', 'bitcoin etf', 'halving', 'mining', 'satoshi', 'vitalik', 'crypto market']
 ECONOMICS_KEYWORDS = ['fed', 'federal reserve', 'interest rate', 'interest rates', 'fomc', 'basis point', 'basis points', 'bps', 'federal funds', 'monetary policy', 'inflation', 'cpi', 'unemployment', 'gdp', 'economic', 'economy', 'treasury', 'bond', 'yield', 'recession', 'stimulus', 'quantitative easing', 'central bank', 'ecb', 'boj', 'boe', 'rate cut', 'rate hike', 'rate increase', 'rate decrease', 'policy decision', 'meeting decision']
 GEOPOLITICS_KEYWORDS = ['strike', 'military strike', 'airstrike', 'air strike', 'bomb', 'bombing', 'invasion', 'invade', 'war', 'conflict', 'attack', 'missile', 'sanctions', 'treaty', 'diplomacy', 'diplomatic', 'embassy', 'coup', 'nuclear', 'weapons', 'armed forces', 'military action', 'regime', 'insurgent', 'rebel', 'ceasefire', 'military', 'presidential election', 'presidential race', 'president', 'vice president', 'presidential nomination', 'nomination', 'republican', 'democrat', 'democratic', 'election', 'senate', 'senator', 'congress', 'congressman', 'congresswoman', 'governor', 'mayor', 'political', 'politics', 'campaign', 'voter', 'ballot', 'primary', 'caucus', 'electoral', 'impeach', 'legislative', 'parliament', 'prime minister', 'minister', 'cabinet', 'oscar', 'oscars', 'academy award', 'emmy', 'emmys', 'golden globe', 'best actress', 'best actor', 'best director', 'best picture', 'best film', 'grammy', 'grammys', 'tony', 'tonys', 'bafta', 'cannes', 'sundance', 'limited series', 'tv series', 'award ceremony']

@@ -36,6 +36,14 @@ def format_wallet_age(first_activity_ts):
     """Format wallet age from first activity timestamp."""
     pass
 
+def shorten_trader_name(name):
+    """
+    Shorten trader name:
+    1. Remove timestamp suffix (starting with '-') if present.
+    2. detailed: 0xB0B1Ecb5eD8a22d38Ee89f20b196246005d37507-1768254109767 -> 0xB0B1E...d3750
+    """
+    pass
+
 async def handle_trade(trade_data):
     """
     Callback for when a trade is received from Data API.

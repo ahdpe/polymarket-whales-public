@@ -3,7 +3,7 @@
 TRANSLATIONS = {
     'ru': {
         # Start message
-        'welcome': "🐋 *Polymarket Whale Alerts*\n\nКрупные сделки на Polymarket — в реальном времени.\n\n*Что умеет бот:*\n• 🔔 Уведомления от $500 до $100,000+\n• 🎯 Фильтры: сумма, категории, вероятность, типы, возраст, позиции\n• 📊 Аналитика: PnL, возраст кошелька, открытые позиции\n• 🔗 Быстрые ссылки на профили\n• ⭐ Избранное — сохранённые трейдеры, заметки и 🔔 уведомления об их сделках\n\nНастрой уведомления кнопками ниже.",
+        'welcome': "🐋 *Polymarket Whale Alerts*\n\nКрупные сделки на Polymarket — в реальном времени.\n\n*Что умеет бот:*\n• 🔔 Уведомления от $500 до $100,000+\n• 🎯 Фильтры: сумма, категории, вероятность, типы, возраст, позиции\n• 📊 Аналитика: PnL, возраст кошелька, открытые позиции\n• 🔗 Быстрые ссылки на профили\n• ⭐ Избранное — сохранённые трейдеры, заметки и уведомления об их сделках ($500+)\n\nДля настройки уведомлений нажми кнопку ⚙️ **Фильтры** в меню ниже.",
         
         # Buttons
         'btn_filters': "⚙️ Фильтры",
@@ -65,7 +65,7 @@ TRANSLATIONS = {
         'age_custom': "📝 Настроить интервал",
         'age_set': "✅ Фильтр возраста: *{range}*",
         'age_prompt': "**Введите диапазон в днях:**\nФормат: мин-макс\nПримеры:\n• 7-365 (от 7 дней до 1 года)\n• 30- (от 30 дней)\n• -90 (до 90 дней)\n• 0 (сбросить)",
-        'age_invalid': "❌ Неверный формат. Попробуйте: 7-365 или 30- или -90",
+        'age_invalid': "❌ Неверный формат. Примеры: `7-365` или `30-` или `-90`\n\nНажмите кнопку снова, чтобы повторить ввод.",
         'days': "дн.",
         'current': "Текущее",
         
@@ -76,7 +76,7 @@ TRANSLATIONS = {
         'pos_custom': "📝 Настроить интервал",
         'pos_set': "✅ Фильтр позиций: *{range}*",
         'pos_prompt': "**Введите диапазон:**\nФормат: мин-макс\nПримеры:\n• 5-50 (от 5 до 50 позиций)\n• 10- (от 10 позиций)\n• -20 (до 20 позиций)\n• 0 (сбросить)",
-        'pos_invalid': "❌ Неверный формат. Попробуйте: 5-50 или 10- или -20",
+        'pos_invalid': "❌ Неверный формат. Примеры: `5-50` или `10-` или `-20`\n\nНажмите кнопку снова, чтобы повторить ввод.",
         
         # Settings
         'settings_title': "⚙️ **Настройки категорий**\n\nВыбери какие рынки отслеживать:",
@@ -104,7 +104,7 @@ TRANSLATIONS = {
 • 🔄 Фильтр типов событий (BUY, SELL, SPLIT, MERGE, REDEEM)
 • 🕐 Фильтр возраста кошелька (по дням, мин-макс)
 • 💼 Фильтр количества позиций (мин-макс)
-• ⭐ Избранное (Сохранение избранных трейдеров + 🔔 Персональные уведомления)
+• ⭐ Избранное (Сохранение избранных трейдеров + персональные уведомления)
 
 *Классификация объемов:*
 🔥 МЕГА КИТ — >$100,000
@@ -150,6 +150,7 @@ TRANSLATIONS = {
         'saved_btn': "✅ Сохранено",
         'note_btn': "💬 Коммент",
         'saved_list_title': "⭐ **Избранное**\n\n",
+        'saved_list_header': "⭐ Избранное\n🔔 - уведомления включены (все сделки $500+)\n🔕 - только по общим фильтрам\n",
         'saved_empty': "Список пуст. Сохраняй китов из алертов!",
         'saved_deleted': "🗑 Трейдер удалён",
         'saved_added': "⭐ Трейдер сохранён!",
@@ -162,11 +163,20 @@ TRANSLATIONS = {
         'notif_off': "🔕 Выкл",
         'notif_enabled': "🔔 Уведомления включены (без фильтров)",
         'notif_disabled': "🔕 Уведомления выключены (по общим фильтрам)",
+        'saved_cleared': "🗑 Все трейдеры удалены",
+        
+        # Manual add
+        'manual_add_btn': "➕ Добавить",
+        'manual_add_prompt': "✍️ Отправьте ссылку на профиль Polymarket или адрес кошелька трейдера:\n\nПример:\n• `https://polymarket.com/profile/0x123...`\n• `0x1234567890abcdef...`",
+        'manual_add_invalid': "❌ Неверный формат. Отправьте ссылку на профиль или адрес кошелька (0x...)\n\nНажмите ➕ снова, чтобы повторить.",
+        'manual_add_exists': "ℹ️ Этот трейдер уже в избранном.",
+        'manual_add_success': "✅ Трейдер добавлен в избранное!",
+        'manual_add_cancel': "❌ Отмена",
     },
     
     'en': {
         # Start message
-        'welcome': "🐋 *Polymarket Whale Alerts*\n\nLarge trades on Polymarket — in real-time.\n\n*What the bot can do:*\n• 🔔 Alerts from $500 to $100,000+\n• 🎯 Filters: amount, categories, probability, types, age, positions\n• 📊 Analytics: PnL, wallet age, open positions\n• 🔗 Quick links to profiles\n• ⭐ Favorites — saved traders, notes and 🔔 notifications about their trades\n\nConfigure alerts using the buttons below.",
+        'welcome': "🐋 *Polymarket Whale Alerts*\n\nLarge trades on Polymarket — in real-time.\n\n*What the bot can do:*\n• 🔔 Alerts from $500 to $100,000+\n• 🎯 Filters: amount, categories, probability, types, age, positions\n• 📊 Analytics: PnL, wallet age, open positions\n• 🔗 Quick links to profiles\n• ⭐ Favorites — saved traders, notes and notifications about their trades ($500+)\n\nTo configure alerts, press the ⚙️ **Filters** button in the menu below.",
         
         # Buttons
         'btn_filters': "⚙️ Filters",
@@ -227,7 +237,7 @@ TRANSLATIONS = {
         'age_custom': "📝 Set interval",
         'age_set': "✅ Age filter: *{range}*",
         'age_prompt': "**Enter range in days:**\nFormat: min-max\nExamples:\n• 7-365 (7 days to 1 year)\n• 30- (from 30 days)\n• -90 (up to 90 days)\n• 0 (reset)",
-        'age_invalid': "❌ Invalid format. Try: 7-365 or 30- or -90",
+        'age_invalid': "❌ Invalid format. Examples: `7-365` or `30-` or `-90`\n\nPress the button again to retry.",
         'days': "days",
         'current': "Current",
         
@@ -238,7 +248,7 @@ TRANSLATIONS = {
         'pos_custom': "📝 Set interval",
         'pos_set': "✅ Positions filter: *{range}*",
         'pos_prompt': "**Enter range:**\nFormat: min-max\nExamples:\n• 5-50 (5 to 50 positions)\n• 10- (from 10 positions)\n• -20 (up to 20 positions)\n• 0 (reset)",
-        'pos_invalid': "❌ Invalid format. Try: 5-50 or 10- or -20",
+        'pos_invalid': "❌ Invalid format. Examples: `5-50` or `10-` or `-20`\n\nPress the button again to retry.",
         
         # Settings
         'settings_title': "⚙️ **Category Settings**\n\nSelect which markets to track:",
@@ -266,7 +276,7 @@ Real-time monitoring of large trades on [Polymarket](https://polymarket.com).
 • 🔄 Event type filter (BUY, SELL, SPLIT, MERGE, REDEEM)
 • 🕐 Wallet age filter (in days, min-max range)
 • 💼 Open positions filter (min-max range)
-• ⭐ Favorites (Save favorite traders + 🔔 Direct notifications)
+• ⭐ Favorites (Save favorite traders + direct notifications)
 
 *Volume classification:*
 🔥 MEGA WHALE — >$100,000
@@ -312,6 +322,7 @@ Keywords: nfl, nba, football, soccer, ufc, f1, lakers, goal, etc.
         'saved_btn': "✅ Saved",
         'note_btn': "💬 Note",
         'saved_list_title': "⭐ **Favorites**\n\n",
+        'saved_list_header': "⭐ Favorites\n🔔 - notifications enabled (all trades $500+)\n🔕 - general filters only\n",
         'saved_empty': "Empty list. Save whales from alerts!",
         'saved_deleted': "🗑 Trader removed",
         'saved_added': "⭐ Trader saved!",
@@ -324,6 +335,15 @@ Keywords: nfl, nba, football, soccer, ufc, f1, lakers, goal, etc.
         'notif_off': "🔕 Off",
         'notif_enabled': "🔔 Notifications enabled (bypassing filters)",
         'notif_disabled': "🔕 Notifications disabled (using general filters)",
+        'saved_cleared': "🗑 All traders removed",
+        
+        # Manual add
+        'manual_add_btn': "➕ Add",
+        'manual_add_prompt': "✍️ Send a Polymarket profile link or trader wallet address:\n\nExample:\n• `https://polymarket.com/profile/0x123...`\n• `0x1234567890abcdef...`",
+        'manual_add_invalid': "❌ Invalid format. Send a profile link or wallet address (0x...)\n\nPress ➕ again to retry.",
+        'manual_add_exists': "ℹ️ This trader is already in favorites.",
+        'manual_add_success': "✅ Trader added to favorites!",
+        'manual_add_cancel': "❌ Cancel",
     }
 }
 

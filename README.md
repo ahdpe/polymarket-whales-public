@@ -110,33 +110,28 @@ Polymarket API часто обрезает историю сделок для а
   - Уровнем "кита" и ссылкой на трейдера
   - Статистикой (PnL, Pos, Age)
 
-#### 5. Twitter Интеграция
-Бот может автоматически публиковать крупные сделки в Twitter/X:
-- **Настройки:** Минимальная сумма, интервал между твитами, фильтры по вероятности и категориям
-- **Фильтры типов событий:** Управление публикацией BUY, SELL, SPLIT, MERGE, REDEEM (по умолчанию только BUY)
-- **Защита от блокировок:** Минимальный интервал 25 минут, пауза 6 часов при 403 ошибке
-- **Форматирование:** Английский язык, без эмодзи в названиях уровней, специальное форматирование
-- **Команды:** 
-  - `/twitter` — все настройки и статус
-  - `/twitter_on`, `/twitter_off` — вкл/выкл постинг
-  - `/twitter_min 25000` — минимум в долларах
-  - `/twitter_interval 25` — интервал между твитами (минуты)
-  - `/twitter_prob 1_99` — фильтр вероятности
-  - `/twitter_sell on/off` — SELL сигналы
-  - `/twitter_split on/off` — SPLIT сигналы
-  - `/twitter_merge on/off` — MERGE сигналы
-  - `/twitter_redeem on/off` — REDEEM сигналы
-  - `/twitter_cat crypto on/off` — фильтры категорий
+#### 5. Команды
 
-#### 6. Администрирование
-- `/stats` — статистика бота (только для владельца)
-- `/users` — список пользователей
-- `/broadcast <сообщение>` — рассылка всем пользователям
-- `/cache` — просмотр кэша возраста кошельков
-- `/report` — полный отчет о системе
-- `/admin` — памятка со всеми административными командами
+**Основные:**
+- `/start` — Запуск бота
+- `/stop` — Вкл/Выкл уведомления (аналог кнопки ▶️/⏸️)
+- `/filters` — Меню настроек фильтров
+- `/saved` — Список избранных китов
+- `/about` — Информация о боте
+- `/lang` — Переключение языка (🇬🇧 / 🇷🇺)
+- `/hide` — Скрыть клавиатуру меню
+- `/menu` — Показать клавиатуру меню
 
-#### 7. Архитектура "Избранного" (Saved Traders)
+**Настройки фильтров:**
+- `/amount` — Фильтр суммы
+- `/categories` — Фильтр категорий
+- `/probability` — Фильтр вероятности
+- `/sides` — Фильтр типов событий
+- `/age` — Фильтр возраста кошелька
+- `/positions` — Фильтр открытых позиций
+- `/back` — Назад в главное меню
+
+#### 6. Архитектура "Избранного" (Saved Traders)
 Реализация списка избранных трейдеров оптимизирована для работы с ограничениями Telegram API:
 1. **Компактные ключи (Callback Data):**
    - Telegram ограничивает `callback_data` до 64 байт.
@@ -228,12 +223,12 @@ Polymarket API often truncates activity history for high-frequency traders. For 
 
 ### How It Works
 
-#### 1. Data Fetching (PolymarketService)
+#### 7. Data Fetching (PolymarketService)
 - **Source:** Uses public **Polymarket Data API** (`data-api.polymarket.com`).
 - **Method:** Polls the API every **3 seconds**.
 - **Input filtering:** Only `CASH` type trades from **$10** are requested.
 
-#### 2. Processing and Aggregation
+#### 8. Processing and Aggregation
 A single large trade is often split into multiple fills. To avoid spam, the bot groups them:
 - **Grouping:** Same wallet, market, side (BUY/SELL/SPLIT/MERGE/REDEEM), outcome.
 - **Event types:** The bot supports all Polymarket trade types:
@@ -245,12 +240,12 @@ A single large trade is often split into multiple fills. To avoid spam, the bot 
 - **Trigger:** Series sum > **$500**.
 - **Optimization:** Expensive API calls (PnL, Pos, Age) are deferred and only executed if the trade matches at least one active user's filters.
 
-#### 3. Deduplication and Persistence
+#### 9. Deduplication and Persistence
 - **Database:** Local **SQLite** (`data/trades.db`) stores processed trade keys.
 - **Cache:** 10,000 most recent trades in RAM.
 - **Cleanup:** Records > 72h are deleted.
 
-#### 4. Telegram Bot (TelegramService)
+#### 10. Telegram Bot (TelegramService)
 - **Filters:** Amount, Category, Probability, Event Types (BUY/SELL/SPLIT/MERGE/REDEEM), Wallet Age, Open Positions, Language.
 - **Interface:** Compact menu with "⚙️ Filters" submenu for all filter settings:
   - **Row 1:** Amount, Categories, Probability
@@ -264,33 +259,28 @@ A single large trade is often split into multiple fills. To avoid spam, the bot 
 - **Alerts:** Rich messages with emojis, links, and trader stats:
   - Color-coded trade types: 🟢 BUY Yes, 🔴 BUY No, 🔵 SELL, ⚪ SPLIT, ↔️ MERGE, 🟣 REDEEM
 
-#### 5. Twitter Integration
-The bot can automatically post large trades to Twitter/X:
-- **Settings:** Minimum amount, tweet interval, probability and category filters
-- **Event type filters:** Control posting of BUY, SELL, SPLIT, MERGE, REDEEM (only BUY enabled by default)
-- **Anti-spam protection:** 25-minute minimum interval, 6-hour pause on 403 errors
-- **Formatting:** English only, no emojis in tier names, special formatting rules
-- **Commands:**
-  - `/twitter` — all settings and status
-  - `/twitter_on`, `/twitter_off` — enable/disable posting
-  - `/twitter_min 25000` — minimum amount in USD
-  - `/twitter_interval 25` — interval between tweets (minutes)
-  - `/twitter_prob 1_99` — probability filter
-  - `/twitter_sell on/off` — SELL signals
-  - `/twitter_split on/off` — SPLIT signals
-  - `/twitter_merge on/off` — MERGE signals
-  - `/twitter_redeem on/off` — REDEEM signals
-  - `/twitter_cat crypto on/off` — category filters
+#### 11. Commands
 
-#### 6. Administration
-- `/stats` — bot statistics (owner only)
-- `/users` — user list
-- `/broadcast <message>` — broadcast to all users
-- `/cache` — inspect wallet age cache
-- `/report` — full system status report
-- `/admin` — admin commands cheatsheet
+**Main:**
+- `/start` — Start bot
+- `/stop` — Toggle alerts ON/OFF (same as ▶️/⏸️ button)
+- `/filters` — Filter settings menu
+- `/saved` — Saved whales list
+- `/about` — About bot info
+- `/lang` — Switch language (🇬🇧 / 🇷🇺)
+- `/hide` — Hide menu keyboard
+- `/menu` — Show menu keyboard
 
-#### 7. Favorites Architecture (Saved Traders)
+**Filter Settings:**
+- `/amount` — Amount filter
+- `/categories` — Category filter
+- `/probability` — Probability filter
+- `/sides` — Event types filter
+- `/age` — Wallet age filter
+- `/positions` — Open positions filter
+- `/back` — Back to main menu
+
+#### 12. Favorites Architecture (Saved Traders)
 The saved traders implementation is optimized for Telegram API constraints:
 1. **Compact Keys (Callback Data):**
    - Telegram limits `callback_data` to 64 bytes.

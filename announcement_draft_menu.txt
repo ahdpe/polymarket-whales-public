@@ -1,0 +1,29 @@
+🔔 **Mini Update: Cleaner Menu / Мини-апдейт: Чистое Меню**
+
+🇬🇧 **English**
+Mini-update. Bot interface streamlined. Secondary buttons have been replaced with slash commands to keep the main menu clean and focused on signals.
+
+**New Commands:**
+• `/stop` — Pause/Resume alerts (same as Start/Stop button)
+• `/lang` — Switch language (🇬🇧 / 🇷🇺)
+• `/about` — Bot info
+• `/filters` — Open filters menu
+• `/saved` — Show saved whales
+• `/hide` — Hide the menu keyboard
+• `/menu` — Bring the menu back
+
+---
+
+🇷🇺 **Русский**
+Мини-апдейт. Упрощен интерфейс бота. Второстепенные кнопки заменены на команды, чтобы главное меню оставалось чистым и сфокусированным на сигналах.
+
+**Новые команды:**
+• `/stop` — Пауза/Старт уведомлений (аналог кнопки)
+• `/lang` — Смена языка (🇬🇧 / 🇷🇺)
+• `/about` — О боте
+• `/filters` — Меню фильтров
+• `/saved` — Избранные киты
+• `/hide` — Скрыть клавиатуру
+• `/menu` — Вернуть клавиатуру
+
+🐋 *Trade with the whales! / Торгуй с китами!*

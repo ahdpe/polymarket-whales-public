@@ -1,20 +1,23 @@
 {
   "enabled": true,
-  "min_alert_usd": 100000,
+  "min_alert_usd": 99999,
+  "min_alert_insider_usd": 20000,
+  "max_insider_age_days": 1.0,
+  "max_insider_positions": 3,
   "tweet_timestamps": [
-    1768146740.5487254,
-    1768153479.0961764,
-    1768222506.6969676
+    1768594232.731725,
+    1768596093.1908405,
+    1768641972.956148
   ],
   "paused_until": 1767919753.1062808,
   "interval_minutes": 25,
-  "probability_filter": "1_99",
+  "probability_filter": "10_90",
   "allow_sell": false,
   "allow_split": false,
   "allow_merge": false,
   "allow_redeem": false,
   "categories": {
-    "crypto": true,
+    "crypto": false,
     "sports": false,
     "other": true
   }
