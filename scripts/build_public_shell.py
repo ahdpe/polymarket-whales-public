@@ -1,7 +1,8 @@
 import os
 import shutil
 import ast
-# import astor  # Removed dependency
+import json
+import re
 import sys
 from pathlib import Path
 
@@ -22,6 +23,7 @@ IGNORE_PATTERNS = [
     "bot.log",
     "bot_output.log",
     "scripts/build_public_shell.py", # Don't export the build script itself
+    "send_broadcast.py",  # Admin-only broadcast script
     "storage", # Usually contains sessions
     "public_export", # Don't copy the public export into itself
 ]
@@ -32,8 +34,14 @@ KEEP_AS_IS = [
     "run.sh",
     "core/localization.py", 
     ".gitignore",
-    "twitter_settings.json", # Maybe structure is fine?
-    "user_settings.json"
+    "twitter_settings.json",
+    # user_settings.json is handled separately (template only)
+]
+
+# Sections to remove from README (patterns)
+SECTIONS_TO_REMOVE = [
+    r"#{1,4}\s*\d*\.?\s*Twitter\s*(Интеграция|Integration)",
+    r"#{1,4}\s*\d*\.?\s*(Администрирование|Administration)",
 ]
 
 # Files to Stub (Python files not in KEEP_AS_IS)
@@ -91,6 +99,111 @@ def stub_python_file(src_path, dest_path):
         # Fallback to empty file or copy
         shutil.copy2(src_path, dest_path)
 
+def sanitize_readme(content):
+    """
+    Remove admin-only sections from README:
+    - Twitter Integration / Twitter Интеграция
+    - Administration / Администрирование
+    Also renumbers remaining sections.
+    """
+    lines = content.split('\n')
+    result = []
+    skip_section = False
+    current_section_level = None
+    
+    for line in lines:
+        # Check if this line starts a section to remove
+        should_skip = False
+        for pattern in SECTIONS_TO_REMOVE:
+            if re.match(pattern, line.strip(), re.IGNORECASE):
+                should_skip = True
+                # Count the # symbols to know the section level
+                match = re.match(r'^(#{1,4})', line.strip())
+                if match:
+                    current_section_level = len(match.group(1))
+                skip_section = True
+                break
+        
+        if should_skip:
+            continue
+            
+        # If we're skipping and hit a new section of same or higher level, stop skipping
+        if skip_section:
+            match = re.match(r'^(#{1,4})\s', line.strip())
+            if match:
+                level = len(match.group(1))
+                if level <= current_section_level:
+                    skip_section = False
+                    current_section_level = None
+        
+        if not skip_section:
+            result.append(line)
+    
+    # Renumber sections (#### N. -> sequential numbering)
+    final_result = []
+    section_counters = {}  # Track counters per section level
+    
+    for line in result:
+        # Match numbered sections like "#### 5. Something" or "#### 6. Something"
+        match = re.match(r'^(#{1,4})\s+(\d+)\.\s+(.+)$', line)
+        if match:
+            hashes = match.group(1)
+            title = match.group(3)
+            level = len(hashes)
+            
+            # Initialize or increment counter for this level
+            if level not in section_counters:
+                section_counters[level] = 0
+            section_counters[level] += 1
+            
+            # Reset deeper level counters
+            for l in list(section_counters.keys()):
+                if l > level:
+                    del section_counters[l]
+            
+            new_line = f"{hashes} {section_counters[level]}. {title}"
+            final_result.append(new_line)
+        else:
+            final_result.append(line)
+    
+    return '\n'.join(final_result)
+
+def create_template_user_settings():
+    """Create a template user_settings.json with example structure only."""
+    template = {
+        "filters": {"example_user_id": 50000},
+        "categories": {
+            "example_user_id": {
+                "all": True,
+                "other": True,
+                "crypto": True,
+                "sports": True
+            }
+        },
+        "languages": {"example_user_id": "en"},
+        "statuses": {"example_user_id": True},
+        "usernames": {"example_user_id": "example_username"},
+        "probabilities": {"example_user_id": "1_99"},
+        "side_types": {
+            "example_user_id": {
+                "all": False,
+                "BUY": True,
+                "SELL": True,
+                "SPLIT": False,
+                "MERGE": False,
+                "REDEEM": False
+            }
+        },
+        "wallet_ages": {
+            "example_user_id": {"min_days": None, "max_days": None}
+        },
+        "open_positions": {
+            "example_user_id": {"min_count": None, "max_count": None}
+        },
+        "bot_enabled": True
+    }
+    return json.dumps(template, indent=2)
+
 def main():
     if not DEST_DIR.exists():
         DEST_DIR.mkdir()
@@ -125,13 +238,22 @@ def main():
             
             # Special Handling
             if file == "README.md":
-                # Create a modified README
-                with open(src_file, "r") as f:
+                # Create a sanitized README (remove admin/Twitter sections)
+                print(f"Sanitizing README: {src_file}")
+                with open(src_file, "r", encoding="utf-8") as f:
                     content = f.read()
-                with open(dest_file, "w") as f:
+                sanitized = sanitize_readme(content)
+                with open(dest_file, "w", encoding="utf-8") as f:
                     f.write("# PUBLIC SHELL REPOSITORY\n")
                     f.write("> This is a public demonstration shell. Core logic is stripped.\n\n")
-                    f.write(content)
+                    f.write(sanitized)
+                continue
+            
+            if file == "user_settings.json":
+                # Create template user_settings.json (no real user data)
+                print(f"Creating template user_settings.json")
+                with open(dest_file, "w", encoding="utf-8") as f:
+                    f.write(create_template_user_settings())
                 continue
 
             if file == ".env.example":
