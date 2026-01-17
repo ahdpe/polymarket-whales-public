@@ -18,6 +18,8 @@ from core.localization import get_text, get_trade_level_name, get_trade_level_em
 from config import FILTERS
 from storage import saved_whales
 from services.twitter_service import get_twitter_service
+from services.status_service import set_start_time as set_status_start_time, set_poly_service as set_status_poly_service
+from services.status_server import start_status_server
 log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=log_format, handlers=[logging.StreamHandler(), logging.FileHandler('bot_output.log', mode='a', encoding='utf-8')])
 logger = logging.getLogger(__name__)
