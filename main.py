@@ -23,6 +23,8 @@ from core.localization import get_text, get_trade_level_name, get_trade_level_em
 from config import FILTERS
 from storage import saved_whales
 from services.twitter_service import get_twitter_service
+from services.status_service import set_start_time as set_status_start_time, set_poly_service as set_status_poly_service
+from services.status_server import start_status_server
 
 # Configure logging
 log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -342,6 +344,9 @@ async def handle_trade(trade_data):
             twitter_wants, new_reason = twitter_service.wants_trade(trade_data)
             if twitter_wants:
                 logger.info(f"Twitter ACCEPTED trade after fetching stats (was: {twitter_reason})")
+            else:
+                # Debug: log why re-check still failed
+                logger.info(f"Twitter re-check still rejected: {new_reason} (wallet_age_str={trade_data.get('wallet_age_str')}, pos_count={trade_data.get('open_positions_count')})")
 
         position_stats_line = format_position_stats(pos_data)
         wallet_age_line = format_wallet_age(first_activity_ts)
@@ -601,6 +606,9 @@ async def start_insider_collector():
     # Store reference in telegram service for /report command
     set_poly_service(poly_service)
     
+    # Store reference in status service for dashboard
+    set_status_poly_service(poly_service)
+    
     logger.info("Starting PolyWhales...")
     logger.info("Using Polymarket Data API for whale trades...")
     
@@ -634,8 +642,17 @@ async def main():
     # Ensure single instance
     lock_handle = single_instance_check()
     
+    # Set bot start time for uptime tracking
+    set_status_start_time(time.time())
+    
     # Initialize saved whales DB
     saved_whales.init_db()
+    
+    # Start status dashboard server
+    status_port = int(os.getenv("STATUS_PORT", "5000"))
+    if os.getenv("STATUS_ENABLED", "true").lower() != "false":
+        start_status_server(port=status_port)
+        logger.info(f"Status dashboard available at http://0.0.0.0:{status_port}")
 
     # Start all background tasks
     tasks = await start_insider_collector()

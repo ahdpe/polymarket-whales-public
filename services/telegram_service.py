@@ -48,6 +48,10 @@ def set_poly_service(service):
 class NoteState(StatesGroup):
     waiting_for_note = State()
 
+# FSM States for manual trader addition
+class ManualAddState(StatesGroup):
+    waiting_for_input = State()
+
 # FSM States for age and positions filter input
 class AgeFilterState(StatesGroup):
     waiting_for_range = State()
@@ -133,7 +137,7 @@ PROBABILITY_OPTIONS = {
 
 def get_default_categories():
     """Default category preferences - all enabled."""
-    return {'all': True, 'other': True, 'crypto': True, 'sports': True}
+    return {'all': False, 'other': True, 'crypto': True, 'sports': False}
 
 def get_default_side_types():
     """Default side type preferences - only BUY and SELL enabled."""
@@ -859,7 +863,12 @@ async def cmd_saved(message: types.Message):
     if text:
         await message.answer(text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
     else:
-        await message.answer(get_text(lang, 'saved_empty'))
+        # Empty list - show add button
+        add_text = get_text(lang, 'manual_add_btn')
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=add_text, callback_data="manual_add:0:view")]
+        ])
+        await message.answer(get_text(lang, 'saved_empty'), reply_markup=keyboard)
 
 
 # ============ SAVED TRADERS HANDLERS (LIST + EDIT MODE) ============
@@ -919,7 +928,9 @@ def get_aquarium_list(chat_id, page=0, edit_mode=False):
         line = f"*{idx}.* {icon} {link}{notif_status}{comment_part}"
         lines.append(line)
         
-    text = "\n".join(lines)
+    # Add header and join lines
+    header = get_text(lang, 'saved_list_header')
+    text = header + "\n" + "\n".join(lines)
     
     # Build Keyboard
     buttons = []
@@ -952,9 +963,14 @@ def get_aquarium_list(chat_id, page=0, edit_mode=False):
             ]
             buttons.append(btn_row)
         
-        # Done Button
+        # Add manually button + Done Button
+        add_text = get_text(lang, 'manual_add_btn')
         done_text = "✅ Готово" if lang == 'ru' else "✅ Done"
-        buttons.append([InlineKeyboardButton(text=done_text, callback_data=f"aq_mode:view:{page}")])
+        mode_str = "edit" if edit_mode else "view"
+        buttons.append([
+            InlineKeyboardButton(text=add_text, callback_data=f"manual_add:{page}:{mode_str}"),
+            InlineKeyboardButton(text=done_text, callback_data=f"aq_mode:view:{page}")
+        ])
         
     else:
         # View Mode: [ Edit List ] [ Clear All ]
@@ -966,6 +982,10 @@ def get_aquarium_list(chat_id, page=0, edit_mode=False):
             InlineKeyboardButton(text=clear_text, callback_data=f"clearall")
         ]
         buttons.append(action_row)
+        
+        # Add manually button
+        add_text = get_text(lang, 'manual_add_btn')
+        buttons.append([InlineKeyboardButton(text=add_text, callback_data=f"manual_add:{page}:view")])
         
         # Navigation row (Only view mode needs pagination? Or both?)
         # Let's show pagination in both, but actions differ.
@@ -1006,8 +1026,12 @@ async def btn_saved(message: types.Message):
         # Send list
         await message.answer(text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
     else:
-        # Empty
-        await message.answer(get_text(lang, 'saved_empty'))
+        # Empty list - show add button
+        add_text = get_text(lang, 'manual_add_btn')
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=add_text, callback_data="manual_add:0:view")]
+        ])
+        await message.answer(get_text(lang, 'saved_empty'), reply_markup=keyboard)
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('aq_mode:'))
@@ -1305,6 +1329,149 @@ async def callback_noop(callback: CallbackQuery):
     await callback.answer()
 
 
+# ============ MANUAL ADD TRADER HANDLERS ============
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("manual_add:"))
+async def callback_manual_add(callback: types.CallbackQuery, state: FSMContext):
+    """Handle manual add button - start FSM for trader input."""
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+    
+    parts = callback.data.split(':')
+    page = int(parts[1]) if len(parts) > 1 else 0
+    mode = parts[2] if len(parts) > 2 else 'view'
+    
+    await state.set_state(ManualAddState.waiting_for_input)
+    await state.update_data(page=page, mode=mode)
+    
+    # Show cancel button
+    cancel_text = get_text(lang, 'manual_add_cancel')
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=cancel_text, callback_data=f"cancel_manual_add:{page}:{mode}")]
+    ])
+    
+    await callback.answer()
+    await callback.message.answer(
+        get_text(lang, 'manual_add_prompt'),
+        parse_mode="Markdown",
+        reply_markup=keyboard
+    )
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("cancel_manual_add:"))
+async def callback_cancel_manual_add(callback: types.CallbackQuery, state: FSMContext):
+    """Cancel manual add operation."""
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+    
+    await state.clear()
+    
+    parts = callback.data.split(':')
+    page = int(parts[1]) if len(parts) > 1 else 0
+    mode = parts[2] if len(parts) > 2 else 'view'
+    is_edit = (mode == 'edit')
+    
+    # Delete the prompt message
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    
+    # Show updated list
+    text, reply_markup = get_aquarium_list(chat_id, page, edit_mode=is_edit)
+    if text:
+        await callback.message.answer(text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
+    else:
+        add_text = get_text(lang, 'manual_add_btn')
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=add_text, callback_data="manual_add:0:view")]
+        ])
+        await callback.message.answer(get_text(lang, 'saved_empty'), reply_markup=keyboard)
+    
+    await callback.answer()
+
+
+@dp.message(ManualAddState.waiting_for_input)
+async def process_manual_add_input(message: types.Message, state: FSMContext):
+    """Handle manual add text input from FSM."""
+    chat_id = message.chat.id
+    lang = get_user_lang(chat_id)
+    
+    text = message.text.strip() if message.text else ""
+    
+    # Parse input - extract wallet address
+    wallet = None
+    
+    # Try polymarket URL
+    if "polymarket.com/profile/" in text:
+        parts = text.split("polymarket.com/profile/")
+        if len(parts) > 1:
+            wallet = parts[1].split("?")[0].split("/")[0].strip()
+    
+    # Try direct wallet format (0x...)
+    elif text.startswith("0x"):
+        # Extract just the address part (42 chars for Ethereum)
+        wallet = text[:42] if len(text) >= 42 else text
+    
+    # Validate
+    if not wallet or not wallet.startswith("0x") or len(wallet) < 40:
+        await message.answer(get_text(lang, 'manual_add_invalid'))
+        
+        # Exit FSM and return to list
+        data = await state.get_data()
+        page = data.get('page', 0)
+        mode = data.get('mode', 'view')
+        is_edit = (mode == 'edit')
+        await state.clear()
+        
+        text, reply_markup = get_aquarium_list(chat_id, page, edit_mode=is_edit)
+        if text:
+            await message.answer(text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
+        else:
+            add_text = get_text(lang, 'manual_add_btn')
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=add_text, callback_data="manual_add:0:view")]
+            ])
+            await message.answer(get_text(lang, 'saved_empty'), reply_markup=keyboard)
+        return
+    
+    # Normalize wallet (lowercase for consistency)
+    wallet = wallet.lower()
+    
+    # Check if already saved
+    if saved_whales.is_saved(chat_id, wallet):
+        await message.answer(get_text(lang, 'manual_add_exists'))
+        await state.clear()
+        
+        # Return to list
+        data = await state.get_data()
+        page = data.get('page', 0)
+        mode = data.get('mode', 'view')
+        is_edit = (mode == 'edit')
+        
+        text, reply_markup = get_aquarium_list(chat_id, page, edit_mode=is_edit)
+        if text:
+            await message.answer(text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
+        return
+    
+    # Create key for the wallet and save
+    saved_whales.get_or_create_key(wallet)
+    saved_whales.save(chat_id, wallet)
+    
+    await message.answer(get_text(lang, 'manual_add_success'))
+    
+    # Clear state and return to list
+    data = await state.get_data()
+    page = data.get('page', 0)
+    mode = data.get('mode', 'view')
+    is_edit = (mode == 'edit')
+    await state.clear()
+    
+    text, reply_markup = get_aquarium_list(chat_id, page, edit_mode=is_edit)
+    if text:
+        await message.answer(text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
+
+
 @dp.message(NoteState.waiting_for_note)
 async def process_note_input(message: types.Message, state: FSMContext):
     """Handle note text input from FSM."""
@@ -1532,6 +1699,7 @@ async def process_age_range(message: types.Message, state: FSMContext):
             get_text(lang, 'age_invalid'),
             parse_mode="Markdown"
         )
+        await state.clear()
         return
     
     await state.clear()
@@ -1631,6 +1799,7 @@ async def process_positions_range(message: types.Message, state: FSMContext):
             get_text(lang, 'pos_invalid'),
             parse_mode="Markdown"
         )
+        await state.clear()
         return
     
     await state.clear()
@@ -1804,6 +1973,9 @@ async def cmd_admin(message: types.Message):
 `/twitter` — все настройки и статус
 `/twitter_on` / `off` — вкл/выкл
 `/twitter_min 25000` — минимум $
+`/twitter_ins_min 20000` — мин. для инсайдеров
+`/twitter_age_ins 2` — макс. возраст инсайдера
+`/twitter_pos_ins 3` — макс. позиций инсайдера
 `/twitter_interval 25` — интервал мин
 `/twitter_prob 1_99` — вероятность
 `/twitter_sell on` — SELL сигналы
@@ -1874,7 +2046,7 @@ async def cmd_stats(message: types.Message):
 
 @dp.message(Command("users"))
 async def cmd_users(message: types.Message):
-    """List all users (owner only)."""
+    """List all users as a text file (owner only)."""
     if message.chat.id != OWNER_ID:
         return  # Silently ignore non-owners
     
@@ -1882,32 +2054,31 @@ async def cmd_users(message: types.Message):
         await message.answer("📭 Пока нет пользователей.")
         return
     
-    msg = "👥 **Список пользователей:**\n\n"
-    for uid in list(user_filters.keys())[:50]:  # Limit to 50
+    import io
+    
+    # Build file content
+    lines = ["Username | Status | Threshold | Language"]
+    lines.append("=" * 50)
+    
+    for uid in user_filters.keys():
         threshold = user_filters.get(uid, 100)
-        status = "▶️" if user_statuses.get(uid, True) else "⏸️"
+        status = "▶️ Active" if user_statuses.get(uid, True) else "⏸️ Paused"
         lang = user_languages.get(uid, 'ru').upper()
+        username = user_usernames.get(uid, f"ID:{uid}")
         
-        # Escape markdown characters in username to avoid breaking the message
-        # We need to escape: _, *, [, ], (, ), ~, `, >, #, +, -, =, |, {, }, ., !
-        # For Telegram MarkdownV2 usually just _ * [ ] ( ) ~ ` > # + - = | { } . !
-        # But here valid implementation for standard Markdown or MarkdownV2 is needed.
-        # The bot uses parse_mode="Markdown" (Legacy) based on existing code.
-        # Legacy Markdown only needs escaping for: _ * ` [
-        
-        raw_username = user_usernames.get(uid, "—")
-        safe_username = str(raw_username).replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[")
-        
-        msg += f"@{safe_username} | {status} | ${threshold:,} | {lang}\n"
+        lines.append(f"@{username} | {status} | ${threshold:,} | {lang}")
     
-    if len(user_filters) > 50:
-        msg += f"\n... и ещё {len(user_filters) - 50} пользователей"
+    content = "\n".join(lines)
     
-    try:
-        await message.answer(msg, parse_mode="Markdown")
-    except Exception as e:
-        logger.error(f"Error sending /users list: {e}")
-        await message.answer("❌ Ошибка при отправке списка пользователей. Проверьте логи.")
+    # Create file in memory and send
+    file = io.BytesIO(content.encode('utf-8'))
+    file.name = "users_list.txt"
+    
+    from aiogram.types import BufferedInputFile
+    doc = BufferedInputFile(file.getvalue(), filename="users_list.txt")
+    
+    await message.answer_document(doc, caption=f"👥 Всего пользователей: {len(user_filters)}")
+
 
 
 @dp.message(Command("broadcast"))
@@ -2054,6 +2225,9 @@ async def cmd_twitter(message: types.Message):
 
 Фильтры:
 💰 Минимум: ${min_usd:,}
+🕵️ Инсайдер мин: ${settings.get('min_alert_insider_usd', 20000):,}
+🕵️ Инсайдер возраст: <={settings.get('max_insider_age_days', 2.0)}d
+🕵️ Инсайдер позиций: <={settings.get('max_insider_positions', 3)}
 📊 Вероятность: {prob_filter}
 📈 SELL: {sell_allowed}
 ⚪ SPLIT: {split_allowed}
@@ -2069,6 +2243,9 @@ async def cmd_twitter(message: types.Message):
 Команды:
 /twitter_on, /twitter_off
 /twitter_min 25000
+/twitter_ins_min 20000
+/twitter_age_ins 2
+/twitter_pos_ins 3
 /twitter_interval 25
 /twitter_prob 1_99
 /twitter_sell on
@@ -2102,6 +2279,43 @@ async def cmd_twitter_off(message: types.Message):
     await message.answer("❌ Twitter постинг выключен.")
 
 
+@dp.message(Command("twitter_ins_min"))
+async def cmd_twitter_ins_min(message: types.Message):
+    """Set Twitter minimum amount for Insider tweets."""
+    logger = logging.getLogger(__name__)
+    logger.info(f"twitter_ins_min called by chat_id={message.chat.id}, text={message.text}")
+    
+    chat_id = message.chat.id
+    if chat_id != OWNER_ID:
+        logger.warning(f"twitter_ins_min: chat_id {chat_id} != OWNER_ID {OWNER_ID}")
+        return
+    
+    from services import twitter_service
+
+    try:
+        args = message.text.split()
+        if len(args) < 2:
+            current = twitter_service.get_twitter_insider_min()
+            await message.answer(
+                f"ℹ️ Current Insider Min: ${current:,}\n"
+                f"Usage: /twitter_ins_min <amount>\n"
+                f"Example: /twitter_ins_min 15000"
+            )
+            return
+        
+        amount_str = args[1].lower().replace('k', '000').replace('$', '').replace(',', '')
+        amount = int(float(amount_str))
+        
+        twitter_service.set_twitter_insider_min(amount)
+        await message.answer(f"✅ Twitter Insider Min set to ${amount:,}")
+        
+    except ValueError:
+        await message.answer("❌ Invalid amount format")
+    except Exception as e:
+        logger.error(f"Error setting twitter insider min: {e}")
+        await message.answer(f"❌ Error: {e}")
+
+
 @dp.message(Command("twitter_min"))
 async def cmd_twitter_min(message: types.Message):
     """Set minimum USD for Twitter alerts (owner only)."""
@@ -2122,6 +2336,72 @@ async def cmd_twitter_min(message: types.Message):
         await message.answer(f"✅ Twitter минимум установлен: ${min_usd:,}")
     except ValueError:
         await message.answer("❌ Укажите число, например: `/twitter_min 50000`", parse_mode="Markdown")
+
+
+@dp.message(Command("twitter_age_ins"))
+async def cmd_twitter_age_ins(message: types.Message):
+    """Set Twitter max wallet age (days) for Insider tweets."""
+    chat_id = message.chat.id
+    if chat_id != OWNER_ID:
+        return
+    
+    try:
+        from services import twitter_service
+        args = message.text.split()
+        if len(args) < 2:
+            current = twitter_service.get_twitter_insider_max_age()
+            await message.answer(
+                f"ℹ️ Current Insider Max Age: {current} days\n"
+                f"Usage: /twitter_age_ins <days>\n"
+                f"Example: /twitter_age_ins 5"
+            )
+            return
+        
+        days = float(args[1])
+        if days < 0:
+            raise ValueError("Negative days")
+            
+        twitter_service.set_twitter_insider_max_age(days)
+        await message.answer(f"✅ Twitter Insider Max Age set to {days} days")
+        
+    except ValueError:
+        await message.answer("❌ Invalid days format (must be number >= 0)")
+    except Exception as e:
+        logger.error(f"Error setting twitter insider age: {e}")
+        await message.answer(f"❌ Error: {e}")
+
+
+@dp.message(Command("twitter_pos_ins"))
+async def cmd_twitter_pos_ins(message: types.Message):
+    """Set Twitter max positions needed for Insider tweets."""
+    chat_id = message.chat.id
+    if chat_id != OWNER_ID:
+        return
+    
+    try:
+        from services import twitter_service
+        args = message.text.split()
+        if len(args) < 2:
+            current = twitter_service.get_twitter_insider_max_positions()
+            await message.answer(
+                f"ℹ️ Current Insider Max Positions: {current}\n"
+                f"Usage: /twitter_pos_ins <count>\n"
+                f"Example: /twitter_pos_ins 3"
+            )
+            return
+        
+        count = int(args[1])
+        if count < 0:
+            raise ValueError("Negative count")
+            
+        twitter_service.set_twitter_insider_max_positions(count)
+        await message.answer(f"✅ Twitter Insider Max Positions set to {count}")
+        
+    except ValueError:
+        await message.answer("❌ Invalid count format (must be integer >= 0)")
+    except Exception as e:
+        logger.error(f"Error setting twitter insider positions: {e}")
+        await message.answer(f"❌ Error: {e}")
 
 
 @dp.message(Command("twitter_interval"))

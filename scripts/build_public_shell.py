@@ -26,6 +26,8 @@ IGNORE_PATTERNS = [
     "send_broadcast.py",  # Admin-only broadcast script
     "storage", # Usually contains sessions
     "public_export", # Don't copy the public export into itself
+    "services/status_service.py",
+    "services/status_server.py",
 ]
 
 # Files to Keep As-Is (No Stubbing)
@@ -42,6 +44,7 @@ KEEP_AS_IS = [
 SECTIONS_TO_REMOVE = [
     r"#{1,4}\s*\d*\.?\s*Twitter\s*(Интеграция|Integration)",
     r"#{1,4}\s*\d*\.?\s*(Администрирование|Administration)",
+    r"#{1,4}\s*\d*\.?\s*(Статус-дашборд|Status Dashboard)",
 ]
 
 # Files to Stub (Python files not in KEEP_AS_IS)

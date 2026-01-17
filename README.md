@@ -138,6 +138,9 @@ Polymarket API часто обрезает историю сделок для а
   - `/twitter` — все настройки и статус
   - `/twitter_on`, `/twitter_off` — вкл/выкл постинг
   - `/twitter_min 25000` — минимум в долларах
+  - `/twitter_ins_min 20000` — минимум для инсайдеров
+  - `/twitter_age_ins 2` — макс. возраст (дни) для инсайдеров
+  - `/twitter_pos_ins 3` — макс. позиций для инсайдеров
   - `/twitter_interval 25` — интервал между твитами (минуты)
   - `/twitter_prob 1_99` — фильтр вероятности
   - `/twitter_sell on/off` — SELL сигналы
@@ -153,6 +156,12 @@ Polymarket API часто обрезает историю сделок для а
 - `/cache` — просмотр кэша возраста кошельков
 - `/report` — полный отчет о системе
 - `/admin` — памятка со всеми административными командами
+
+#### 9. Статус-дашборд
+Веб-интерфейс для мониторинга состояния бота в реальном времени.
+- **Доступ:** `http://<ip-сервера>:5000`
+- **Метрики:** Uptime, загрузка памяти, статистика пользователей, активность Twitter и Polymarket.
+- **Настройка:** В `.env` через `STATUS_PORT` и `STATUS_ENABLED`.
 
 #### 8. Архитектура "Избранного" (Saved Traders)
 Реализация списка избранных трейдеров оптимизирована для работы с ограничениями Telegram API:
@@ -313,6 +322,9 @@ The bot can automatically post large trades to Twitter/X:
   - `/twitter` — all settings and status
   - `/twitter_on`, `/twitter_off` — enable/disable posting
   - `/twitter_min 25000` — minimum amount in USD
+  - `/twitter_ins_min 20000` — minimum for insiders
+  - `/twitter_age_ins 2` — max age (days) for insiders
+  - `/twitter_pos_ins 3` — max positions for insiders
   - `/twitter_interval 25` — interval between tweets (minutes)
   - `/twitter_prob 1_99` — probability filter
   - `/twitter_sell on/off` — SELL signals
@@ -328,6 +340,12 @@ The bot can automatically post large trades to Twitter/X:
 - `/cache` — inspect wallet age cache
 - `/report` — full system status report
 - `/admin` — admin commands cheatsheet
+
+#### 9. Status Dashboard
+Web interface for real-time bot monitoring.
+- **Access:** `http://<server-ip>:5000`
+- **Metrics:** Uptime, memory usage, user stats, Twitter and Polymarket activity.
+- **Config:** Via `.env` using `STATUS_PORT` and `STATUS_ENABLED`.
 
 #### 8. Favorites Architecture (Saved Traders)
 The saved traders implementation is optimized for Telegram API constraints:
