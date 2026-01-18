@@ -20,6 +20,8 @@ IGNORE_PATTERNS = [
     "data/trades.db",
     "data/*.db", # Exclude all sqlite dbs
     "*.db",
+    "*.db-shm",
+    "*.db-wal",
     "bot.log",
     "bot_output.log",
     "scripts/build_public_shell.py", # Don't export the build script itself

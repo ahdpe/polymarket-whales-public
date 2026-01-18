@@ -23,6 +23,15 @@ Telegram-бот для отслеживания крупных сделок ("к
 - ⭐ **Избранное:** Сохранение интересных трейдеров с их текущим "уровнем" (🦐-🔥) + **🔔 Уведомления** (персональная подписка на трейдера)
 - 🐦 **Twitter интеграция** — автоматическая публикация крупных сделок в Twitter/X
 
+### Обратная связь и поддержка
+
+📢 [Feedback](https://t.me/polymarketwhales_feedback) | 💻 [GitHub](https://github.com/ahdpe/PolymarketWhales) | 🐦 [Twitter](https://x.com/polywhales_bot)
+
+💝 **Поддержать проект:**  
+ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
+
+📊 **Торгуй на Bybit** — [Регистрация](https://partner.bybit.com/b/polywhales)
+
 ### Классификация объёмов
 
 | Эмодзи | Уровень | Сумма |
@@ -226,6 +235,15 @@ Telegram bot for real-time tracking of large trades ("whales") on [Polymarket](h
 - 📈 **Advanced Analytics:** Open PnL, Active Positions, Wallet Age
 - ⭐ **Favorites:** Save interesting traders with their current "level" (🦐-🔥) + **🔔 Notifications** (subscribe to specific trader)
 - 🐦 **Twitter integration** — automatic posting of large trades to Twitter/X
+
+### Feedback and Support
+
+📢 [Feedback](https://t.me/polymarketwhales_feedback) | 💻 [GitHub](https://github.com/ahdpe/PolymarketWhales) | 🐦 [Twitter](https://x.com/polywhales_bot)
+
+💝 **Support the project:**  
+ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
+
+📊 **Trade on Bybit** — [Sign up](https://partner.bybit.com/b/polywhales)
 
 ### Volume Classification
 

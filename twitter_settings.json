@@ -5,13 +5,12 @@
   "max_insider_age_days": 1.0,
   "max_insider_positions": 3,
   "tweet_timestamps": [
-    1768594232.731725,
-    1768596093.1908405,
-    1768641972.956148
+    1768728431.5975416,
+    1768744186.376432
   ],
   "paused_until": 1767919753.1062808,
   "interval_minutes": 25,
-  "probability_filter": "10_90",
+  "probability_filter": "1_99",
   "allow_sell": false,
   "allow_split": false,
   "allow_merge": false,
