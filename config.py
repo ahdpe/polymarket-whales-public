@@ -14,8 +14,23 @@ POLY_PASSPHRASE = os.getenv("POLY_PASSPHRASE")
 POLY_WALLET_ADDRESS = os.getenv("POLY_WALLET_ADDRESS")
 POLY_PRIVATE_KEY = os.getenv("POLY_PRIVATE_KEY") 
 
-# PolygonScan API Key (Optional, for accurate wallet age)
-POLYGONSCAN_API_KEY = os.getenv("POLYGONSCAN_API_KEY")
+# PolygonScan API Keys (Optional, for accurate wallet age)
+# Supports multiple keys separated by comma for load balancing
+_polygonscan_keys_raw = os.getenv("POLYGONSCAN_API_KEYS", "") or os.getenv("POLYGONSCAN_API_KEY", "")
+POLYGONSCAN_API_KEYS = [k.strip() for k in _polygonscan_keys_raw.split(",") if k.strip()]
+POLYGONSCAN_API_KEY = POLYGONSCAN_API_KEYS[0] if POLYGONSCAN_API_KEYS else None  # Backward compatibility
+
+# Round Robin counter for API key rotation
+_polygonscan_key_index = 0
+
+def get_polygonscan_api_key():
+    """Get next PolygonScan API key using Round Robin rotation."""
+    global _polygonscan_key_index
+    if not POLYGONSCAN_API_KEYS:
+        return None
+    key = POLYGONSCAN_API_KEYS[_polygonscan_key_index % len(POLYGONSCAN_API_KEYS)]
+    _polygonscan_key_index += 1
+    return key
 
 # Twitter API (for posting alerts)
 TWITTER_API_KEY = os.getenv("TWITTER_API_KEY")

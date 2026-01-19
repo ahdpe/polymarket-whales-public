@@ -12,6 +12,35 @@ from config import TELEGRAM_BOT_TOKEN, FILTERS, OWNER_ID
 from core.localization import get_text
 from storage import saved_whales
 from services.report_service import generate_report
+import time
+
+# Flood control cache: {chat_id: flood_control_end_timestamp}
+# Users are skipped until their flood control period expires
+_flood_control_cache = {}
+
+def is_user_flood_controlled(chat_id: int) -> bool:
+    """Check if user is currently under flood control."""
+    if chat_id not in _flood_control_cache:
+        return False
+    
+    end_ts = _flood_control_cache[chat_id]
+    if time.time() >= end_ts:
+        # Flood control expired, remove from cache
+        del _flood_control_cache[chat_id]
+        return False
+    return True
+
+def add_flood_control(chat_id: int, retry_after: int):
+    """Add user to flood control cache."""
+    _flood_control_cache[chat_id] = time.time() + retry_after
+    logger = logging.getLogger(__name__)
+    logger.warning(f"User {chat_id} added to flood control cache for {retry_after}s")
+
+def get_flood_control_stats():
+    """Get current flood control cache stats."""
+    now = time.time()
+    active = {k: int(v - now) for k, v in _flood_control_cache.items() if v > now}
+    return active
 
 
 def shorten_trader_name(name):
@@ -2670,6 +2699,11 @@ async def send_trade_alert(chat_id, message_text, whale_key: str = None, is_save
     """Send trade alert with optional inline keyboard for saving traders."""
     if not chat_id:
         return
+    
+    # Check flood control cache before attempting to send
+    if is_user_flood_controlled(chat_id):
+        return  # Skip silently - user is under Telegram rate limit
+    
     try:
         lang = get_user_lang(chat_id)
         reply_markup = None
@@ -2684,5 +2718,18 @@ async def send_trade_alert(chat_id, message_text, whale_key: str = None, is_save
             reply_markup=reply_markup
         )
     except Exception as e:
-        logger.error(f"Failed to send Telegram message: {e}")
+        error_str = str(e)
+        # Check for flood control / rate limit errors
+        if "Flood control exceeded" in error_str or "Too Many Requests" in error_str:
+            # Parse retry_after from error message
+            import re
+            match = re.search(r'[Rr]etry (?:in |after )?(\d+)', error_str)
+            if match:
+                retry_after = int(match.group(1))
+                add_flood_control(chat_id, retry_after)
+            else:
+                # Default to 1 hour if can't parse
+                add_flood_control(chat_id, 3600)
+        else:
+            logger.error(f"Failed to send Telegram message: {e}")
 

@@ -7,7 +7,7 @@ import os
 from decimal import Decimal
 from collections import OrderedDict
 
-from config import POLYGONSCAN_API_KEY
+from config import get_polygonscan_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -394,7 +394,7 @@ class PolymarketService:
                             _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now}
                             return oldest_ts
 
-                poly_api_key = POLYGONSCAN_API_KEY
+                poly_api_key = get_polygonscan_api_key()
 
                 if is_full_batch and poly_api_key:
                     try:

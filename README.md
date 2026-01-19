@@ -201,7 +201,8 @@ pip install -r requirements.txt
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 # Опционально (для точного возраста кошельков)
-POLYGONSCAN_API_KEY=your_polygonscan_key
+# Поддерживает несколько ключей через запятую для обхода лимитов API
+POLYGONSCAN_API_KEYS=key1,key2,key3
 # Опционально (для Twitter интеграции)
 TWITTER_API_KEY=your_twitter_api_key
 TWITTER_API_SECRET=your_twitter_api_secret
@@ -394,7 +395,8 @@ Create `.env` file:
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 # Optional (for accurate wallet age)
-POLYGONSCAN_API_KEY=your_polygonscan_key
+# Supports multiple keys separated by comma for rate limit bypass
+POLYGONSCAN_API_KEYS=key1,key2,key3
 # Optional (for Twitter integration)
 TWITTER_API_KEY=your_twitter_api_key
 TWITTER_API_SECRET=your_twitter_api_secret
