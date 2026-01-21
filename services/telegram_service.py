@@ -10,60 +10,9 @@ import logging
 import hashlib
 from config import TELEGRAM_BOT_TOKEN, FILTERS, OWNER_ID
 from core.localization import get_text
+from core.utils import shorten_trader_name
 from storage import saved_whales
 from services.report_service import generate_report
-import time
-
-# Flood control cache: {chat_id: flood_control_end_timestamp}
-# Users are skipped until their flood control period expires
-_flood_control_cache = {}
-
-def is_user_flood_controlled(chat_id: int) -> bool:
-    """Check if user is currently under flood control."""
-    if chat_id not in _flood_control_cache:
-        return False
-    
-    end_ts = _flood_control_cache[chat_id]
-    if time.time() >= end_ts:
-        # Flood control expired, remove from cache
-        del _flood_control_cache[chat_id]
-        return False
-    return True
-
-def add_flood_control(chat_id: int, retry_after: int):
-    """Add user to flood control cache."""
-    _flood_control_cache[chat_id] = time.time() + retry_after
-    logger = logging.getLogger(__name__)
-    logger.warning(f"User {chat_id} added to flood control cache for {retry_after}s")
-
-def get_flood_control_stats():
-    """Get current flood control cache stats."""
-    now = time.time()
-    active = {k: int(v - now) for k, v in _flood_control_cache.items() if v > now}
-    return active
-
-
-def shorten_trader_name(name):
-    """
-    Shorten trader name:
-    1. Remove timestamp suffix (starting with '-') if present.
-    2. Truncate long addresses: 0xB0B1Ecb5eD8a22d38Ee89f20b196246005d37507 -> 0xB0B1E...37507
-    """
-    if not name:
-        return "Unknown"
-    
-    # Check if it looks like a wallet address (starts with 0x)
-    clean_name = name
-    if name.startswith("0x"):
-        # Split by '-' to remove potential timestamp suffix
-        parts = name.split('-')
-        clean_name = parts[0]
-        
-        # If it's a long wallet address, truncate it
-        if len(clean_name) > 15:
-            return f"{clean_name[:7]}...{clean_name[-5:]}"
-            
-    return clean_name
 
 # Global reference to PolymarketService instance (set during startup)
 _poly_service = None
@@ -72,6 +21,17 @@ def set_poly_service(service):
     """Store reference to PolymarketService for report generation."""
     global _poly_service
     _poly_service = service
+
+# Global reference to InsiderAlertsService (set during startup)
+_insider_alerts_service = None
+
+def set_insider_alerts_service(service):
+    """Store reference to InsiderAlertsService for admin commands."""
+    global _insider_alerts_service
+    _insider_alerts_service = service
+    # Set bot reference for publishing alerts
+    if service:
+        service.set_bot(bot)
 
 # FSM States for note input
 class NoteState(StatesGroup):
@@ -86,6 +46,9 @@ class AgeFilterState(StatesGroup):
     waiting_for_range = State()
 
 class PositionsFilterState(StatesGroup):
+    waiting_for_range = State()
+
+class ProbabilityFilterState(StatesGroup):
     waiting_for_range = State()
 
 # Max comment length
@@ -313,9 +276,18 @@ def get_probability_keyboard(chat_id):
     ]
     
     buttons = []
+    standard_keys = [opt[0] for opt in options]
+    
     for key, label in options:
         text = f"✅ {label}" if key == current else label
         buttons.append([InlineKeyboardButton(text=text, callback_data=f"prob_{key}")])
+    
+    # Custom button
+    custom_text = get_text(lang, 'prob_custom')
+    if current not in standard_keys:
+        custom_text = f"✅ {current.replace('_', '-')}%"
+        
+    buttons.append([InlineKeyboardButton(text=custom_text, callback_data="prob_custom")])
     
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -560,6 +532,55 @@ async def cmd_probability(message: types.Message):
         reply_markup=get_probability_keyboard(chat_id)
     )
 
+@dp.message(Command("tlgrm_prob"))
+async def cmd_tlgrm_prob(message: types.Message):
+    """
+    Handle /tlgrm_prob command (GLOBAL Insider Alerts filter).
+    Usage:
+    - /tlgrm_prob 10 90 (sets range 10-90%)
+    - /tlgrm_prob 0 (resets to 0-100%)
+    """
+    if message.chat.id != OWNER_ID:
+        return
+        
+    if not _insider_alerts_service:
+        await message.answer("❌ Service not initialized")
+        return
+        
+    # Get arguments
+    args = message.text.replace("/tlgrm_prob", "", 1).strip()
+    
+    if not args:
+        # Show current setting
+        status = _insider_alerts_service.get_status()
+        p_min = status.get('probability_min', '0')
+        p_max = status.get('probability_max', '100')
+        await message.answer(f"📊 Global Insider Probability: **{p_min}% - {p_max}%**", parse_mode="Markdown")
+        return
+        
+    if args == "0" or args.lower() == "any":
+        _insider_alerts_service.update_setting('probability_min', '0')
+        _insider_alerts_service.update_setting('probability_max', '100')
+        await message.answer("✅ Global Insider Probability reset to **0% - 100%**", parse_mode="Markdown")
+        return
+        
+    try:
+        valid_ranges = parse_probability_ranges(args)
+        if not valid_ranges or len(valid_ranges) > 1:
+            raise ValueError("Only single range supported for global filter")
+            
+        r = valid_ranges[0]
+        _insider_alerts_service.update_setting('probability_min', str(r[0]))
+        _insider_alerts_service.update_setting('probability_max', str(r[1]))
+        
+        await message.answer(
+            f"✅ Global Insider Probability set to **{r[0]}% - {r[1]}%**",
+            parse_mode="Markdown"
+        )
+        
+    except ValueError as e:
+        await message.answer(f"❌ Invalid format. Use: `/tlgrm_prob 10 90`", parse_mode="Markdown")
+
 @dp.message(Command("sides"))
 async def cmd_sides(message: types.Message):
     """Show side types menu."""
@@ -648,7 +669,14 @@ def format_current_filters(chat_id):
     
     # 3. Probability
     prob_key = user_probabilities.get(chat_id, '1_99')
-    prob_text = get_text(lang, f'prob_{prob_key}')
+    if prob_key in PROBABILITY_OPTIONS:
+        prob_text = get_text(lang, f'prob_{prob_key}')
+    else:
+        # Custom range
+        # Format "min_max,min_max" -> "min-max%, min-max%"
+        parts = prob_key.split(',')
+        formatted_parts = [p.replace('_', '-') + '%' for p in parts]
+        prob_text = ", ".join(formatted_parts)
     lines.append(f"⚖️ {'Вероятность' if lang == 'ru' else 'Probability'}: {prob_text}")
     
     # 4. Side types
@@ -827,6 +855,27 @@ async def cmd_lang(message: types.Message):
         parse_mode="Markdown",
         reply_markup=get_main_keyboard(chat_id)
     )
+
+@dp.message(Command("reset"))
+async def cmd_reset(message: types.Message):
+    """Reset all user settings to default."""
+    chat_id = message.chat.id
+    ensure_user_exists(chat_id)
+    lang = get_user_lang(chat_id)
+    
+    # Reset all filters and settings
+    user_filters.pop(chat_id, None)
+    user_categories.pop(chat_id, None)
+    user_probabilities.pop(chat_id, None)
+    user_side_types.pop(chat_id, None)
+    user_wallet_ages.pop(chat_id, None)
+    user_open_positions.pop(chat_id, None)
+    # Note: We do NOT reset language or bot enabled status
+    
+    save_settings()
+    
+    await message.answer(get_text(lang, 'reset_done'), parse_mode="Markdown")
+    logger.info(f"User {chat_id} reset settings to default")
 
 @dp.message(Command("hide"))
 async def cmd_hide(message: types.Message):
@@ -1612,7 +1661,7 @@ async def callback_cancel_filter_500(callback: CallbackQuery):
     )
     logger.info(f"User {chat_id} cancelled $500 filter selection")
 
-@dp.callback_query(F.data.startswith("prob_"))
+@dp.callback_query(F.data.startswith("prob_") & (F.data != "prob_custom"))
 async def callback_probability(callback: CallbackQuery):
     """Handle probability filter selection."""
     chat_id = callback.message.chat.id
@@ -1632,6 +1681,112 @@ async def callback_probability(callback: CallbackQuery):
         parse_mode="Markdown"
     )
     logger.info(f"User {chat_id} set probability filter to {prob_key}")
+
+@dp.callback_query(F.data == "prob_custom")
+async def callback_prob_custom(callback: CallbackQuery, state: FSMContext):
+    """Handle custom probability filter selection."""
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+    
+    current_key = user_probabilities.get(chat_id, 'any')
+    if current_key == 'any':
+        current_text = get_text(lang, 'prob_any')
+    elif current_key in PROBABILITY_OPTIONS:
+        current_text = get_text(lang, f'prob_{current_key}')
+    else:
+        current_text = f"{current_key.replace('_', '-')} %"
+    
+    await state.set_state(ProbabilityFilterState.waiting_for_range)
+    
+    await callback.answer()
+    await callback.message.edit_text(
+        get_text(lang, 'prob_prompt') + f"\n\n*{get_text(lang, 'current')}:* {current_text}",
+        parse_mode="Markdown"
+    )
+
+def parse_probability_ranges(text):
+    """
+    Parse probability ranges from string.
+    Supports:
+    - Multiple ranges: "0-5, 95-100"
+    - Space/underscore as separator: "20 80", "20_80"
+    - Single ranges: "20-80"
+    """
+    text = text.strip()
+    if not text:
+        return None
+        
+    raw_ranges = text.split(',')
+    valid_ranges = []
+    
+    for rng in raw_ranges:
+        clean_text = rng.strip().replace(" ", "-").replace("_", "-")
+        if not clean_text:
+            continue
+            
+        parts = clean_text.split("-")
+        
+        if len(parts) != 2:
+            raise ValueError
+            
+        min_v = int(parts[0])
+        max_v = int(parts[1])
+        
+        if min_v < 0 or max_v > 100 or min_v > max_v:
+            raise ValueError # Invalid range
+            
+        valid_ranges.append((min_v, max_v))
+        
+    if not valid_ranges:
+        return None
+        
+    return valid_ranges
+
+@dp.message(ProbabilityFilterState.waiting_for_range)
+async def process_prob_custom_input(message: types.Message, state: FSMContext):
+    """Process custom probability range input."""
+    chat_id = message.chat.id
+    lang = get_user_lang(chat_id)
+    text = message.text.strip()
+    
+    if text == "0" or text == "0-100":
+        user_probabilities[chat_id] = 'any'
+        save_settings()
+        await state.clear()
+        await message.answer(get_text(lang, 'filter_toast'))
+        # Show updated menu
+        await cmd_probability(message)
+        return
+
+    try:
+        valid_ranges = parse_probability_ranges(text)
+        if not valid_ranges:
+            raise ValueError
+            
+        # Format as stored key "min_max,min_max"
+        prob_key = ",".join([f"{r[0]}_{r[1]}" for r in valid_ranges])
+        
+        user_probabilities[chat_id] = prob_key
+        save_settings()
+        await state.clear()
+        
+        # Format display text
+        range_texts = [f"{r[0]}% — {r[1]}%" for r in valid_ranges]
+        range_text = ", ".join(range_texts)
+        
+        await message.answer(
+            get_text(lang, 'prob_set', range=range_text),
+            parse_mode="Markdown"
+        )
+        # Reshow menu
+        await cmd_probability(message)
+        
+    except ValueError:
+        await message.answer(
+            get_text(lang, 'prob_invalid'),
+            parse_mode="Markdown"
+        )
+        await state.clear()
 
 @dp.callback_query(F.data == "age_any")
 async def callback_age_any(callback: CallbackQuery):
@@ -1954,9 +2109,35 @@ def get_user_categories(chat_id):
     return user_categories.get(chat_id, get_default_categories())
 
 def get_user_probability_filter(chat_id):
-    """Get user's probability filter setting. Returns (min, max) tuple or None."""
+    """Get user's probability filter setting. Returns LIST of (min, max) tuples or None."""
     prob_key = user_probabilities.get(chat_id, 'any')
-    return PROBABILITY_OPTIONS.get(prob_key, None)
+    
+    # Standard option?
+    if prob_key in PROBABILITY_OPTIONS:
+        val = PROBABILITY_OPTIONS[prob_key]
+        return [val] if val else None
+        
+    # Custom option? "min_max" or "min_max,min_max"
+    try:
+        ranges = []
+        # Split by comma for multiple ranges
+        parts_list = prob_key.split(',')
+        
+        for part in parts_list:
+            part = part.strip()
+            if "_" in part:
+                p = part.split("_")
+                if len(p) == 2:
+                    # Convert 1-99 integer range to 0.01-0.99 float range
+                    ranges.append((int(p[0])/100.0, int(p[1])/100.0))
+        
+        if ranges:
+            return ranges
+            
+    except Exception:
+        pass
+        
+    return None
 
 def get_user_side_types(chat_id):
     """Get user's side type preferences."""
@@ -2012,6 +2193,58 @@ async def cmd_admin(message: types.Message):
 `/twitter_merge on` — MERGE сигналы
 `/twitter_redeem on` — REDEEM сигналы
 `/twitter_cat crypto on` — категории
+
+🕵️ **Insider Alerts:**
+`/tlgrm` — статус и все настройки
+`/tlgrm_prob 10 90` — фильтр вероятности
+`/tlgrm_pending` — ожидающие алерты
+`/tlgrm_on` / `off` — глобально вкл/выкл
+`/tlgrm_channel -100...` — ID канала
+
+**Категории:**
+`/tlgrm_cat crypto on`
+`/tlgrm_cat sports on`
+`/tlgrm_cat other on`
+
+**CLUSTER** (Simultaneous entries):
+`/tlgrm_cluster on/off`
+`/tlgrm_cluster_show` / `reset`
+`/tlgrm_cluster_interval 2` — окно (ч)
+`/tlgrm_cluster_min 5000` — мин. объём ($)
+`/tlgrm_cluster_total 10000` — мин. общий объём ($)
+`/tlgrm_cluster_wallets 4` — мин. кошельков
+`/tlgrm_cluster_wallet_age 24` — макс. возраст (ч)
+`/tlgrm_cluster_side both` — buy/sell/both
+`/tlgrm_cluster_direction 75` — направленность (%)
+`/tlgrm_cluster_profiles on` — показывать участников
+`/tlgrm_cluster_pos 3` — макс. открытых позиций
+
+**ACCUMULATION** (Slow multi-wallet accumulation):
+`/tlgrm_accumulation on/off`
+`/tlgrm_accumulation_show` / `reset`
+`/tlgrm_accumulation_days 3` — мин. дней
+`/tlgrm_accumulation_min 10000` — мин. размер ($)
+`/tlgrm_accumulation_total 50000` — мин. общий объём ($)
+`/tlgrm_accumulation_wallets 3` — мин. кошельков
+`/tlgrm_accumulation_age 48` — макс. возраст (ч)
+`/tlgrm_accumulation_profiles on` — показывать участников
+`/tlgrm_accumulation_pos 3` — макс. открытых позиций
+`/tlgrm_accumulation_direction 70` — направленность (%)
+
+**BURST** (Small wallets surge):
+`/tlgrm_burst on/off`
+`/tlgrm_burst_show` / `reset`
+`/tlgrm_burst_interval 1` — окно (ч)
+`/tlgrm_burst_min 1000` — мин. размер ($)
+`/tlgrm_burst_total 5000` — мин. общий объём ($)
+`/tlgrm_burst_wallets 8` — мин. кошельков
+`/tlgrm_burst_age 72` — макс. возраст (ч)
+`/tlgrm_burst_profiles on` — показывать участников
+`/tlgrm_burst_pos 3` — макс. открытых позиций
+`/tlgrm_burst_direction 70` — направленность (%)
+
+👤 **Пользовательские:**
+`/reset` — сброс своих фильтров
 
 ℹ️ Эта памятка: `/admin`
 """
@@ -2204,8 +2437,9 @@ async def cmd_twitter(message: types.Message):
     from services.twitter_service import (
         get_twitter_settings, get_twitter_service, is_twitter_enabled,
         is_twitter_paused, get_seconds_until_next_tweet,
-        get_twitter_interval, get_twitter_probability_filter,
-        is_twitter_sell_allowed, is_twitter_split_allowed, is_twitter_merge_allowed, is_twitter_redeem_allowed,
+        get_twitter_interval, get_twitter_probability_range,
+        is_twitter_sell_allowed, is_twitter_split_allowed,
+        is_twitter_merge_allowed, is_twitter_redeem_allowed,
         get_twitter_categories, get_tweets_in_last_24h, MAX_TWEETS_PER_24H
     )
     
@@ -2239,7 +2473,8 @@ async def cmd_twitter(message: types.Message):
     
     # Filters
     interval = get_twitter_interval()
-    prob_filter = get_twitter_probability_filter()
+    p_min, p_max = get_twitter_probability_range()
+    prob_filter = f"{p_min}% - {p_max}%"
     sell_allowed = "✅" if is_twitter_sell_allowed() else "❌"
     split_allowed = "✅" if is_twitter_split_allowed() else "❌"
     merge_allowed = "✅" if is_twitter_merge_allowed() else "❌"
@@ -2276,7 +2511,7 @@ async def cmd_twitter(message: types.Message):
 /twitter_age_ins 2
 /twitter_pos_ins 3
 /twitter_interval 25
-/twitter_prob 1_99
+/twitter_prob 1 99
 /twitter_sell on
 /twitter_split on
 /twitter_merge on
@@ -2464,28 +2699,31 @@ async def cmd_twitter_prob(message: types.Message):
     if message.chat.id != OWNER_ID:
         return
     
-    from services.twitter_service import set_twitter_probability_filter, get_twitter_probability_filter
+    from services.twitter_service import set_twitter_probability_range, get_twitter_probability_range
     
-    parts = message.text.split()
-    if len(parts) < 2:
-        current = get_twitter_probability_filter()
+    parts = message.text.replace("/twitter_prob", "", 1).strip()
+    
+    if not parts:
+        p_min, p_max = get_twitter_probability_range()
         await message.answer(
-            f"📊 Текущий фильтр: {current}\n\n"
-            "Использование: `/twitter_prob <фильтр>`\n"
-            "Фильтры:\n"
-            "• `any` — все сигналы\n"
-            "• `1_99` — 1-99%\n"
-            "• `5_95` — 5-95%\n"
-            "• `10_90` — 10-90%",
+            f"📊 Текущий фильтр: {p_min}% - {p_max}%\n\n"
+            "Использование: `/twitter_prob <min> <max>`\n"
+            "Пример: `/twitter_prob 10 80`",
             parse_mode="Markdown"
         )
         return
     
-    filter_key = parts[1].lower()
-    if set_twitter_probability_filter(filter_key):
-        await message.answer(f"✅ Twitter фильтр вероятности: {filter_key}")
-    else:
-        await message.answer("❌ Неверный фильтр. Доступные: any, 1_99, 5_95, 10_90")
+    try:
+        valid_ranges = parse_probability_ranges(parts)
+        if not valid_ranges or len(valid_ranges) > 1:
+            raise ValueError("Only single range supported for Twitter filter")
+            
+        r = valid_ranges[0]
+        set_twitter_probability_range(r[0], r[1])
+        await message.answer(f"✅ Twitter фильтр вероятности: {r[0]}% - {r[1]}%")
+        
+    except ValueError:
+        await message.answer("❌ Неверный формат. Используйте: `/twitter_prob 10 90`", parse_mode="Markdown")
 
 
 @dp.message(Command("twitter_sell"))
@@ -2659,6 +2897,983 @@ async def cmd_twitter_cat(message: types.Message):
         await message.answer("❌ Ошибка установки категории")
 
 
+# ============ INSIDER ALERTS ADMIN COMMANDS ============
+
+@dp.message(Command("tlgrm"))
+async def cmd_tlgrm(message: types.Message):
+    """Show Insider Alerts status and settings (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        await message.answer("❌ Insider Alerts Service not initialized")
+        return
+    
+    status = _insider_alerts_service.get_status()
+    enabled_str = "✅ Enabled" if status['enabled'] else "❌ Disabled"
+    channel = status.get('channel_id') or '(not set)'
+    
+    p_min = status.get('probability_min', '0')
+    p_max = status.get('probability_max', '100')
+    prob_text = f"{p_min}% - {p_max}%"
+
+    msg = f"""🕵️ **Telegram Insider Alerts**
+
+Status: {enabled_str}
+Channel ID: `{channel}`
+Probability: `{prob_text}`
+
+**Categories:**
+"""
+    
+    # Categories
+    cats = status.get('categories', {})
+    sports_st = "✅" if cats.get('Sports', 'true') == 'true' else "❌"
+    crypto_st = "✅" if cats.get('Crypto', 'true') == 'true' else "❌"
+    other_st = "✅" if cats.get('Other', 'true') == 'true' else "❌"
+    
+    msg += f"""  {sports_st} Sports
+  {crypto_st} Crypto
+  {other_st} Other
+
+**Scenarios:**
+"""
+    
+    # CLUSTER
+    c = status['scenarios']['CLUSTER']
+    c_enabled = "✅" if c['enabled'] == 'true' else "❌"
+    msg += f"""
+{c_enabled} **CLUSTER** (Fresh wallets entering simultaneously)
+  • Interval: {c['interval']}h
+  • Max wallet age: {c['max_age']}h
+  • Min trade size: ${c['min_usd']}
+  • Min total volume: ${c['min_total']}
+  • Min wallets: {c['min_wallets']}
+  • Min directionality: {c['min_dir']}%
+  • Side filter: {c['side']}
+  • Max positions: {c['max_pos']}
+  • Show profiles: {c['profiles']}
+"""
+    
+    # ACCUMULATION
+    r = status['scenarios']['ACCUMULATION']
+    r_enabled = "✅" if r['enabled'] == 'true' else "❌"
+    msg += f"""
+{r_enabled} **ACCUMULATION** (Slow multi-wallet accumulation)
+  • Min days: {r['min_days']}
+  • Max wallet age: {r['max_age']}h
+  • Min trade size: ${r['min_usd']}
+  • Min total volume: ${r.get('min_total', 'N/A')}
+  • Min wallets: {r.get('min_wallets', 'N/A')}
+  • Min directionality: {r['min_dir']}%
+  • Max positions: {r['max_pos']}
+  • Show profiles: {r['profiles']}
+"""
+    
+    # BURST
+    b = status['scenarios']['BURST']
+    b_enabled = "✅" if b['enabled'] == 'true' else "❌"
+    msg += f"""
+{b_enabled} **BURST** (Sudden surge of small wallets)
+  • Interval: {b['interval']}h
+  • Max wallet age: {b['max_age']}h
+  • Min trade size: ${b['min_usd']}
+  • Min total volume: ${b['min_total']}
+  • Min wallets: {b['min_wallets']}
+  • Min directionality: {b['min_dir']}%
+  • Max positions: {b['max_pos']}
+  • Show profiles: {b['profiles']}
+"""
+
+    
+    # Stats
+    stats = status['stats']
+    msg += f"""
+**Database:**
+  • Trades stored: {stats['trades_stored']}
+  • Alerts published: {stats['alerts_published']}
+
+**Commands:** `/admin` for full list
+"""
+    
+    await message.answer(msg, parse_mode="Markdown")
+
+
+@dp.message(Command("tlgrm_pending"))
+async def cmd_tlgrm_pending(message: types.Message):
+    """Show pending alerts close to threshold (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        await message.answer("❌ Service not initialized")
+        return
+    
+    pending = _insider_alerts_service.get_pending_alerts()
+    
+    cluster_list = pending.get('CLUSTER', [])
+    burst_list = pending.get('BURST', [])
+    
+    if not cluster_list and not burst_list:
+        await message.answer("📊 **Pending Alerts:** None\n\nNo markets are close to triggering alerts.", parse_mode="Markdown")
+        return
+    
+    msg = "📊 **Pending Insider Alerts**\n\n"
+    
+    if cluster_list:
+        min_w = cluster_list[0]['min_wallets'] if cluster_list else 4
+        msg += f"🔸 **CLUSTER** (min_wallets={min_w}):\n"
+        for p in cluster_list[:10]:  # Limit to 10
+            title = p['market_title'][:30] + "..." if len(p['market_title']) > 30 else p['market_title']
+            msg += f"  • {title}: {p['wallet_count']}/{p['min_wallets']} wallets, ${p['total_volume']:,.0f}, {p['directionality']:.0f}% {p['outcome']}\n"
+        if len(cluster_list) > 10:
+            msg += f"  • ...and {len(cluster_list) - 10} more\n"
+        msg += "\n"
+    
+    if burst_list:
+        min_w = burst_list[0]['min_wallets'] if burst_list else 8
+        msg += f"🔸 **BURST** (min_wallets={min_w}):\n"
+        for p in burst_list[:10]:
+            title = p['market_title'][:30] + "..." if len(p['market_title']) > 30 else p['market_title']
+            msg += f"  • {title}: {p['wallet_count']}/{p['min_wallets']} wallets, ${p['total_volume']:,.0f}, {p['directionality']:.0f}% {p['outcome']}\n"
+        if len(burst_list) > 10:
+            msg += f"  • ...and {len(burst_list) - 10} more\n"
+        msg += "\n"
+    
+    total = len(cluster_list) + len(burst_list)
+    msg += f"**Total pending:** {total} markets"
+    
+    await message.answer(msg, parse_mode="Markdown")
+
+
+@dp.message(Command("tlgrm_on"))
+async def cmd_tlgrm_on(message: types.Message):
+    """Enable Insider Alerts globally (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        await message.answer("❌ Service not initialized")
+        return
+    
+    _insider_alerts_service.update_setting('enabled', 'true')
+    await message.answer("✅ Insider Alerts **enabled**", parse_mode="Markdown")
+
+
+@dp.message(Command("tlgrm_off"))
+async def cmd_tlgrm_off(message: types.Message):
+    """Disable Insider Alerts globally (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        await message.answer("❌ Service not initialized")
+        return
+    
+    _insider_alerts_service.update_setting('enabled', 'false')
+    await message.answer("❌ Insider Alerts **disabled**", parse_mode="Markdown")
+
+
+@dp.message(Command("tlgrm_channel"))
+async def cmd_tlgrm_channel(message: types.Message):
+    """Set Telegram channel ID for insider alerts (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        await message.answer("❌ Service not initialized")
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        current = _insider_alerts_service.get_channel_id() or '(not set)'
+        await message.answer(
+            f"📡 Current channel: `{current}`\n\n"
+            "Usage: `/tlgrm_channel <id>`\n"
+            "Example: `/tlgrm_channel -1001234567890`",
+            parse_mode="Markdown"
+        )
+        return
+    
+    channel_id = parts[1]
+    _insider_alerts_service.update_setting('channel_id', channel_id)
+    await message.answer(f"✅ Channel ID set to: `{channel_id}`", parse_mode="Markdown")
+
+
+# CLUSTER commands
+@dp.message(Command("tlgrm_cluster"))
+async def cmd_tlgrm_cluster(message: types.Message):
+    """Toggle CLUSTER scenario (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        status = _insider_alerts_service.get_status()['scenarios']['CLUSTER']
+        enabled_str = "✅ enabled" if status['enabled'] else "❌ disabled"
+        await message.answer(f"CLUSTER: {enabled_str}\nUsage: `/tlgrm_cluster on|off`", parse_mode="Markdown")
+        return
+    
+    arg = parts[1].lower()
+    if arg in ['on', '1', 'yes', 'true']:
+        _insider_alerts_service.update_setting('cluster_enabled', 'true')
+        await message.answer("✅ CLUSTER scenario enabled")
+    elif arg in ['off', '0', 'no', 'false']:
+        _insider_alerts_service.update_setting('cluster_enabled', 'false')
+        await message.answer("❌ CLUSTER scenario disabled")
+    else:
+        await message.answer("Usage: `/tlgrm_cluster on|off`", parse_mode="Markdown")
+
+
+@dp.message(Command("tlgrm_cluster_interval"))
+async def cmd_tlgrm_cluster_interval(message: types.Message):
+    """Set CLUSTER interval in hours (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        current = _insider_alerts_service.settings.get('cluster_interval_hours', '2')
+        await message.answer(f"Current: {current}h\nUsage: `/tlgrm_cluster_interval <hours>`", parse_mode="Markdown")
+        return
+    
+    try:
+        hours = float(parts[1])
+        _insider_alerts_service.update_setting('cluster_interval_hours', str(hours))
+        await message.answer(f"✅ CLUSTER interval: {hours}h")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+
+@dp.message(Command("tlgrm_cluster_wallet_age"))
+async def cmd_tlgrm_cluster_wallet_age(message: types.Message):
+    """Set CLUSTER max wallet age in hours (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        current = _insider_alerts_service.settings.get('cluster_wallet_age_hours', '24')
+        await message.answer(f"Current: {current}h\nUsage: `/tlgrm_cluster_wallet_age <hours>`", parse_mode="Markdown")
+        return
+    
+    try:
+        hours = float(parts[1])
+        _insider_alerts_service.update_setting('cluster_wallet_age_hours', str(hours))
+        await message.answer(f"✅ CLUSTER max wallet age: {hours}h")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+
+@dp.message(Command("tlgrm_cluster_min"))
+async def cmd_tlgrm_cluster_min(message: types.Message):
+    """Set CLUSTER minimum volume in USD (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        current = _insider_alerts_service.settings.get('cluster_min_usd', '5000')
+        await message.answer(f"Current: ${current}\nUsage: `/tlgrm_cluster_min <usd>`", parse_mode="Markdown")
+        return
+    
+    try:
+        usd = float(parts[1].replace(',', '').replace('$', ''))
+        _insider_alerts_service.update_setting('cluster_min_usd', str(usd))
+        await message.answer(f"✅ CLUSTER min volume: ${usd:,.0f}")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+
+@dp.message(Command("tlgrm_cluster_wallets"))
+async def cmd_tlgrm_cluster_wallets(message: types.Message):
+    """Set CLUSTER minimum wallet count (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        current = _insider_alerts_service.settings.get('cluster_min_wallets', '4')
+        await message.answer(f"Current: {current}\nUsage: `/tlgrm_cluster_wallets <count>`", parse_mode="Markdown")
+        return
+    
+    try:
+        count = int(parts[1])
+        _insider_alerts_service.update_setting('cluster_min_wallets', str(count))
+        await message.answer(f"✅ CLUSTER min wallets: {count}")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+
+@dp.message(Command("tlgrm_cluster_direction"))
+async def cmd_tlgrm_cluster_direction(message: types.Message):
+    """Set CLUSTER minimum directionality % (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        current = _insider_alerts_service.settings.get('cluster_min_direction_pct', '75')
+        await message.answer(f"Current: {current}%\nUsage: `/tlgrm_cluster_direction <percent>`", parse_mode="Markdown")
+        return
+    
+    try:
+        pct = float(parts[1].replace('%', ''))
+        _insider_alerts_service.update_setting('cluster_min_direction_pct', str(pct))
+        await message.answer(f"✅ CLUSTER min directionality: {pct}%")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+
+@dp.message(Command("tlgrm_cluster_pos"))
+async def cmd_tlgrm_cluster_pos(message: types.Message):
+    """Set CLUSTER maximum open positions (owner only)."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        curr = _insider_alerts_service.settings.get('cluster_max_positions', '3')
+        await message.answer(f"Current: {curr}\nUsage: `/tlgrm_cluster_pos <count>`", parse_mode="Markdown")
+        return
+    
+    try:
+        count = int(parts[1])
+        _insider_alerts_service.update_setting('cluster_max_positions', str(count))
+        await message.answer(f"✅ CLUSTER max positions: {count}")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+
+# ACCUMULATION commands
+@dp.message(Command("tlgrm_accumulation"))
+async def cmd_tlgrm_accumulation(message: types.Message):
+    """Toggle ACCUMULATION scenario (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        status = _insider_alerts_service.get_status()['scenarios']['ACCUMULATION']
+        enabled_str = "✅ enabled" if status['enabled'] else "❌ disabled"
+        await message.answer(f"ACCUMULATION: {enabled_str}\nUsage: `/tlgrm_accumulation on|off`", parse_mode="Markdown")
+        return
+    
+    arg = parts[1].lower()
+    if arg in ['on', '1', 'yes', 'true']:
+        _insider_alerts_service.update_setting('accumulation_enabled', 'true')
+        await message.answer("✅ ACCUMULATION scenario enabled")
+    elif arg in ['off', '0', 'no', 'false']:
+        _insider_alerts_service.update_setting('accumulation_enabled', 'false')
+        await message.answer("❌ ACCUMULATION scenario disabled")
+    else:
+        await message.answer("Usage: `/tlgrm_accumulation on|off`", parse_mode="Markdown")
+
+
+@dp.message(Command("tlgrm_accumulation_days"))
+async def cmd_tlgrm_accumulation_days(message: types.Message):
+    """Set ACCUMULATION minimum days (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        current = _insider_alerts_service.settings.get('accumulation_min_days', '3')
+        await message.answer(f"Current: {current} days\nUsage: `/tlgrm_accumulation_days <count>`", parse_mode="Markdown")
+        return
+    
+    try:
+        days = int(parts[1])
+        _insider_alerts_service.update_setting('accumulation_min_days', str(days))
+        await message.answer(f"✅ ACCUMULATION min days: {days}")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+
+@dp.message(Command("tlgrm_accumulation_min"))
+async def cmd_tlgrm_accumulation_min(message: types.Message):
+    """Set ACCUMULATION minimum trade size in USD (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        current = _insider_alerts_service.settings.get('accumulation_min_usd', '10000')
+        await message.answer(f"Current: ${current}\nUsage: `/tlgrm_accumulation_min <usd>`", parse_mode="Markdown")
+        return
+    
+    try:
+        usd = float(parts[1].replace(',', '').replace('$', ''))
+        _insider_alerts_service.update_setting('accumulation_min_usd', str(usd))
+        await message.answer(f"✅ ACCUMULATION min trade size: ${usd:,.0f}")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+
+@dp.message(Command("tlgrm_accumulation_total"))
+async def cmd_tlgrm_accumulation_total(message: types.Message):
+    """Set ACCUMULATION minimum total volume in USD (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        current = _insider_alerts_service.settings.get('accumulation_min_total_usd', '50000')
+        await message.answer(f"Current: ${current}\nUsage: `/tlgrm_accumulation_total <usd>`", parse_mode="Markdown")
+        return
+    
+    try:
+        usd = float(parts[1].replace(',', '').replace('$', ''))
+        _insider_alerts_service.update_setting('accumulation_min_total_usd', str(usd))
+        await message.answer(f"✅ ACCUMULATION min total volume: ${usd:,.0f}")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+
+@dp.message(Command("tlgrm_accumulation_wallets"))
+async def cmd_tlgrm_accumulation_wallets(message: types.Message):
+    """Set ACCUMULATION minimum wallets count (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        current = _insider_alerts_service.settings.get('accumulation_min_wallets', '3')
+        await message.answer(f"Current: {current}\nUsage: `/tlgrm_accumulation_wallets <count>`", parse_mode="Markdown")
+        return
+    
+    try:
+        count = int(parts[1])
+        _insider_alerts_service.update_setting('accumulation_min_wallets', str(count))
+        await message.answer(f"✅ ACCUMULATION min wallets: {count}")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+
+@dp.message(Command("tlgrm_accumulation_pos"))
+async def cmd_tlgrm_accumulation_pos(message: types.Message):
+    """Set ACCUMULATION maximum open positions (owner only)."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        curr = _insider_alerts_service.settings.get('accumulation_max_positions', '3')
+        await message.answer(f"Current: {curr}\nUsage: `/tlgrm_accumulation_pos <count>`", parse_mode="Markdown")
+        return
+    
+    try:
+        count = int(parts[1])
+        _insider_alerts_service.update_setting('accumulation_max_positions', str(count))
+        await message.answer(f"✅ ACCUMULATION max positions: {count}")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+
+@dp.message(Command("tlgrm_accumulation_direction"))
+async def cmd_tlgrm_accumulation_direction(message: types.Message):
+    """Set ACCUMULATION minimum directionality % (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        current = _insider_alerts_service.settings.get('accumulation_min_direction_pct', '70')
+        await message.answer(f"Current: {current}%\nUsage: `/tlgrm_accumulation_direction <percent>`", parse_mode="Markdown")
+        return
+    
+    try:
+        pct = float(parts[1].replace('%', ''))
+        _insider_alerts_service.update_setting('accumulation_min_direction_pct', str(pct))
+        await message.answer(f"✅ ACCUMULATION min directionality: {pct}%")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+
+# BURST commands
+@dp.message(Command("tlgrm_burst"))
+async def cmd_tlgrm_burst(message: types.Message):
+    """Toggle BURST scenario (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        status = _insider_alerts_service.get_status()['scenarios']['BURST']
+        enabled_str = "✅ enabled" if status['enabled'] else "❌ disabled"
+        await message.answer(f"BURST: {enabled_str}\nUsage: `/tlgrm_burst on|off`", parse_mode="Markdown")
+        return
+    
+    arg = parts[1].lower()
+    if arg in ['on', '1', 'yes', 'true']:
+        _insider_alerts_service.update_setting('burst_enabled', 'true')
+        await message.answer("✅ BURST scenario enabled")
+    elif arg in ['off', '0', 'no', 'false']:
+        _insider_alerts_service.update_setting('burst_enabled', 'false')
+        await message.answer("❌ BURST scenario disabled")
+    else:
+        await message.answer("Usage: `/tlgrm_burst on|off`", parse_mode="Markdown")
+
+
+@dp.message(Command("tlgrm_burst_interval"))
+async def cmd_tlgrm_burst_interval(message: types.Message):
+    """Set BURST interval in hours (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        current = _insider_alerts_service.settings.get('burst_interval_hours', '1')
+        await message.answer(f"Current: {current}h\nUsage: `/tlgrm_burst_interval <hours>`", parse_mode="Markdown")
+        return
+    
+    try:
+        hours = float(parts[1])
+        _insider_alerts_service.update_setting('burst_interval_hours', str(hours))
+        await message.answer(f"✅ BURST interval: {hours}h")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+
+@dp.message(Command("tlgrm_burst_min"))
+async def cmd_tlgrm_burst_min(message: types.Message):
+    """Set BURST minimum trade size in USD (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        current = _insider_alerts_service.settings.get('burst_min_usd', '1000')
+        await message.answer(f"Current: ${current}\nUsage: `/tlgrm_burst_min <usd>`", parse_mode="Markdown")
+        return
+    
+    try:
+        usd = float(parts[1].replace(',', '').replace('$', ''))
+        _insider_alerts_service.update_setting('burst_min_usd', str(usd))
+        await message.answer(f"✅ BURST min trade size: ${usd:,.0f}")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+
+@dp.message(Command("tlgrm_burst_wallets"))
+async def cmd_tlgrm_burst_wallets(message: types.Message):
+    """Set BURST minimum wallet count (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        current = _insider_alerts_service.settings.get('burst_min_wallets', '8')
+        await message.answer(f"Current: {current}\nUsage: `/tlgrm_burst_wallets <count>`", parse_mode="Markdown")
+        return
+    
+    try:
+        count = int(parts[1])
+        _insider_alerts_service.update_setting('burst_min_wallets', str(count))
+        await message.answer(f"✅ BURST min wallets: {count}")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+
+@dp.message(Command("tlgrm_burst_direction"))
+async def cmd_tlgrm_burst_direction(message: types.Message):
+    """Set BURST minimum directionality % (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    if not _insider_alerts_service:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        current = _insider_alerts_service.settings.get('burst_min_direction_pct', '70')
+        await message.answer(f"Current: {current}%\nUsage: `/tlgrm_burst_direction <percent>`", parse_mode="Markdown")
+        return
+    
+    try:
+        pct = float(parts[1].replace('%', ''))
+        _insider_alerts_service.update_setting('burst_min_direction_pct', str(pct))
+        await message.answer(f"✅ BURST min directionality: {pct}%")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+
+@dp.message(Command("tlgrm_burst_pos"))
+async def cmd_tlgrm_burst_pos(message: types.Message):
+    """Set BURST maximum open positions (owner only)."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        curr = _insider_alerts_service.settings.get('burst_max_positions', '3')
+        await message.answer(f"Current: {curr}\nUsage: `/tlgrm_burst_pos <count>`", parse_mode="Markdown")
+        return
+    
+    try:
+        count = int(parts[1])
+        _insider_alerts_service.update_setting('burst_max_positions', str(count))
+        await message.answer(f"✅ BURST max positions: {count}")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+@dp.message(Command("tlgrm_cat"))
+async def cmd_tlgrm_cat(message: types.Message):
+    """Set category enabled status (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    if not _insider_alerts_service:
+        return
+
+    parts = message.text.split()
+    if len(parts) < 3:
+        status = _insider_alerts_service.get_status()['categories']
+        msg = "📂 **Categories:**\n"
+        for k, v in status.items():
+            icon = "✅" if v == 'true' else "❌"
+            msg += f"{icon} {k}\n"
+        
+        msg += "\nUsage: `/tlgrm_cat <sport/crypto/other> on|off`"
+        await message.answer(msg, parse_mode="Markdown")
+        return
+
+    cat = parts[1].lower()
+    val = parts[2].lower()
+    
+    if cat not in ['sports', 'crypto', 'other']:
+        await message.answer("❌ Invalid category. Use: sports, crypto, other")
+        return
+
+    enabled = 'true' if val in ['on', 'true', '1', 'yes'] else 'false'
+    key = f"cat_{cat}_enabled"
+    _insider_alerts_service.update_setting(key, enabled)
+    
+    await message.answer(f"✅ Category **{cat}** set to {enabled}")
+
+
+# Extended CLUSTER Commands
+@dp.message(Command("tlgrm_cluster_side"))
+async def cmd_tlgrm_cluster_side(message: types.Message):
+    """Set CLUSTER side filter (buy/sell/both)."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        curr = _insider_alerts_service.settings.get('cluster_side', 'both')
+        await message.answer(f"Current: {curr}\nUsage: `/tlgrm_cluster_side buy|sell|both`", parse_mode="Markdown")
+        return
+        
+    side = parts[1].lower()
+    if side not in ['buy', 'sell', 'both']:
+        await message.answer("❌ Invalid side. Use: buy, sell, both")
+        return
+        
+    _insider_alerts_service.update_setting('cluster_side', side)
+    await message.answer(f"✅ CLUSTER side filter set to: {side}")
+
+@dp.message(Command("tlgrm_cluster_total"))
+async def cmd_tlgrm_cluster_total(message: types.Message):
+    """Set CLUSTER min total volume."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        curr = _insider_alerts_service.settings.get('cluster_min_total_usd', '10000')
+        await message.answer(f"Current: ${curr}\nUsage: `/tlgrm_cluster_total <usd>`", parse_mode="Markdown")
+        return
+        
+    try:
+        usd = float(parts[1].replace(',', '').replace('$', ''))
+        _insider_alerts_service.update_setting('cluster_min_total_usd', str(usd))
+        await message.answer(f"✅ CLUSTER min total volume: ${usd:,.0f}")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+@dp.message(Command("tlgrm_cluster_profiles"))
+async def cmd_tlgrm_cluster_profiles(message: types.Message):
+    """Toggle displaying profiles in CLUSTER alerts."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+
+    parts = message.text.split()
+    if len(parts) < 2:
+        curr = _insider_alerts_service.settings.get('cluster_include_profiles', 'true')
+        await message.answer(f"Current: {curr}\nUsage: `/tlgrm_cluster_profiles on|off`", parse_mode="Markdown")
+        return
+
+    arg = parts[1].lower()
+    val = 'true' if arg in ['on', 'true', '1', 'yes'] else 'false'
+    _insider_alerts_service.update_setting('cluster_include_profiles', val)
+    await message.answer(f"✅ CLUSTER include profiles: {val}")
+
+@dp.message(Command("tlgrm_cluster_show"))
+async def cmd_tlgrm_cluster_show(message: types.Message):
+    """Show detailed CLUSTER settings."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+    
+    s = _insider_alerts_service.settings
+    msg = f"""**CLUSTER Configuration:**
+Enabled: {s.get('cluster_enabled')}
+Interval: {s.get('cluster_interval_hours')}h
+Max Wallet Age: {s.get('cluster_wallet_age_hours')}h
+Min Wallet Size: ${s.get('cluster_min_usd')}
+Min Total Vol: ${s.get('cluster_min_total_usd')}
+Min Wallets: {s.get('cluster_min_wallets')}
+Min Directionality: {s.get('cluster_min_direction_pct')}%
+Side Filter: {s.get('cluster_side')}
+Show Profiles: {s.get('cluster_include_profiles')}
+"""
+    await message.answer(msg, parse_mode="Markdown")
+
+@dp.message(Command("tlgrm_cluster_reset"))
+async def cmd_tlgrm_cluster_reset(message: types.Message):
+    """Reset CLUSTER settings to default."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+    
+    defaults = {
+        'cluster_interval_hours': '2',
+        'cluster_wallet_age_hours': '24',
+        'cluster_min_usd': '5000',
+        'cluster_min_total_usd': '10000',
+        'cluster_min_wallets': '4',
+        'cluster_min_direction_pct': '75',
+        'cluster_side': 'both',
+        'cluster_include_profiles': 'true'
+    }
+    for k, v in defaults.items():
+        _insider_alerts_service.update_setting(k, v)
+        
+    await message.answer("✅ CLUSTER settings reset to defaults.")
+
+
+# Extended BURST Commands
+@dp.message(Command("tlgrm_burst_age"))
+async def cmd_tlgrm_burst_age(message: types.Message):
+    """Set BURST max wallet age."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        curr = _insider_alerts_service.settings.get('burst_wallet_age_hours', '72')
+        await message.answer(f"Current: {curr}h\nUsage: `/tlgrm_burst_age <hours>`", parse_mode="Markdown")
+        return
+        
+    try:
+        hours = float(parts[1])
+        _insider_alerts_service.update_setting('burst_wallet_age_hours', str(hours))
+        await message.answer(f"✅ BURST max wallet age: {hours}h")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+@dp.message(Command("tlgrm_burst_total"))
+async def cmd_tlgrm_burst_total(message: types.Message):
+    """Set BURST min total volume."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        curr = _insider_alerts_service.settings.get('burst_min_total_usd', '5000')
+        await message.answer(f"Current: ${curr}\nUsage: `/tlgrm_burst_total <usd>`", parse_mode="Markdown")
+        return
+        
+    try:
+        usd = float(parts[1].replace(',', '').replace('$', ''))
+        _insider_alerts_service.update_setting('burst_min_total_usd', str(usd))
+        await message.answer(f"✅ BURST min total volume: ${usd:,.0f}")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+@dp.message(Command("tlgrm_burst_profiles"))
+async def cmd_tlgrm_burst_profiles(message: types.Message):
+    """Toggle displaying profiles in BURST alerts."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+
+    parts = message.text.split()
+    if len(parts) < 2:
+        curr = _insider_alerts_service.settings.get('burst_include_profiles', 'true')
+        await message.answer(f"Current: {curr}\nUsage: `/tlgrm_burst_profiles on|off`", parse_mode="Markdown")
+        return
+
+    arg = parts[1].lower()
+    val = 'true' if arg in ['on', 'true', '1', 'yes'] else 'false'
+    _insider_alerts_service.update_setting('burst_include_profiles', val)
+    await message.answer(f"✅ BURST include profiles: {val}")
+
+@dp.message(Command("tlgrm_burst_show"))
+async def cmd_tlgrm_burst_show(message: types.Message):
+    """Show detailed BURST settings."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+    
+    s = _insider_alerts_service.settings
+    msg = f"""**BURST Configuration:**
+Enabled: {s.get('burst_enabled')}
+Interval: {s.get('burst_interval_hours')}h
+Max Wallet Age: {s.get('burst_wallet_age_hours')}h
+Min Wallet Size: ${s.get('burst_min_usd')}
+Min Total Vol: ${s.get('burst_min_total_usd')}
+Min Wallets: {s.get('burst_min_wallets')}
+Min Directionality: {s.get('burst_min_direction_pct')}%
+Show Profiles: {s.get('burst_include_profiles')}
+"""
+    await message.answer(msg, parse_mode="Markdown")
+
+@dp.message(Command("tlgrm_burst_reset"))
+async def cmd_tlgrm_burst_reset(message: types.Message):
+    """Reset BURST settings to default."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+    
+    defaults = {
+        'burst_interval_hours': '1',
+        'burst_wallet_age_hours': '72',
+        'burst_min_usd': '1000',
+        'burst_min_total_usd': '5000',
+        'burst_min_wallets': '8',
+        'burst_min_direction_pct': '70',
+        'burst_include_profiles': 'true'
+    }
+    for k, v in defaults.items():
+        _insider_alerts_service.update_setting(k, v)
+        
+    await message.answer("✅ BURST settings reset to defaults.")
+
+
+# Extended ACCUMULATION Commands
+@dp.message(Command("tlgrm_accumulation_age"))
+async def cmd_tlgrm_accumulation_age(message: types.Message):
+    """Set ACCUMULATION max wallet age."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        curr = _insider_alerts_service.settings.get('accumulation_wallet_age_hours', '48')
+        await message.answer(f"Current: {curr}h\nUsage: `/tlgrm_accumulation_age <hours>`", parse_mode="Markdown")
+        return
+        
+    try:
+        hours = float(parts[1])
+        _insider_alerts_service.update_setting('accumulation_wallet_age_hours', str(hours))
+        await message.answer(f"✅ ACCUMULATION max wallet age: {hours}h")
+    except ValueError:
+        await message.answer("❌ Invalid number")
+
+@dp.message(Command("tlgrm_accumulation_profiles"))
+async def cmd_tlgrm_accumulation_profiles(message: types.Message):
+    """Toggle displaying profiles in ACCUMULATION alerts."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+
+    parts = message.text.split()
+    if len(parts) < 2:
+        curr = _insider_alerts_service.settings.get('accumulation_include_profiles', 'true')
+        await message.answer(f"Current: {curr}\nUsage: `/tlgrm_accumulation_profiles on|off`", parse_mode="Markdown")
+        return
+
+    arg = parts[1].lower()
+    val = 'true' if arg in ['on', 'true', '1', 'yes'] else 'false'
+    _insider_alerts_service.update_setting('accumulation_include_profiles', val)
+    await message.answer(f"✅ ACCUMULATION include profiles: {val}")
+
+@dp.message(Command("tlgrm_accumulation_show"))
+async def cmd_tlgrm_accumulation_show(message: types.Message):
+    """Show detailed ACCUMULATION settings."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+    
+    s = _insider_alerts_service.settings
+    msg = f"""**ACCUMULATION Configuration:**
+Enabled: {s.get('accumulation_enabled')}
+Min Days: {s.get('accumulation_min_days')}
+Max Wallet Age: {s.get('accumulation_wallet_age_hours')}h
+Min Trade Size: ${s.get('accumulation_min_usd')}
+Min Total Volume: ${s.get('accumulation_min_total_usd')}
+Min Wallets: {s.get('accumulation_min_wallets')}
+Min Directionality: {s.get('accumulation_min_direction_pct')}%
+Show Profiles: {s.get('accumulation_include_profiles')}
+"""
+    await message.answer(msg, parse_mode="Markdown")
+
+@dp.message(Command("tlgrm_accumulation_reset"))
+async def cmd_tlgrm_accumulation_reset(message: types.Message):
+    """Reset ACCUMULATION settings to default."""
+    if message.chat.id != OWNER_ID: return
+    if not _insider_alerts_service: return
+    
+    defaults = {
+        'accumulation_min_days': '3',
+        'accumulation_min_usd': '10000',
+        'accumulation_min_total_usd': '50000',
+        'accumulation_min_wallets': '3',
+        'accumulation_wallet_age_hours': '48',
+        'accumulation_min_direction_pct': '70',
+        'accumulation_include_profiles': 'true',
+        'accumulation_max_positions': '3'
+    }
+    for k, v in defaults.items():
+        _insider_alerts_service.update_setting(k, v)
+        
+    await message.answer("✅ ACCUMULATION settings reset to defaults.")
+
+
+
+
 async def send_admin_notification(message: str, parse_mode="HTML"):
     """Send notification message to bot owner/admin."""
     try:
@@ -2699,11 +3914,6 @@ async def send_trade_alert(chat_id, message_text, whale_key: str = None, is_save
     """Send trade alert with optional inline keyboard for saving traders."""
     if not chat_id:
         return
-    
-    # Check flood control cache before attempting to send
-    if is_user_flood_controlled(chat_id):
-        return  # Skip silently - user is under Telegram rate limit
-    
     try:
         lang = get_user_lang(chat_id)
         reply_markup = None
@@ -2718,18 +3928,16 @@ async def send_trade_alert(chat_id, message_text, whale_key: str = None, is_save
             reply_markup=reply_markup
         )
     except Exception as e:
-        error_str = str(e)
-        # Check for flood control / rate limit errors
-        if "Flood control exceeded" in error_str or "Too Many Requests" in error_str:
-            # Parse retry_after from error message
-            import re
-            match = re.search(r'[Rr]etry (?:in |after )?(\d+)', error_str)
-            if match:
-                retry_after = int(match.group(1))
-                add_flood_control(chat_id, retry_after)
-            else:
-                # Default to 1 hour if can't parse
-                add_flood_control(chat_id, 3600)
-        else:
-            logger.error(f"Failed to send Telegram message: {e}")
+        error_msg = str(e)
+        logger.error(f"Failed to send Telegram message: {error_msg}")
+        
+        # Auto-Stop for blocked users
+        if "blocked by the user" in error_msg or "user is deactivated" in error_msg:
+            try:
+                if user_statuses.get(chat_id):
+                    user_statuses[chat_id] = False
+                    save_settings()
+                    logger.info(f"🛑 Auto-stopped user {chat_id} (blocked bot)")
+            except Exception as e2:
+                logger.error(f"Error auto-stopping user {chat_id}: {e2}")
 

@@ -19,6 +19,9 @@ BOT_START_TIME = None
 # Reference to PolymarketService (set by main.py)
 _poly_service = None
 
+# Reference to InsiderAlertsService (set by main.py)
+_insider_service = None
+
 
 def set_start_time(start_time: float):
     """Set bot start time for uptime calculation."""
@@ -30,6 +33,12 @@ def set_poly_service(service):
     """Set reference to PolymarketService for stats."""
     global _poly_service
     _poly_service = service
+
+
+def set_insider_service(service):
+    """Set reference to InsiderAlertsService for stats."""
+    global _insider_service
+    _insider_service = service
 
 
 def format_uptime(seconds: float) -> str:
@@ -190,7 +199,7 @@ def get_twitter_stats() -> dict:
                 with open(queue_path, "r") as f:
                     queue = json.load(f)
                     queue_size = len(queue) if isinstance(queue, list) else 0
-            except:
+            except Exception:
                 pass
         
         return {
@@ -340,6 +349,19 @@ def get_polymarket_stats() -> dict:
         return {"available": False, "error": str(e)}
 
 
+def get_insider_stats() -> dict:
+    """Get Insider Alerts statistics."""
+    if not _insider_service:
+        return {"enabled": False, "available": False}
+    
+    try:
+        # Re-use get_status from service which returns settings + stats + pending
+        return _insider_service.get_status()
+    except Exception as e:
+        logger.error(f"Error getting Insider stats: {e}")
+        return {"available": False, "error": str(e)}
+
+
 def get_full_status() -> dict:
     """Get complete bot status with all metrics."""
     return {
@@ -350,5 +372,8 @@ def get_full_status() -> dict:
         "twitter": get_twitter_stats(),
         "databases": get_database_stats(),
         "files": get_file_stats(),
+        "databases": get_database_stats(),
+        "files": get_file_stats(),
         "polymarket": get_polymarket_stats(),
+        "insider": get_insider_stats(),
     }

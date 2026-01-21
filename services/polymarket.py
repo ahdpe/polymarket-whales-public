@@ -4,10 +4,11 @@ import aiohttp
 import time
 import sqlite3
 import os
+import random
 from decimal import Decimal
 from collections import OrderedDict
 
-from config import get_polygonscan_api_key
+from config import POLYGONSCAN_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +161,14 @@ class TradeAggregator:
 
         price = float(trade.get("price", 0) or 0)
         size = float(trade.get("size", 0) or 0)
-        usd_val = price * size
+        
+        # Use usdcSize from API if available (actual USD spent)
+        # Fallback to price * size only if usdcSize not provided
+        usdc_size = float(trade.get("usdcSize", 0) or 0)
+        if usdc_size > 0:
+            usd_val = usdc_size
+        else:
+            usd_val = price * size
 
         s = self.series.get(key)
         if s and (now_ts - s["first_ts"] > self.window_sec):
@@ -326,7 +334,7 @@ class PolymarketService:
 
                 while True:
                     url_open = f"{DATA_API_URL}/positions?user={proxy_wallet}&limit={limit}&offset={offset}"
-                    async with session.get(url_open, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    async with session.get(url_open, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                         if resp.status != 200:
                             break
                         batch = await resp.json()
@@ -364,6 +372,50 @@ class PolymarketService:
             logger.debug(f"Error fetching positions: {e}")
             return None
 
+    async def check_wallet_has_position(self, proxy_wallet: str, condition_id: str) -> float:
+        """
+        Check if a wallet currently holds a position on a specific market.
+        
+        Args:
+            proxy_wallet: The wallet address to check
+            condition_id: The market's conditionId (same as market_id in alerts)
+        
+        Returns:
+            Position value in USD if wallet holds position, 0.0 otherwise
+        """
+        if not proxy_wallet or not condition_id:
+            return 0.0
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                # Query positions for this wallet
+                url = f"{DATA_API_URL}/positions?user={proxy_wallet}&limit=500"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        return 0.0
+                    
+                    positions = await resp.json()
+                    if not positions or not isinstance(positions, list):
+                        return 0.0
+                    
+                    # Find position for this market and return its value
+                    for pos in positions:
+                        pos_condition = pos.get('conditionId', '') or pos.get('condition_id', '')
+                        current_value = float(pos.get('currentValue', 0) or 0)
+                        
+                        # Match by conditionId
+                        if pos_condition == condition_id:
+                            return current_value
+                    
+                    return 0.0
+                    
+        except asyncio.TimeoutError:
+            logger.debug(f"Timeout checking position for {proxy_wallet[:10]}...")
+            return 0.0  # Assume no position on timeout
+        except Exception as e:
+            logger.debug(f"Error checking position: {e}")
+            return 0.0
+
     async def get_trader_first_activity(self, proxy_wallet):
         if not proxy_wallet:
             return None
@@ -379,7 +431,7 @@ class PolymarketService:
 
             async with aiohttp.ClientSession() as session:
                 url = f"{DATA_API_URL}/activity?user={proxy_wallet}&limit=100&offset=0"
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status != 200:
                         return None
                     data = await resp.json()
@@ -388,13 +440,19 @@ class PolymarketService:
 
                     if len(data) == 100:
                         is_full_batch = True
-                    if len(data) < 100:
+                    
+                    # Always capture oldest from this batch as fallback
+                    if data:
                         oldest_ts = norm_ts(data[-1].get("timestamp", 0))
+
+                    if len(data) < 100:
                         if oldest_ts:
                             _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now}
                             return oldest_ts
 
-                poly_api_key = get_polygonscan_api_key()
+                poly_api_key = POLYGONSCAN_API_KEY
+                if isinstance(poly_api_key, list):
+                    poly_api_key = random.choice(poly_api_key)
 
                 if is_full_batch and poly_api_key:
                     try:
@@ -408,7 +466,7 @@ class PolymarketService:
                                 f"&address={proxy_wallet}&startblock=0&endblock=99999999"
                                 f"&page=1&offset=1&sort=asc&apikey={poly_api_key}"
                             )
-                            async with session.get(ps_url, timeout=aiohttp.ClientTimeout(total=5)) as ps_resp:
+                            async with session.get(ps_url, timeout=aiohttp.ClientTimeout(total=10)) as ps_resp:
                                 if ps_resp.status != 200:
                                     continue
                                 ps_data = await ps_resp.json()
@@ -421,62 +479,16 @@ class PolymarketService:
                             oldest_ts = float(min_ts)
                             _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now}
                             return oldest_ts
-
                     except Exception as e:
-                        logger.debug(f"PolygonScan fetch failed: {e}")
-
-                steps = [500, 1000, 5000, 10000, 20000, 50000]
-                low, high = 100, 50000
-                found_upper_bound = False
-
-                for step in steps:
-                    url = f"{DATA_API_URL}/activity?user={proxy_wallet}&limit=1&offset={step}"
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
-                        has_data = False
-                        if resp.status == 200:
-                            d = await resp.json()
-                            has_data = bool(d and isinstance(d, list) and len(d) > 0)
-
-                        if has_data:
-                            low = step
-                        else:
-                            high = step
-                            found_upper_bound = True
-                            break
-
-                if not found_upper_bound and low == 50000:
-                    high = 50000
-
-                max_valid_offset = low
-                while low <= high:
-                    mid = (low + high) // 2
-                    if mid == max_valid_offset:
-                        low = mid + 1
-                        continue
-
-                    url = f"{DATA_API_URL}/activity?user={proxy_wallet}&limit=1&offset={mid}"
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
-                        if resp.status != 200:
-                            high = mid - 1
-                            continue
-                        d = await resp.json()
-                        if d and isinstance(d, list) and len(d) > 0:
-                            max_valid_offset = mid
-                            low = mid + 1
-                        else:
-                            high = mid - 1
-
-                if max_valid_offset > 0:
-                    url = f"{DATA_API_URL}/activity?user={proxy_wallet}&limit=1&offset={max_valid_offset}"
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
-                        if resp.status == 200:
-                            d = await resp.json()
-                            if d and isinstance(d, list) and len(d) > 0:
-                                oldest_ts = norm_ts(d[0].get("timestamp", 0))
-
-            if oldest_ts:
-                _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now}
-                return oldest_ts
+                        logger.error(f"Error checking PolygonScan for {proxy_wallet}: {e}")
+                
+                # If PolygonScan failed or not configured, use Polymarket Data API fallback
+                # This gives us at least the oldest timestamp from the first 100 activities
+                # Note: This may underestimate wallet age for very active wallets, but is better than None
+                if oldest_ts:
+                    logger.debug(f"PolygonScan unavailable, using Polymarket Data API fallback for {proxy_wallet[:10]}...")
+                    _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now}
+                    return oldest_ts
 
             return None
 

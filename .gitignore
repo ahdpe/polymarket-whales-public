@@ -14,3 +14,8 @@ data/trades.db-wal
 data/saved_whales.db
 public_export/
 twitter_queue.json
+alerts_storage.db
+next_data.json
+profile_data.json
+profile.html
+announcement_draft_menu.txt

@@ -56,6 +56,10 @@ TRANSLATIONS = {
         'prob_1_99': "🟢 1% — 99%",
         'prob_5_95': "🟡 5% — 95%",
         'prob_10_90': "🟠 10% — 90%",
+        'prob_custom': "📝 Настроить интервал",
+        'prob_set': "✅ Фильтр вероятности: *{range}*",
+        'prob_prompt': "**Введите диапазон в процентах:**\nФормат: мин-макс\nПримеры:\n• 20-80 (от 20% до 80%)\n• 0-5, 95-100 (редкие или верняки)\n• 0-100 (сбросить)",
+        'prob_invalid': "❌ Неверный формат. Примеры: `20-80` или `0-5, 95-100`\n\nНажмите кнопку снова, чтобы повторить ввод.",
         'filter_toast': "Настройки обновлены!",
         
         # Filter - Wallet Age
@@ -175,6 +179,7 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
         'manual_add_exists': "ℹ️ Этот трейдер уже в избранном.",
         'manual_add_success': "✅ Трейдер добавлен в избранное!",
         'manual_add_cancel': "❌ Отмена",
+        'reset_done': "🔄 **Настройки сброшены!**\nВсе фильтры вернулись к значениям по умолчанию.",
     },
     
     'en': {
@@ -232,6 +237,10 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
         'prob_1_99': "🟢 1% — 99%",
         'prob_5_95': "🟡 5% — 95%",
         'prob_10_90': "🟠 10% — 90%",
+        'prob_custom': "📝 Set interval",
+        'prob_set': "✅ Probability filter: *{range}*",
+        'prob_prompt': "**Enter range in %:**\nFormat: min-max\nExamples:\n• 20-80 (20% to 80%)\n• 0-5, 95-100 (rare or certain)\n• 0-100 (reset)",
+        'prob_invalid': "❌ Invalid format. Examples: `20-80` or `0-5, 95-100`\n\nPress the button again to retry.",
         
         # Filter - Wallet Age
         'btn_age': "🕐 Age",
@@ -350,6 +359,7 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
         'manual_add_exists': "ℹ️ This trader is already in favorites.",
         'manual_add_success': "✅ Trader added to favorites!",
         'manual_add_cancel': "❌ Cancel",
+        'reset_done': "🔄 **Settings reset!**\nAll filters have been restored to default values.",
     }
 }
 

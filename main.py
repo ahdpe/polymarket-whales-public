@@ -14,16 +14,18 @@ from services.telegram_service import (
     get_user_categories, get_default_categories, get_user_lang,
     get_user_probability_filter, get_user_side_types,
     get_user_wallet_age_filter, get_user_open_positions_filter,
-    send_admin_notification, set_poly_service
+    send_admin_notification, set_poly_service, set_insider_alerts_service
 )
 from services.report_service import generate_report
 from core.filters import get_alert_level
 from core.categories import detect_category, should_show_trade
 from core.localization import get_text, get_trade_level_name, get_trade_level_emoji, get_trade_level_icon
+from core.utils import shorten_trader_name
 from config import FILTERS
 from storage import saved_whales
 from services.twitter_service import get_twitter_service
-from services.status_service import set_start_time as set_status_start_time, set_poly_service as set_status_poly_service
+from services.insider_alerts import InsiderAlertsService, get_insider_alerts_service, set_insider_alerts_service as set_global_insider_alerts_service
+from services.status_service import set_start_time as set_status_start_time, set_poly_service as set_status_poly_service, set_insider_service as set_status_insider_service
 from services.status_server import start_status_server
 
 # Configure logging
@@ -43,6 +45,7 @@ DEFAULT_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # Module-level service reference (set in main())
 poly_service = None
+insider_alerts_service = None
 
 # Memory monitoring
 MEMORY_WARNING_THRESHOLD = 85.0  # Percentage
@@ -118,28 +121,6 @@ def format_wallet_age(first_activity_ts):
     return f"\n🕐 Wallet Age: {age_str}"
 
 
-def shorten_trader_name(name):
-    """
-    Shorten trader name:
-    1. Remove timestamp suffix (starting with '-') if present.
-    2. detailed: 0xB0B1Ecb5eD8a22d38Ee89f20b196246005d37507-1768254109767 -> 0xB0B1E...d3750
-    """
-    if not name:
-        return "Unknown"
-    
-    # Check if it looks like a wallet address (starts with 0x)
-    clean_name = name
-    if name.startswith("0x"):
-        # Split by '-' to remove potential timestamp suffix
-        parts = name.split('-')
-        clean_name = parts[0]
-        
-        # If it's a long wallet address, truncate it
-        if len(clean_name) > 15:
-            return f"{clean_name[:7]}...{clean_name[-5:]}"
-            
-    return clean_name
-
 
 async def handle_trade(trade_data):
     """
@@ -159,6 +140,29 @@ async def handle_trade(trade_data):
             value_usd = price * size
         else:
             value_usd = float(value_usd)
+        
+        # Variables for cached stats
+        pos_data = None
+        first_activity_ts = None
+        trader_address = trade_data.get('proxyWallet', '') or trade_data.get('maker', '')
+
+        # INSIDER ALERTS: Process FIRST, before any filtering (has own $500 threshold)
+        if insider_alerts_service and value_usd >= 500:
+            try:
+                # Get wallet age and positions early for insider analysis
+                if trader_address and poly_service:
+                    # Use the global service instance
+                    first_activity_ts = await poly_service.get_trader_first_activity(trader_address)
+                    pos_data = await poly_service.get_trader_positions(trader_address)
+                
+                trade_data['market_id'] = trade_data.get('conditionId', '')
+                trade_data['first_activity_ts'] = first_activity_ts
+                # Store open positions count
+                trade_data['open_positions'] = pos_data.get('open_count', 0) if pos_data else 0
+
+                insider_alerts_service.process_trade(trade_data)
+            except Exception as ie:
+                logger.error(f"Error in insider alerts processing: {ie}")
         
         # Get alert level for this trade size
         alert_config = get_alert_level(value_usd)
@@ -242,10 +246,16 @@ async def handle_trade(trade_data):
                  return (False, False)
              
              # Check probability filter
-             prob_range = get_user_probability_filter(chat_id)
-             if prob_range:
-                 min_prob, max_prob = prob_range
-                 if price < min_prob or price > max_prob:
+             prob_ranges = get_user_probability_filter(chat_id)
+             if prob_ranges:
+                 # Check if price is within ANY of the ranges
+                 is_in_range = False
+                 for min_prob, max_prob in prob_ranges:
+                     if min_prob <= price <= max_prob:
+                         is_in_range = True
+                         break
+                 
+                 if not is_in_range:
                      return (False, False)
              
              # Check side type filter
@@ -322,11 +332,12 @@ async def handle_trade(trade_data):
         
         # Fetch trader positions and first activity (cached, async)
         # We only do this NOW because we know at least one person will see it.
-        pos_data = None
-        first_activity_ts = None
+        # Check if we already fetched them in the Insider Alerts block
         if poly_service and trader_address:
-            pos_data = await poly_service.get_trader_positions(trader_address)
-            first_activity_ts = await poly_service.get_trader_first_activity(trader_address)
+            if pos_data is None:
+                pos_data = await poly_service.get_trader_positions(trader_address)
+            if first_activity_ts is None:
+                first_activity_ts = await poly_service.get_trader_first_activity(trader_address)
 
         # RE-CHECK TWITTER: Now that we have expensive stats (Age, Positions), 
         # we might qualify for "Insider" Twitter alerts that were skipped initially.
@@ -389,29 +400,34 @@ async def handle_trade(trade_data):
         
         # Send to all recipients
         for chat_id in recipients:
-             # Check wallet age filter (after other filters, data already fetched)
-             age_filter = get_user_wallet_age_filter(chat_id)
-             if age_filter and first_activity_ts:
-                 age_days = (time.time() - first_activity_ts) / 86400
-                 min_days = age_filter.get('min_days')
-                 max_days = age_filter.get('max_days')
-                 
-                 if min_days is not None and age_days < min_days:
-                     continue  # Skip this user
-                 if max_days is not None and age_days > max_days:
-                     continue  # Skip this user
+             # Check if this is a bypass notification - bypass users skip ALL filters
+             is_bypass = chat_id in bypass_users
              
-             # Check open positions filter (after other filters, data already fetched)
-             positions_filter = get_user_open_positions_filter(chat_id)
-             if positions_filter and pos_data:
-                 open_count = pos_data.get('open_count', 0)
-                 min_count = positions_filter.get('min_count')
-                 max_count = positions_filter.get('max_count')
+             # Only apply wallet age and positions filters for non-bypass users
+             if not is_bypass:
+                 # Check wallet age filter (after other filters, data already fetched)
+                 age_filter = get_user_wallet_age_filter(chat_id)
+                 if age_filter and first_activity_ts:
+                     age_days = (time.time() - first_activity_ts) / 86400
+                     min_days = age_filter.get('min_days')
+                     max_days = age_filter.get('max_days')
+                     
+                     if min_days is not None and age_days < min_days:
+                         continue  # Skip this user
+                     if max_days is not None and age_days > max_days:
+                         continue  # Skip this user
                  
-                 if min_count is not None and open_count < min_count:
-                     continue  # Skip this user
-                 if max_count is not None and open_count > max_count:
-                     continue  # Skip this user
+                 # Check open positions filter (after other filters, data already fetched)
+                 positions_filter = get_user_open_positions_filter(chat_id)
+                 if positions_filter and pos_data:
+                     open_count = pos_data.get('open_count', 0)
+                     min_count = positions_filter.get('min_count')
+                     max_count = positions_filter.get('max_count')
+                     
+                     if min_count is not None and open_count < min_count:
+                         continue  # Skip this user
+                     if max_count is not None and open_count > max_count:
+                         continue  # Skip this user
              
              # Localization per user
              lang = get_user_lang(chat_id)
@@ -432,8 +448,7 @@ async def handle_trade(trade_data):
              else:
                  side_line = f"{side_display} @ {price_pct:.1f}%\n"
              
-             # Check if this is a bypass notification
-             is_bypass = chat_id in bypass_users
+             # Add bypass indicator (is_bypass already defined at start of loop)
              bypass_indicator = " 🔔" if is_bypass else ""
              
              msg = (
@@ -444,6 +459,12 @@ async def handle_trade(trade_data):
             )
              # Get level icon for button
              level_icon = get_trade_level_icon(alert_config['min'])
+             if is_bypass:
+                 logger.info(
+                     f"Sending BYPASS alert to chat_id={chat_id} "
+                     f"trader={trader_address[:10]}... value=${value_usd:,.0f} "
+                     f"market={market_title[:50]}"
+                 )
              await send_trade_alert(chat_id, msg, whale_key=whale_key, is_saved=is_saved, level_icon=level_icon)
         
         # Post to Twitter (if enabled and trade is big enough)
@@ -591,6 +612,17 @@ async def daily_report_scheduler():
             # Wait 1 hour before retry on error
             await asyncio.sleep(3600)
 
+async def check_insider_scenarios_periodically():
+    """Check for insider patterns every 5 minutes."""
+    while True:
+        try:
+            if insider_alerts_service:
+                await insider_alerts_service.check_all_markets()
+        except Exception as e:
+            logger.error(f"Error checking insider scenarios: {e}")
+        
+        await asyncio.sleep(300)  # 5 minutes
+
 async def start_insider_collector():
     """Start all background tasks and return list of tasks."""
     tasks = []
@@ -609,6 +641,16 @@ async def start_insider_collector():
     # Store reference in status service for dashboard
     set_status_poly_service(poly_service)
     
+    # Initialize Insider Alerts Service
+    global insider_alerts_service
+    insider_alerts_service = InsiderAlertsService()
+    insider_alerts_service.set_poly_service(poly_service)  # For position verification before alerts
+    # Pass bot reference (after telegram starts, we'll set it in telegram_service.py)
+    set_global_insider_alerts_service(insider_alerts_service)
+    set_insider_alerts_service(insider_alerts_service)  # For telegram_service.py commands
+    set_status_insider_service(insider_alerts_service)  # For status dashboard
+    logger.info("Insider alerts service initialized")
+    
     logger.info("Starting PolyWhales...")
     logger.info("Using Polymarket Data API for whale trades...")
     
@@ -625,6 +667,12 @@ async def start_insider_collector():
     if twitter_service and twitter_service.is_configured:
         twitter_queue_task = asyncio.create_task(twitter_service.process_queue_periodically(interval=60))
         tasks.append(twitter_queue_task)
+    
+    # Start insider alerts scenario checker
+    if insider_alerts_service:
+        insider_check_task = asyncio.create_task(check_insider_scenarios_periodically())
+        tasks.append(insider_check_task)
+        logger.info("Insider alerts scenario checker started")
     
     # Start memory monitoring
     memory_monitor_task = asyncio.create_task(monitor_memory())

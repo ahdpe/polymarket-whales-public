@@ -92,7 +92,7 @@ Polymarket API часто обрезает историю сделок для а
 - **Персонализация:** Каждый пользователь может настроить свои фильтры:
   - **Минимальная сумма:** от $500 до $100,000
   - **Категории:** Крипто, Спорт, Остальное (определяются по ключевым словам)
-  - **Вероятность:** Любая, 1%-99%, 5%-95%, 10%-90%
+  - **Вероятность:** Любая, 1%-99%, 5%-95%, или **свой диапазон** (20-80%)
   - **Типы событий:** BUY, SELL, SPLIT, MERGE, REDEEM
   - **Возраст кошелька:** Фильтр по возрасту кошелька трейдера в днях (мин-макс диапазон, по умолчанию неограничено). ⚠️ Тестовый режим — возможны неточности.
   - **Количество позиций:** Фильтр по количеству открытых позиций (мин-макс диапазон, по умолчанию неограничено)
@@ -102,9 +102,8 @@ Polymarket API часто обрезает историю сделок для а
     - **Строка 1:** `💰 Сумма сделки`, `📂 Категории`, `⚖️ Вероятность`
     - **Строка 2:** `🔄 Типы событий`, `🕐 Возраст`, `💼 Позиции`
     - **Строка 3:** `⬅️ Назад`
-  - **Настройка фильтров возраста и позиций:**
-    - Выберите "🌐 Любой" для неограниченного фильтра
-    - Или "📝 Настроить интервал" для ввода диапазона
+  - **Настройка фильтров:**
+    - Для **вероятности**, **возраста** и **позиций** доступен ввод произвольного диапазона нажатием "📝 Настроить интервал".
     - Формат: `мин-макс` (например: `7-365`), `мин-` (от минимума), `-макс` (до максимума), или `0` (сбросить)
   - `▶️ Запустить / ⏸️ Остановить` — переключатель уведомлений
   - `⭐ Избранное` — список сохранённых трейдеров
@@ -127,6 +126,7 @@ Polymarket API часто обрезает историю сделок для а
 - `/lang` — Переключение языка (🇬🇧 / 🇷🇺)
 - `/hide` — Скрыть клавиатуру меню
 - `/menu` — Показать клавиатуру меню
+- `/reset` — Сброс всех фильтров по умолчанию
 
 **Настройки фильтров:**
 - `/amount` — Фильтр суммы
@@ -165,6 +165,7 @@ Polymarket API часто обрезает историю сделок для а
 - `/cache` — просмотр кэша возраста кошельков
 - `/report` — полный отчет о системе
 - `/admin` — памятка со всеми административными командами
+- `/tlgrm_prob` — фильтр вероятности для админа (диапазон)
 
 #### 9. Статус-дашборд
 Веб-интерфейс для мониторинга состояния бота в реальном времени.
@@ -201,8 +202,7 @@ pip install -r requirements.txt
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 # Опционально (для точного возраста кошельков)
-# Поддерживает несколько ключей через запятую для обхода лимитов API
-POLYGONSCAN_API_KEYS=key1,key2,key3
+POLYGONSCAN_API_KEY=your_polygonscan_key
 # Опционально (для Twitter интеграции)
 TWITTER_API_KEY=your_twitter_api_key
 TWITTER_API_SECRET=your_twitter_api_secret
@@ -297,7 +297,7 @@ A single large trade is often split into multiple fills. To avoid spam, the bot 
 - **Cleanup:** Records > 72h are deleted.
 
 #### 4. Telegram Bot (TelegramService)
-- **Filters:** Amount, Category, Probability, Event Types (BUY/SELL/SPLIT/MERGE/REDEEM), Wallet Age, Open Positions, Language.
+- **Filters:** Amount, Category, Probability (Presets or Custom Range), Event Types, Wallet Age, Open Positions, Language.
 - **Interface:** Compact menu with "⚙️ Filters" submenu for all filter settings:
   - **Row 1:** Amount, Categories, Probability
   - **Row 2:** Event Types, Wallet Age, Open Positions
@@ -321,6 +321,7 @@ A single large trade is often split into multiple fills. To avoid spam, the bot 
 - `/lang` — Switch language (🇬🇧 / 🇷🇺)
 - `/hide` — Hide menu keyboard
 - `/menu` — Show menu keyboard
+- `/reset` — Reset all filters to default
 
 **Filter Settings:**
 - `/amount` — Amount filter
@@ -359,6 +360,7 @@ The bot can automatically post large trades to Twitter/X:
 - `/cache` — inspect wallet age cache
 - `/report` — full system status report
 - `/admin` — admin commands cheatsheet
+- `/tlgrm_prob` — probability filter for admin (range)
 
 #### 9. Status Dashboard
 Web interface for real-time bot monitoring.
@@ -395,8 +397,7 @@ Create `.env` file:
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 # Optional (for accurate wallet age)
-# Supports multiple keys separated by comma for rate limit bypass
-POLYGONSCAN_API_KEYS=key1,key2,key3
+POLYGONSCAN_API_KEY=your_polygonscan_key
 # Optional (for Twitter integration)
 TWITTER_API_KEY=your_twitter_api_key
 TWITTER_API_SECRET=your_twitter_api_secret

@@ -43,7 +43,7 @@ TWEET_WINDOW_SEC = 24 * 60 * 60  # 24 hours in seconds
 INSIDER_TEMPLATES = [
     # Group 1: Focus
     "Fresh wallet with heavy focus. Only {pos_count} active position(s). Betting {amount} straight out of the gate. 👀",
-    "Laser focus? 🎯 Brand new wallet ignoring everything else to deploy {amount} on this outcome.",
+    "🎯 Brand new wallet ignoring everything else to deploy {amount} on this outcome.",
     "Single target detected. No history, minimal positions. Just a massive {amount} bet on this specific market.",
     
     # Group 2: Anomaly
@@ -52,14 +52,14 @@ INSIDER_TEMPLATES = [
     "Pattern watch: High-confidence trade from a completely fresh wallet. No previous track record.",
     
     # Group 3: Speed
-    "Straight to business. 💼 Fresh wallet, no warmup trades. Starts directly with a {amount} position.",
+    "Fresh wallet, no warmup trades. Starts directly with a {amount} position.",
     "Big entry, zero history. Just activated and dropping {amount}. Who is this?",
     "Aggressive newcomer. Skipping the small trades. First major move is a {amount} bet here.",
     
     # Group 4: Question
-    "Smart tracking or something else? 🤔 Brand new wallet bets {amount} on this single outcome.",
+    "Brand new wallet bets {amount} on this single outcome.",
     "Gut feeling or calculations? Fresh wallet stakes {amount} immediately after funding.",
-    "What did they see? 👀 {amount} flows into this market from a wallet with no history."
+    "{amount} flows into this market from a wallet with no history."
 ]
 
 # Default settings
@@ -72,7 +72,10 @@ DEFAULT_SETTINGS = {
     'tweet_timestamps': [],        # List of timestamps of successful tweets (for 24h rolling window)
     'paused_until': 0,            # Timestamp until which posting is paused (403 protection)
     'interval_minutes': 25,       # Minutes between tweets (minimum interval, but 24h limit takes priority)
-    'probability_filter': '1_99', # Probability range filter
+    'interval_minutes': 25,       # Minutes between tweets
+    'probability_min': 1,         # Min probability (inclusive)
+    'probability_max': 99,        # Max probability (inclusive)
+    'probability_filter': '1_99', # Keeping for backward compatibility/migration
     'allow_sell': False,          # Allow SELL signals
     'allow_split': False,         # Allow SPLIT signals
     'allow_merge': False,         # Allow MERGE signals
@@ -115,12 +118,26 @@ def _load_settings() -> dict:
                 if 'tweet_timestamps' not in _twitter_settings:
                     _twitter_settings['tweet_timestamps'] = []
                 
+                # Run migrations
+                _migrate_prob_filter(_twitter_settings)
+                
                 return _twitter_settings
     except Exception as e:
         logger.error(f"Error loading Twitter settings: {e}")
     
     _twitter_settings = DEFAULT_SETTINGS.copy()
     return _twitter_settings
+
+
+def _migrate_prob_filter(settings: dict) -> None:
+    """Migrate old probability_filter string to min/max values."""
+    if 'probability_filter' in settings and ('probability_min' not in settings or 'probability_max' not in settings):
+        pf = settings['probability_filter']
+        if pf in PROBABILITY_OPTIONS and PROBABILITY_OPTIONS[pf]:
+            min_val, max_val = PROBABILITY_OPTIONS[pf]
+            settings['probability_min'] = int(min_val * 100)
+            settings['probability_max'] = int(max_val * 100)
+            logger.info(f"Migrated Twitter prob filter {pf} to {settings['probability_min']}-{settings['probability_max']}%")
 
 
 def _save_settings():
@@ -218,17 +235,43 @@ def set_twitter_interval(minutes: int) -> None:
     logger.info(f"Twitter interval set to {minutes} minutes")
 
 
+def get_twitter_probability_range() -> tuple[int, int]:
+    """Get probability range (min, max)."""
+    settings = _load_settings()
+    return (
+        int(settings.get('probability_min', 1)),
+        int(settings.get('probability_max', 99))
+    )
+
+
+def set_twitter_probability_range(min_p: int, max_p: int) -> None:
+    """Set probability range."""
+    settings = _load_settings()
+    settings['probability_min'] = int(min_p)
+    settings['probability_max'] = int(max_p)
+    _save_settings()
+    logger.info(f"Twitter probability range set to {min_p}-{max_p}%")
+
+
 def get_twitter_probability_filter() -> str:
-    """Get probability filter key."""
+    """Deprecated: Get probability filter key."""
     return _load_settings().get('probability_filter', '1_99')
 
 
 def set_twitter_probability_filter(filter_key: str) -> bool:
-    """Set probability filter. Returns True if valid."""
+    """Deprecated: Set probability filter via legacy key."""
     if filter_key not in PROBABILITY_OPTIONS:
         return False
+    
     settings = _load_settings()
     settings['probability_filter'] = filter_key
+    
+    # Also update the new range values
+    if PROBABILITY_OPTIONS[filter_key]:
+        min_v, max_v = PROBABILITY_OPTIONS[filter_key]
+        settings['probability_min'] = int(min_v * 100)
+        settings['probability_max'] = int(max_v * 100)
+    
     _save_settings()
     logger.info(f"Twitter probability filter set to {filter_key}")
     return True
@@ -488,14 +531,16 @@ class TwitterService:
         else:
             return False, f"side_{side}_invalid"
         
-        # Check probability filter
+        # Check probability filter (New Logic)
         price = float(trade_data.get('price', 0))
-        prob_filter = get_twitter_probability_filter()
-        prob_range = PROBABILITY_OPTIONS.get(prob_filter)
-        if prob_range:
-            min_prob, max_prob = prob_range
-            if price < min_prob or price > max_prob:
-                return False, f"probability_{price*100:.1f}_outside_{prob_filter}"
+        prob_pct = price * 100
+        
+        # Use new range settings
+        min_p = _load_settings().get('probability_min', 1)
+        max_p = _load_settings().get('probability_max', 99)
+        
+        if prob_pct < min_p or prob_pct > max_p:
+             return False, f"probability_{prob_pct:.1f}_outside_{min_p}-{max_p}"
         
         # Check category filter
         category = trade_data.get('category', 'other')
@@ -522,7 +567,7 @@ class TwitterService:
                     max_days = get_twitter_insider_max_age()
                     if days <= max_days:
                         is_fresh = True
-                except:
+                except Exception:
                     pass
         
         # Check against configured max positions
@@ -635,7 +680,7 @@ class TwitterService:
                     max_days = get_twitter_insider_max_age()
                     if days <= max_days:
                         is_fresh = True
-                except:
+                except Exception:
                     pass
 
         # 2. Position count (default high to avoid false positive if missing)
@@ -776,7 +821,7 @@ class TwitterService:
                         try:
                             years_match = float(part.replace('y', '').replace('mo', '').replace('d', ''))
                             break
-                        except:
+                        except Exception:
                             pass
                 
                 if years_match is not None:
@@ -792,7 +837,7 @@ class TwitterService:
                         try:
                             months_match = float(part.replace('mo', '').replace('d', ''))
                             break
-                        except:
+                        except Exception:
                             pass
                 
                 if months_match is not None:
@@ -809,13 +854,13 @@ class TwitterService:
                         try:
                             days_match = float(part.replace('d', '').replace('h', ''))
                             break
-                        except:
+                        except Exception:
                             pass
                     elif 'h' in part:
                         try:
                             hours_match = float(part.replace('h', ''))
                             break
-                        except:
+                        except Exception:
                             pass
                 
                 if days_match is not None:
