@@ -226,6 +226,11 @@ HTML_TEMPLATE = """
         <header>
             <h1>🐋 PolymarketWhales Status Dashboard</h1>
             <p class="subtitle">Real-time bot monitoring</p>
+            <div style="margin-top: 15px;">
+                <a href="/patterns" style="display: inline-block; padding: 8px 16px; background: var(--bg-secondary); color: var(--accent-blue); text-decoration: none; border-radius: 6px; border: 1px solid var(--border-color); font-size: 0.9rem;">
+                    🕵️ View Active Patterns
+                </a>
+            </div>
         </header>
         
         <div class="grid" id="dashboard">
@@ -626,132 +631,19 @@ HTML_TEMPLATE = """
                         </div>
                     ` : ''}
 
-                    ${(insider.pending_patterns?.clusters && insider.pending_patterns.clusters.length > 0) ? `
-                        <h3 style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 10px;">
-                            Active CLUSTERS (${insider.pending_patterns.clusters.length})
-                        </h3>
-                        <div style="overflow-x: auto; margin-bottom: 20px;">
-                            <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-                                <thead>
-                                    <tr style="border-bottom: 1px solid var(--border-color); text-align: left;">
-                                        <th style="padding: 8px; color: var(--text-secondary);">Market</th>
-                                        <th style="padding: 8px; color: var(--text-secondary);">Wallets</th>
-                                        <th style="padding: 8px; color: var(--text-secondary);">Volume</th>
-                                        <th style="padding: 8px; color: var(--text-secondary); width: 35%;">Buffer Participants</th>
-                                        <th style="padding: 8px; color: var(--text-secondary);">Last Activity</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${insider.pending_patterns.clusters.map(p => `
-                                    <tr style="border-bottom: 1px solid var(--bg-tertiary);">
-                                        <td style="padding: 8px;">${p.title.substring(0, 40) + (p.title.length > 40 ? '...' : '')}</td>
-                                        <td style="padding: 8px;">
-                                            <span style="color: ${p.wallets >= p.min_wallets ? 'var(--accent-green)' : 'var(--accent-yellow)'}">
-                                                ${p.wallets} / ${p.min_wallets}
-                                            </span>
-                                        </td>
-                                        <td style="padding: 8px;">
-                                            <span style="color: ${p.volume >= p.min_total ? 'var(--accent-green)' : 'var(--text-primary)'}">
-                                                $${formatNumber(p.volume)}
-                                            </span>
-                                        </td>
-                                        <td style="padding: 8px; font-family: monospace; font-size: 0.8rem; color: var(--text-secondary);">
-                                            ${(p.wallet_list || []).map(w => `<a href="https://polymarket.com/profile/${w}" target="_blank" style="color: #4facfe; text-decoration: none; border-bottom: 1px dotted #4facfe;">${w.substring(0,5)}..${w.substring(39)}</a>`).join(', ')}
-                                        </td>
-                                        <td style="padding: 8px; color: var(--text-secondary);">
-                                            ${Math.floor((Date.now() / 1000 - p.last_ts)/60)}m ago
-                                        </td>
-                                    </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
+                    <div style="text-align: center; padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-tertiary);">
+                        <p style="margin-bottom: 15px; color: var(--text-secondary);">
+                            Active patterns tables moved to separate page
+                        </p>
+                        <a href="/patterns" style="display: inline-block; padding: 10px 20px; background: var(--accent-blue); color: white; text-decoration: none; border-radius: 6px; font-weight: 500;">
+                            View Active Patterns →
+                        </a>
+                        <div style="margin-top: 15px; font-size: 0.85rem; color: var(--text-secondary);">
+                            CLUSTERS: ${insider.pending_patterns?.clusters?.length || 0} | 
+                            ACCUMULATIONS: ${insider.pending_patterns?.accumulations?.length || 0} | 
+                            BURSTS: ${insider.pending_patterns?.bursts?.length || 0}
                         </div>
-                    ` : ''}
-
-                    ${(insider.pending_patterns?.accumulations && insider.pending_patterns.accumulations.length > 0) ? `
-                        <h3 style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 10px;">
-                            Active ACCUMULATIONS (${insider.pending_patterns.accumulations.length})
-                        </h3>
-                        <div style="overflow-x: auto; margin-bottom: 20px;">
-                            <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-                                <thead>
-                                    <tr style="border-bottom: 1px solid var(--border-color); text-align: left;">
-                                        <th style="padding: 8px; color: var(--text-secondary);">Market</th>
-                                        <th style="padding: 8px; color: var(--text-secondary);">Days</th>
-                                        <th style="padding: 8px; color: var(--text-secondary);">Volume</th>
-                                        <th style="padding: 8px; color: var(--text-secondary); width: 35%;">Buffer Participants</th>
-                                        <th style="padding: 8px; color: var(--text-secondary);">Last Activity</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${insider.pending_patterns.accumulations.map(p => `
-                                    <tr style="border-bottom: 1px solid var(--bg-tertiary);">
-                                        <td style="padding: 8px;">${p.title.substring(0, 40) + (p.title.length > 40 ? '...' : '')}</td>
-                                        <td style="padding: 8px;">
-                                            <span style="color: ${p.days >= p.min_days ? 'var(--accent-green)' : 'var(--accent-yellow)'}">
-                                                ${p.days} / ${p.min_days}
-                                            </span>
-                                        </td>
-                                        <td style="padding: 8px;">
-                                            $${formatNumber(p.volume)}
-                                        </td>
-                                        <td style="padding: 8px; font-family: monospace; font-size: 0.8rem; color: var(--text-secondary);">
-                                            ${(p.wallet_list || []).map(w => `<a href="https://polymarket.com/profile/${w}" target="_blank" style="color: #4facfe; text-decoration: none; border-bottom: 1px dotted #4facfe;">${w.substring(0,5)}..${w.substring(39)}</a>`).join(', ')}
-                                        </td>
-                                        <td style="padding: 8px; color: var(--text-secondary);">
-                                            ${Math.floor((Date.now() / 1000 - p.last_ts)/60)}m ago
-                                        </td>
-                                    </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    ` : ''}
-
-                    ${(insider.pending_patterns?.bursts && insider.pending_patterns.bursts.length > 0) ? `
-                        <h3 style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 10px;">
-                            Active BURSTS (${insider.pending_patterns.bursts.length})
-                        </h3>
-                        <div style="overflow-x: auto;">
-                            <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-                                <thead>
-                                    <tr style="border-bottom: 1px solid var(--border-color); text-align: left;">
-                                        <th style="padding: 8px; color: var(--text-secondary);">Market</th>
-                                        <th style="padding: 8px; color: var(--text-secondary);">Wallets</th>
-                                        <th style="padding: 8px; color: var(--text-secondary);">Volume</th>
-                                        <th style="padding: 8px; color: var(--text-secondary); width: 35%;">Buffer Participants</th>
-                                        <th style="padding: 8px; color: var(--text-secondary);">Last Activity</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${insider.pending_patterns.bursts.map(p => `
-                                    <tr style="border-bottom: 1px solid var(--bg-tertiary);">
-                                        <td style="padding: 8px;">${p.title.substring(0, 40) + (p.title.length > 40 ? '...' : '')}</td>
-                                        <td style="padding: 8px;">
-                                            <span style="color: ${p.wallets >= p.min_wallets ? 'var(--accent-green)' : 'var(--accent-yellow)'}">
-                                                ${p.wallets} / ${p.min_wallets}
-                                            </span>
-                                        </td>
-                                        <td style="padding: 8px;">
-                                            <span style="color: ${p.volume >= p.min_total ? 'var(--accent-green)' : 'var(--text-primary)'}">
-                                                $${formatNumber(p.volume)}
-                                            </span>
-                                        </td>
-                                        <td style="padding: 8px; font-family: monospace; font-size: 0.8rem; color: var(--text-secondary);">
-                                            ${(p.wallet_list || []).map(w => `<a href="https://polymarket.com/profile/${w}" target="_blank" style="color: #4facfe; text-decoration: none; border-bottom: 1px dotted #4facfe;">${w.substring(0,5)}..${w.substring(39)}</a>`).join(', ')}
-                                        </td>
-                                        <td style="padding: 8px; color: var(--text-secondary);">
-                                            ${Math.floor((Date.now() / 1000 - p.last_ts)/60)}m ago
-                                        </td>
-                                    </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    ` : ''}
-
-                    ${(!insider.pending_patterns?.clusters?.length && !insider.pending_patterns?.accumulations?.length && !insider.pending_patterns?.bursts?.length) ? 
-                      '<p style="text-align: center; color: var(--text-secondary); font-style: italic;">No emerging patterns detected currently.</p>' : ''}
+                    </div>
                 </div>
             `;
             
@@ -779,10 +671,469 @@ HTML_TEMPLATE = """
 """
 
 
+PATTERNS_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="30">
+    <title>🕵️ Active Patterns - PolymarketWhales</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --accent-green: #3fb950;
+            --accent-red: #f85149;
+            --accent-yellow: #d29922;
+            --accent-blue: #58a6ff;
+            --accent-purple: #a371f7;
+            --border-color: #30363d;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        header h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+        
+        .nav-link {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 8px 16px;
+            background: var(--bg-secondary);
+            color: var(--accent-blue);
+            text-decoration: none;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .nav-link:hover {
+            background: var(--bg-tertiary);
+        }
+        
+        .section {
+            margin-bottom: 40px;
+        }
+        
+        .section-header {
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .section-header h2 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .section-settings {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        
+        .settings-group {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .settings-group strong {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        thead {
+            background: var(--bg-tertiary);
+        }
+        
+        th {
+            padding: 12px;
+            text-align: left;
+            color: var(--text-secondary);
+            font-weight: 600;
+            border-bottom: 2px solid var(--border-color);
+        }
+        
+        td {
+            padding: 12px;
+            border-bottom: 1px solid var(--bg-tertiary);
+        }
+        
+        tr:last-child td {
+            border-bottom: none;
+        }
+        
+        tr:hover {
+            background: var(--bg-tertiary);
+        }
+        
+        .wallet-link {
+            color: #4facfe;
+            text-decoration: none;
+            border-bottom: 1px dotted #4facfe;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+        
+        .wallet-link:hover {
+            color: #6bc5ff;
+        }
+        
+        .status-good {
+            color: var(--accent-green);
+        }
+        
+        .status-warning {
+            color: var(--accent-yellow);
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+        
+        footer {
+            text-align: center;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🕵️ Active Insider Patterns</h1>
+            <p style="color: var(--text-secondary); margin-top: 5px;">Real-time monitoring of emerging trading patterns</p>
+            <a href="/" class="nav-link">← Back to Dashboard</a>
+        </header>
+        
+        <div id="patterns-content">
+            <p style="text-align: center; color: var(--text-secondary);">Loading...</p>
+        </div>
+        
+        <footer>
+            <div>Last updated: <span id="last-update">-</span></div>
+            <div style="margin-top: 5px;">Auto-refresh every 30 seconds</div>
+        </footer>
+    </div>
+    
+    <script>
+        function formatNumber(num) {
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toLocaleString();
+        }
+        
+        function formatSettings(scenario) {
+            if (!scenario) return '';
+            
+            const parts = [];
+            
+            // Volume group
+            if (scenario.min_usd && scenario.min_total) {
+                parts.push(`<span class="settings-group">💰 <strong>Volume:</strong> $${formatNumber(parseInt(scenario.min_usd))} min, $${formatNumber(parseInt(scenario.min_total))} total</span>`);
+            }
+            
+            // Wallets group
+            const walletParts = [];
+            if (scenario.min_wallets) {
+                walletParts.push(`${scenario.min_wallets} min`);
+            }
+            if (scenario.max_age) {
+                const hours = parseInt(scenario.max_age);
+                const days = Math.floor(hours / 24);
+                const remainingHours = hours % 24;
+                let ageStr = '';
+                if (days > 0) {
+                    ageStr = days + 'd';
+                    if (remainingHours > 0) ageStr += ' ' + remainingHours + 'h';
+                } else {
+                    ageStr = hours + 'h';
+                }
+                walletParts.push(`≤${ageStr} age`);
+            }
+            if (walletParts.length > 0) {
+                parts.push(`<span class="settings-group">👥 <strong>Wallets:</strong> ${walletParts.join(', ')}</span>`);
+            }
+            
+            // Direction group
+            const dirParts = [];
+            if (scenario.min_dir) {
+                dirParts.push(`${scenario.min_dir}%`);
+            }
+            if (scenario.side && scenario.side !== 'both') {
+                dirParts.push(scenario.side.toLowerCase());
+            }
+            if (dirParts.length > 0) {
+                parts.push(`<span class="settings-group">🎯 <strong>Direction:</strong> ${dirParts.join(', ')}</span>`);
+            }
+            
+            // Positions group
+            if (scenario.max_pos) {
+                parts.push(`<span class="settings-group">📍 <strong>Positions:</strong> ≤${scenario.max_pos}</span>`);
+            }
+            
+            // Interval (for CLUSTER and BURST)
+            if (scenario.interval) {
+                parts.push(`<span class="settings-group">⏱️ <strong>Interval:</strong> ${scenario.interval}h</span>`);
+            }
+            
+            // Min days (for ACCUMULATION)
+            if (scenario.min_days) {
+                parts.push(`<span class="settings-group">📅 <strong>Min days:</strong> ${scenario.min_days}</span>`);
+            }
+            
+            return parts.length > 0 ? `<div class="section-settings">${parts.join(' | ')}</div>` : '';
+        }
+        
+        function renderPatterns(data) {
+            const insider = data.insider;
+            const patterns = insider.pending_patterns || {};
+            const scenarios = insider.scenarios || {};
+            
+            let html = '';
+            
+            // CLUSTERS
+            if (patterns.clusters && patterns.clusters.length > 0) {
+                const clusterSettings = formatSettings(scenarios.CLUSTER);
+                html += `
+                    <div class="section">
+                        <div class="section-header">
+                            <h2>Active CLUSTERS (${patterns.clusters.length})</h2>
+                            ${clusterSettings}
+                        </div>
+                        <div style="overflow-x: auto;">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Market</th>
+                                        <th>Wallets</th>
+                                        <th>Volume</th>
+                                        <th style="width: 35%;">Buffer Participants</th>
+                                        <th>Last Activity</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${patterns.clusters.map(p => `
+                                    <tr>
+                                        <td>${p.title.substring(0, 50) + (p.title.length > 50 ? '...' : '')}</td>
+                                        <td>
+                                            <span class="${p.wallets >= p.min_wallets ? 'status-good' : 'status-warning'}">
+                                                ${p.wallets} / ${p.min_wallets}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span class="${p.volume >= p.min_total ? 'status-good' : ''}">
+                                                $${formatNumber(p.volume)}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            ${(p.wallet_list || []).map(w => 
+                                                `<a href="https://polymarket.com/profile/${w}" target="_blank" class="wallet-link">${w.substring(0,5)}..${w.substring(39)}</a>`
+                                            ).join(', ')}
+                                        </td>
+                                        <td style="color: var(--text-secondary);">
+                                            ${Math.floor((Date.now() / 1000 - p.last_ts)/60)}m ago
+                                        </td>
+                                    </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // ACCUMULATIONS
+            if (patterns.accumulations && patterns.accumulations.length > 0) {
+                const accumulationSettings = formatSettings(scenarios.ACCUMULATION);
+                html += `
+                    <div class="section">
+                        <div class="section-header">
+                            <h2>Active ACCUMULATIONS (${patterns.accumulations.length})</h2>
+                            ${accumulationSettings}
+                        </div>
+                        <div style="overflow-x: auto;">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Market</th>
+                                        <th>Days</th>
+                                        <th>Wallets</th>
+                                        <th>Volume</th>
+                                        <th style="width: 35%;">Buffer Participants</th>
+                                        <th>Last Activity</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${patterns.accumulations.map(p => `
+                                    <tr>
+                                        <td>${p.title.substring(0, 50) + (p.title.length > 50 ? '...' : '')}</td>
+                                        <td>
+                                            <span class="${p.days >= p.min_days ? 'status-good' : 'status-warning'}">
+                                                ${p.days} / ${p.min_days}
+                                            </span>
+                                        </td>
+                                        <td>${p.wallets}</td>
+                                        <td>$${formatNumber(p.volume)}</td>
+                                        <td>
+                                            ${(p.wallet_list || []).map(w => 
+                                                `<a href="https://polymarket.com/profile/${w}" target="_blank" class="wallet-link">${w.substring(0,5)}..${w.substring(39)}</a>`
+                                            ).join(', ')}
+                                        </td>
+                                        <td style="color: var(--text-secondary);">
+                                            ${Math.floor((Date.now() / 1000 - p.last_ts)/60)}m ago
+                                        </td>
+                                    </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // BURSTS
+            if (patterns.bursts && patterns.bursts.length > 0) {
+                const burstSettings = formatSettings(scenarios.BURST);
+                html += `
+                    <div class="section">
+                        <div class="section-header">
+                            <h2>Active BURSTS (${patterns.bursts.length})</h2>
+                            ${burstSettings}
+                        </div>
+                        <div style="overflow-x: auto;">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Market</th>
+                                        <th>Wallets</th>
+                                        <th>Volume</th>
+                                        <th style="width: 35%;">Buffer Participants</th>
+                                        <th>Last Activity</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${patterns.bursts.map(p => `
+                                    <tr>
+                                        <td>${p.title.substring(0, 50) + (p.title.length > 50 ? '...' : '')}</td>
+                                        <td>
+                                            <span class="${p.wallets >= p.min_wallets ? 'status-good' : 'status-warning'}">
+                                                ${p.wallets} / ${p.min_wallets}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span class="${p.volume >= p.min_total ? 'status-good' : ''}">
+                                                $${formatNumber(p.volume)}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            ${(p.wallet_list || []).map(w => 
+                                                `<a href="https://polymarket.com/profile/${w}" target="_blank" class="wallet-link">${w.substring(0,5)}..${w.substring(39)}</a>`
+                                            ).join(', ')}
+                                        </td>
+                                        <td style="color: var(--text-secondary);">
+                                            ${Math.floor((Date.now() / 1000 - p.last_ts)/60)}m ago
+                                        </td>
+                                    </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            if (!html) {
+                html = '<div class="empty-state">No emerging patterns detected currently.</div>';
+            }
+            
+            document.getElementById('patterns-content').innerHTML = html;
+            document.getElementById('last-update').textContent = data.timestamp;
+        }
+        
+        async function loadData() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                renderPatterns(data);
+            } catch (error) {
+                console.error('Failed to load data:', error);
+                document.getElementById('patterns-content').innerHTML = 
+                    '<div class="empty-state" style="color: var(--accent-red);">Failed to load data. Retrying...</div>';
+            }
+        }
+        
+        // Initial load
+        loadData();
+        
+        // Auto-refresh
+        setInterval(loadData, 30000);
+    </script>
+</body>
+</html>
+"""
+
+
 @app.route('/')
 def index():
     """Serve the dashboard HTML page."""
     return Response(HTML_TEMPLATE, mimetype='text/html')
+
+
+@app.route('/patterns')
+def patterns():
+    """Serve the active patterns page."""
+    return Response(PATTERNS_TEMPLATE, mimetype='text/html')
 
 
 @app.route('/api/status')

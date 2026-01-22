@@ -210,7 +210,7 @@ def get_twitter_stats() -> dict:
             "max_insider_age_days": settings.get("max_insider_age_days", 7),
             "max_insider_positions": settings.get("max_insider_positions", 5),
             "interval_minutes": settings.get("interval_minutes", 25),
-            "probability_filter": settings.get("probability_filter", "any"),
+            "probability_filter": f"{settings.get('probability_min', 1)}_{settings.get('probability_max', 99)}" if settings.get("probability_min") and settings.get("probability_max") else settings.get("probability_filter", "any"),
             "allow_sell": settings.get("allow_sell", True),
             "allow_split": settings.get("allow_split", True),
             "allow_merge": settings.get("allow_merge", True),

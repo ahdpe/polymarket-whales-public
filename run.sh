@@ -59,6 +59,14 @@ if [ -d "venv" ]; then
     echo "✅ Activated virtual environment"
 fi
 
+# Check if bot is already running
+EXISTING_PID=$(pgrep -f "python.*main\.py" | head -1)
+if [ -n "$EXISTING_PID" ]; then
+    echo "⚠️  Bot already running (PID: $EXISTING_PID). Stopping..."
+    kill -9 $EXISTING_PID 2>/dev/null || true
+    sleep 2
+fi
+
 # Run the bot
 echo "🤖 Starting bot..."
 python main.py

@@ -260,7 +260,17 @@ class InsiderAlertsService:
 
             # Only check scenarios if enabled
             if self.is_enabled():
-                self.check_scenarios(market_id, category)
+                # Schedule async check (fire and forget)
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.create_task(self.check_scenarios(market_id, category))
+                    else:
+                        loop.run_until_complete(self.check_scenarios(market_id, category))
+                except RuntimeError:
+                    # No event loop, create new one
+                    asyncio.run(self.check_scenarios(market_id, category))
 
         except Exception as e:
             logger.error(f"Error processing trade for insider alerts: {e}", exc_info=True)
@@ -287,7 +297,7 @@ class InsiderAlertsService:
                 category = market_data.get('category', 'other')
                 
                 # Pass the actual category to check_scenarios for proper filtering
-                self.check_scenarios(market_id, category)
+                await self.check_scenarios(market_id, category)
 
             # Cleanup old data
             alerts_storage.cleanup_old_trades(ttl_hours=72)
@@ -296,9 +306,10 @@ class InsiderAlertsService:
         except Exception as e:
             logger.error(f"Error checking markets for insider patterns: {e}", exc_info=True)
 
-    def check_scenarios(self, market_id: str, category: str = 'other') -> None:
+    async def check_scenarios(self, market_id: str, category: str = 'other') -> None:
         """
         Check all enabled scenarios for a specific market.
+        Now async to support position verification before scenario checks.
         """
         if not self.is_enabled():
             return
@@ -311,6 +322,10 @@ class InsiderAlertsService:
         # If key doesn't exist (e.g. unknown category), default to true
         if self.settings.get(cat_key, 'true').lower() != 'true':
             return
+
+        # Pre-filter: Remove trades from wallets that no longer qualify (too many positions)
+        # This keeps the buffer clean and allows new qualifying trades to accumulate
+        await self._cleanup_invalid_trades(market_id)
 
         # Check CLUSTER
         if self.settings.get('cluster_enabled', 'false').lower() == 'true':
@@ -857,13 +872,100 @@ class InsiderAlertsService:
         except Exception as e:
             logger.error(f"Error publishing {scenario} alert: {e}", exc_info=True)
 
+    async def _cleanup_invalid_trades(self, market_id: str) -> None:
+        """
+        Remove trades from wallets that no longer qualify (too many positions).
+        This keeps the buffer clean and allows new qualifying trades to accumulate.
+        """
+        if not self._poly_service:
+            return
+        
+        # Get max positions threshold (use the strictest one from scenarios)
+        max_positions = min(
+            int(self.settings.get('burst_max_positions', '3')),
+            int(self.settings.get('cluster_max_positions', '3')),
+            int(self.settings.get('accumulation_max_positions', '3'))
+        )
+        
+        # Get all unconsumed trades for this market (within reasonable window)
+        # Use a large window to catch all potentially invalid trades
+        window_hours = max(
+            float(self.settings.get('burst_interval_hours', '1')),
+            float(self.settings.get('cluster_interval_hours', '2')),
+            14 * 24  # For accumulation
+        )
+        
+        try:
+            trades = alerts_storage.get_trades_window(
+                market_id=market_id,
+                window_hours=window_hours,
+                max_wallet_age_hours=None  # Don't filter by age here
+            )
+            
+            if not trades:
+                return
+            
+            # Get unique wallets
+            unique_wallets = set(t.get('wallet') for t in trades if t.get('wallet'))
+            
+            # Check current positions for each wallet
+            invalid_wallets = set()
+            for wallet in unique_wallets:
+                try:
+                    pos_data = await self._poly_service.get_trader_positions(wallet)
+                    current_pos_count = pos_data.get('open_count', 0) if pos_data else 0
+                    
+                    if current_pos_count > max_positions:
+                        invalid_wallets.add(wallet)
+                        logger.debug(f"Marking trades from wallet {wallet[:10]}... as invalid (positions: {current_pos_count} > {max_positions})")
+                except Exception as e:
+                    logger.debug(f"Error checking positions for {wallet[:10]}...: {e}")
+                    # On error, skip (don't mark as invalid)
+            
+            # Mark trades from invalid wallets as consumed
+            if invalid_wallets:
+                invalid_trade_ids = [
+                    t['id'] for t in trades 
+                    if t.get('wallet') in invalid_wallets and t.get('id')
+                ]
+                
+                if invalid_trade_ids:
+                    alerts_storage.mark_trades_consumed(invalid_trade_ids, 'TOO_MANY_POSITIONS')
+                    logger.info(f"Cleaned up {len(invalid_trade_ids)} trades from {len(invalid_wallets)} wallets (positions > {max_positions})")
+                    
+                    # Update active buffers to reflect cleanup
+                    self._update_active_buffers_after_cleanup(market_id, invalid_wallets)
+        
+        except Exception as e:
+            logger.error(f"Error cleaning up invalid trades for {market_id}: {e}")
+    
+    def _update_active_buffers_after_cleanup(self, market_id: str, excluded_wallets: set) -> None:
+        """Update active buffers after removing invalid wallets."""
+        # Remove excluded wallets from active buffer entries
+        for buffer_dict in [self._active_bursts, self._active_clusters, self._active_accumulations]:
+            if market_id in buffer_dict:
+                wallet_list = buffer_dict[market_id].get('wallet_list', [])
+                # Filter out excluded wallets
+                valid_wallets = [w for w in wallet_list if w not in excluded_wallets]
+                
+                if len(valid_wallets) < buffer_dict[market_id].get('min_wallets', 2):
+                    # Not enough wallets left, remove from buffer
+                    del buffer_dict[market_id]
+                    logger.debug(f"Removed {market_id} from active buffer (not enough wallets after cleanup)")
+                else:
+                    # Update wallet count
+                    buffer_dict[market_id]['wallets'] = len(valid_wallets)
+                    buffer_dict[market_id]['wallet_list'] = valid_wallets
+
     async def _verify_positions(self, alert_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
-        Verify that participants still hold significant positions.
+        Verify that participants still hold significant positions AND still have few total positions.
         Returns filtered alert_data or None if not enough wallets remain.
         Also marks trades from wallets that sold as consumed to remove them from buffer.
         
-        A wallet is considered "still holding" if their position value >= the minimum threshold.
+        A wallet is considered valid if:
+        1. Position value in this market >= minimum threshold
+        2. Current total open positions <= max_positions threshold
         """
         if not self._poly_service:
             logger.debug("No poly_service set, skipping position verification")
@@ -877,52 +979,78 @@ class InsiderAlertsService:
         # This ensures wallet still holds at least the minimum trade amount
         min_position_value = float(self.settings.get('cluster_min_usd', '5000'))
         
+        # Get max positions threshold (use the strictest one from scenarios)
+        max_positions = min(
+            int(self.settings.get('burst_max_positions', '3')),
+            int(self.settings.get('cluster_max_positions', '3')),
+            int(self.settings.get('accumulation_max_positions', '3'))
+        )
+        
         if not market_id or not trades:
             return alert_data
         
         # Get unique wallets
         unique_wallets = set(t.get('wallet') for t in trades if t.get('wallet'))
         
-        # Check each wallet's position value
+        # Check each wallet's position value AND current total positions
         wallets_still_holding = set()
-        wallets_sold = set()
+        wallets_excluded = set()
         wallet_positions = {}  # wallet -> position_value
+        wallet_current_pos_count = {}  # wallet -> current open positions count
+        exclusion_reasons = {}  # wallet -> reason
         
         for wallet in unique_wallets:
             try:
+                # Check position in this specific market
                 position_value = await self._poly_service.check_wallet_has_position(wallet, market_id)
                 wallet_positions[wallet] = position_value
                 
-                # Wallet must hold position >= minimum threshold
-                if position_value >= min_position_value:
-                    wallets_still_holding.add(wallet)
-                else:
-                    wallets_sold.add(wallet)
+                # Check current total open positions count
+                pos_data = await self._poly_service.get_trader_positions(wallet)
+                current_pos_count = pos_data.get('open_count', 0) if pos_data else 0
+                wallet_current_pos_count[wallet] = current_pos_count
+                
+                # Wallet must pass BOTH checks:
+                # 1. Still holds position >= minimum threshold
+                # 2. Current total positions <= max_positions
+                if position_value < min_position_value:
+                    wallets_excluded.add(wallet)
                     if position_value > 0:
-                        logger.debug(f"Wallet {wallet[:10]}... position ${position_value:.0f} < min ${min_position_value:.0f}")
+                        exclusion_reasons[wallet] = f"position ${position_value:.0f} < min ${min_position_value:.0f}"
                     else:
-                        logger.debug(f"Wallet {wallet[:10]}... no longer holds position")
+                        exclusion_reasons[wallet] = "no longer holds position"
+                elif current_pos_count > max_positions:
+                    wallets_excluded.add(wallet)
+                    exclusion_reasons[wallet] = f"positions {current_pos_count} > max {max_positions}"
+                    logger.debug(f"Wallet {wallet[:10]}... excluded: now has {current_pos_count} positions (max: {max_positions})")
+                else:
+                    wallets_still_holding.add(wallet)
+                    
             except Exception as e:
-                logger.debug(f"Error checking position for {wallet[:10]}...: {e}")
+                logger.debug(f"Error checking wallet {wallet[:10]}...: {e}")
                 # On error, EXCLUDE wallet (strict mode - don't show uncertain data)
-                wallets_sold.add(wallet)
+                wallets_excluded.add(wallet)
+                exclusion_reasons[wallet] = f"verification error: {e}"
         
-        # Mark trades from wallets that sold as consumed (remove from buffer)
-        if wallets_sold:
+        # Mark trades from excluded wallets as consumed (remove from buffer)
+        if wallets_excluded:
             try:
-                sold_trade_ids = [t['id'] for t in trades if t.get('wallet') in wallets_sold and t.get('id')]
-                if sold_trade_ids:
-                    alerts_storage.mark_trades_consumed(sold_trade_ids, 'SOLD')
-                    logger.info(f"Removed {len(sold_trade_ids)} trades from buffer (wallets sold or below threshold)")
+                excluded_trade_ids = [t['id'] for t in trades if t.get('wallet') in wallets_excluded and t.get('id')]
+                if excluded_trade_ids:
+                    alerts_storage.mark_trades_consumed(excluded_trade_ids, 'EXCLUDED')
+                    logger.info(f"Removed {len(excluded_trade_ids)} trades from buffer (wallets excluded)")
+                    for wallet in wallets_excluded:
+                        reason = exclusion_reasons.get(wallet, 'unknown')
+                        logger.debug(f"  - {wallet[:10]}...: {reason}")
             except Exception as e:
-                logger.error(f"Error marking sold trades: {e}")
+                logger.error(f"Error marking excluded trades: {e}")
         
-        # Filter trades to only include wallets that still hold significant positions
+        # Filter trades to only include valid wallets
         filtered_trades = [t for t in trades if t.get('wallet') in wallets_still_holding]
         
         # Check if we still have enough wallets
         if len(wallets_still_holding) < min_wallets:
-            logger.info(f"Position verification: only {len(wallets_still_holding)}/{len(unique_wallets)} wallets still holding >= ${min_position_value:.0f} (min: {min_wallets})")
+            logger.info(f"Position verification: only {len(wallets_still_holding)}/{len(unique_wallets)} wallets valid (min: {min_wallets})")
             return None
         
         # Update alert data with filtered info
@@ -931,7 +1059,7 @@ class InsiderAlertsService:
         filtered_data['wallet_count'] = len(wallets_still_holding)
         filtered_data['total_volume'] = sum(t.get('trade_size_usd', 0) for t in filtered_trades)
         
-        logger.info(f"Position verification: {len(wallets_still_holding)}/{len(unique_wallets)} wallets holding >= ${min_position_value:.0f}")
+        logger.info(f"Position verification: {len(wallets_still_holding)}/{len(unique_wallets)} wallets valid (pos >= ${min_position_value:.0f}, count <= {max_positions})")
         
         return filtered_data
 
