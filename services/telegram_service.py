@@ -6,6 +6,8 @@ from aiogram.types import (
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.exceptions import TelegramRetryAfter, TelegramForbiddenError
+import asyncio
 import logging
 import hashlib
 from config import TELEGRAM_BOT_TOKEN, FILTERS, OWNER_ID
@@ -193,8 +195,7 @@ def get_main_keyboard(chat_id):
              KeyboardButton(text=get_text(lang, 'btn_filters')),
              KeyboardButton(text=get_text(lang, 'btn_saved'))]
         ],
-        resize_keyboard=True,
-        is_persistent=True
+        resize_keyboard=True
     )
 
 def get_filters_keyboard(chat_id):
@@ -211,8 +212,7 @@ def get_filters_keyboard(chat_id):
              KeyboardButton(text=get_text(lang, 'btn_positions'))],
             [KeyboardButton(text=get_text(lang, 'btn_back'))]
         ],
-        resize_keyboard=True,
-        is_persistent=True
+        resize_keyboard=True
     )
 
 def get_collapsed_keyboard(chat_id):
@@ -223,8 +223,7 @@ def get_collapsed_keyboard(chat_id):
         keyboard=[
             [KeyboardButton(text=get_text(lang, 'btn_show_menu'))]
         ],
-        resize_keyboard=True,
-        is_persistent=True
+        resize_keyboard=True
     )
 
 def get_amount_keyboard(chat_id):
@@ -1218,9 +1217,56 @@ async def callback_save(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("saved:"))
 async def callback_already_saved(callback: CallbackQuery):
-    """Handle click on already saved button."""
-    lang = get_user_lang(callback.message.chat.id)
-    await callback.answer(get_text(lang, 'saved_btn'))
+    """Handle click on already saved button.
+
+    Toggle: remove from favorites and switch button back to "To Favorites".
+    """
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+
+    key = callback.data.replace("saved:", "")
+    whale_id = saved_whales.get_whale_id(key)
+
+    if not whale_id:
+        await callback.answer("Error: trader not found")
+        return
+
+    # If trader is saved – delete from favorites
+    if saved_whales.is_saved(chat_id, whale_id):
+        saved_whales.delete(chat_id, whale_id)
+        await callback.answer(get_text(lang, 'saved_deleted'))
+    else:
+        # Fallback: if по какой‑то причине не сохранён, просто показать тултип
+        await callback.answer(get_text(lang, 'save_btn'))
+        return
+
+    # Обновляем кнопку в сообщении: "Saved" -> "To Favorites"
+    try:
+        old_keyboard = callback.message.reply_markup
+        if old_keyboard:
+            # Попробуем взять иконку уровня, чтобы восстановить исходный текст кнопки
+            whale_data = saved_whales.get_whale_data(key) or saved_whales.get_whale_data_by_id(whale_id)
+            level_icon = whale_data.get('level_icon') if whale_data and whale_data.get('level_icon') else "🦐"
+
+            new_buttons = []
+            for row in old_keyboard.inline_keyboard:
+                new_row = []
+                for btn in row:
+                    if btn.callback_data == f"saved:{key}":
+                        new_row.append(InlineKeyboardButton(
+                            text=f"{level_icon} {get_text(lang, 'save_btn')}",
+                            callback_data=f"save:{key}"
+                        ))
+                    else:
+                        new_row.append(btn)
+                new_buttons.append(new_row)
+
+            await callback.message.edit_reply_markup(
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=new_buttons)
+            )
+    except Exception:
+        # Если не получилось обновить клавиатуру — просто игнорируем, логика удаления уже отработала
+        pass
 
 
 # ============ NOTE FSM HANDLERS ============
@@ -3911,33 +3957,54 @@ def get_trade_alert_keyboard(lang: str, whale_key: str, is_saved: bool, level_ic
 
 
 async def send_trade_alert(chat_id, message_text, whale_key: str = None, is_saved: bool = False, level_icon: str = "🦐"):
-    """Send trade alert with optional inline keyboard for saving traders."""
+    """
+    Send trade alert with robust error handling (RetryAfter).
+    Handles '429 Too Many Requests' by waiting and retrying.
+    """
     if not chat_id:
         return
-    try:
-        lang = get_user_lang(chat_id)
-        reply_markup = None
         
-        if whale_key:
-            reply_markup = get_trade_alert_keyboard(lang, whale_key, is_saved, level_icon)
-        
-        await bot.send_message(
-            chat_id=chat_id,
-            text=message_text,
-            parse_mode="Markdown",
-            reply_markup=reply_markup
-        )
-    except Exception as e:
-        error_msg = str(e)
-        logger.error(f"Failed to send Telegram message: {error_msg}")
-        
-        # Auto-Stop for blocked users
-        if "blocked by the user" in error_msg or "user is deactivated" in error_msg:
+    lang = get_user_lang(chat_id)
+    reply_markup = None
+    if whale_key:
+        reply_markup = get_trade_alert_keyboard(lang, whale_key, is_saved, level_icon)
+
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=message_text,
+                parse_mode="Markdown",
+                reply_markup=reply_markup
+            )
+            return  # Success, exit function
+            
+        except TelegramRetryAfter as e:
+            # Telegram says we are sending too fast, wait and retry
+            wait_time = e.retry_after
+            if wait_time > 60:
+                logger.error(f"❌ Flood limit for {chat_id} is too long ({wait_time}s). Skipping to avoid blocking bot.")
+                return # Skip this user, don't block everyone else
+                
+            logger.warning(f"⚠️ Flood limit for {chat_id}. Waiting {wait_time}s (Attempt {attempt+1}/{max_retries})")
+            await asyncio.sleep(wait_time)
+            # Loop will continue and retry
+            
+        except TelegramForbiddenError:
+            # User blocked the bot or account deactivated
+            logger.info(f"🛑 User {chat_id} blocked the bot/deactivated. Auto-stopping.")
             try:
                 if user_statuses.get(chat_id):
                     user_statuses[chat_id] = False
                     save_settings()
-                    logger.info(f"🛑 Auto-stopped user {chat_id} (blocked bot)")
             except Exception as e2:
                 logger.error(f"Error auto-stopping user {chat_id}: {e2}")
+            return  # Stop trying
+            
+        except Exception as e:
+            # Other unexpected errors
+            logger.error(f"❌ Failed to send Telegram message to {chat_id}: {e}")
+            return  # Stop trying
 
