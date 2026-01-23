@@ -844,13 +844,20 @@ class InsiderAlertsService:
                         disable_web_page_preview=False
                     )
                     
+                    # Extract wallet list from verified trades
+                    wallet_list = list(set(
+                        t.get('wallet') for t in verified_data.get('trades', []) 
+                        if t.get('wallet')
+                    ))
+                    
                     alerts_storage.mark_published(
                         scenario=scenario,
                         market_id=alert_data['market_id'],
                         outcome=alert_data.get('outcome', ''),
                         market_title=alert_data.get('trade_title') or verified_data.get('trades', [{}])[0].get('market_title', ''),
                         total_volume=alert_data.get('total_volume', 0),
-                        participants_count=len(verified_data.get('trades', []))
+                        participants_count=len(verified_data.get('trades', [])),
+                        wallet_list=wallet_list
                     )
                     
                     logger.info(f"Published {scenario} alert for market {alert_data['market_id']}")

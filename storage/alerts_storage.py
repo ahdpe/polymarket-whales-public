@@ -115,6 +115,13 @@ def init_db():
             logger.info("Migrated alerts_published: added extended columns")
         except sqlite3.OperationalError:
             pass  # Columns already exist
+        
+        # Migration: Add wallet_list column if missing
+        try:
+            conn.execute("ALTER TABLE alerts_published ADD COLUMN wallet_list TEXT;")
+            logger.info("Migrated alerts_published: added wallet_list column")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
 
         conn.commit()
         logger.info("Insider alerts DB initialized")
@@ -398,15 +405,20 @@ def mark_published(
     outcome: str, 
     market_title: str = None, 
     total_volume: float = 0.0, 
-    participants_count: int = 0
+    participants_count: int = 0,
+    wallet_list: List[str] = None
 ) -> None:
     """Mark an alert as published to prevent duplicates."""
+    import json
     conn = _get_connection()
     try:
+        # Serialize wallet_list to JSON string
+        wallet_list_json = json.dumps(wallet_list) if wallet_list else None
+        
         conn.execute("""
             INSERT OR REPLACE INTO alerts_published 
-            (scenario, market_id, outcome, timestamp, market_title, total_volume, participants_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (scenario, market_id, outcome, timestamp, market_title, total_volume, participants_count, wallet_list)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             scenario, 
             market_id, 
@@ -414,7 +426,8 @@ def mark_published(
             int(time.time()),
             market_title,
             total_volume,
-            participants_count
+            participants_count,
+            wallet_list_json
         ))
         conn.commit()
     finally:
@@ -423,6 +436,7 @@ def mark_published(
 
 def get_recent_published(limit: int = 20) -> List[Dict[str, Any]]:
     """Get recently published alerts for dashboard."""
+    import json
     conn = _get_connection()
     try:
         rows = conn.execute("""
@@ -430,7 +444,19 @@ def get_recent_published(limit: int = 20) -> List[Dict[str, Any]]:
             ORDER BY timestamp DESC
             LIMIT ?
         """, (limit,)).fetchall()
-        return [dict(row) for row in rows]
+        result = []
+        for row in rows:
+            row_dict = dict(row)
+            # Deserialize wallet_list from JSON string
+            if row_dict.get('wallet_list'):
+                try:
+                    row_dict['wallet_list'] = json.loads(row_dict['wallet_list'])
+                except (json.JSONDecodeError, TypeError):
+                    row_dict['wallet_list'] = []
+            else:
+                row_dict['wallet_list'] = []
+            result.append(row_dict)
+        return result
     finally:
         conn.close()
 

@@ -26,7 +26,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="30">
+    <meta http-equiv="refresh" content="300">
     <title>🐋 PolymarketWhales Status</title>
     <style>
         :root {
@@ -239,7 +239,7 @@ HTML_TEMPLATE = """
         
         <footer>
             <div>Last updated: <span id="last-update">-</span></div>
-            <div class="refresh-info">Auto-refresh every 30 seconds</div>
+            <div class="refresh-info">Auto-refresh every 5 minutes</div>
         </footer>
     </div>
     
@@ -591,45 +591,6 @@ HTML_TEMPLATE = """
                         </div>
                     </div>
 
-                    ${(insider.published_history && insider.published_history.length > 0) ? `
-                        <h3 style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 10px;">
-                            Recently Published Alerts (Last 20)
-                        </h3>
-                        <div style="overflow-x: auto; margin-bottom: 25px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
-                            <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-                                <thead>
-                                    <tr style="border-bottom: 1px solid var(--border-color); text-align: left;">
-                                        <th style="padding: 8px; color: var(--text-secondary);">Time</th>
-                                        <th style="padding: 8px; color: var(--text-secondary);">Scenario</th>
-                                        <th style="padding: 8px; color: var(--text-secondary);">Market</th>
-                                        <th style="padding: 8px; color: var(--text-secondary);">Outcome</th>
-                                        <th style="padding: 8px; color: var(--text-secondary);">Volume</th>
-                                        <th style="padding: 8px; color: var(--text-secondary);">Wallets</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${insider.published_history.map(p => `
-                                    <tr style="border-bottom: 1px solid var(--bg-tertiary);">
-                                        <td style="padding: 8px; color: var(--text-secondary);">
-                                            ${Math.floor((Date.now() / 1000 - p.timestamp)/60)}m ago
-                                        </td>
-                                        <td style="padding: 8px;">
-                                            <span class="status-badge status-online" style="font-size: 0.75rem;">${p.scenario}</span>
-                                        </td>
-                                        <td style="padding: 8px;">
-                                            <a href="https://polymarket.com/event/${p.market_id}" target="_blank" style="color: var(--text-primary); text-decoration: none;">
-                                                ${(p.market_title || p.market_id).substring(0, 40) + ((p.market_title || p.market_id).length > 40 ? '...' : '')}
-                                            </a>
-                                        </td>
-                                        <td style="padding: 8px;">${p.outcome}</td>
-                                        <td style="padding: 8px;">$${formatNumber(p.total_volume || 0)}</td>
-                                        <td style="padding: 8px;">${p.participants_count || '-'}</td>
-                                    </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    ` : ''}
 
                     <div style="text-align: center; padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-tertiary);">
                         <p style="margin-bottom: 15px; color: var(--text-secondary);">
@@ -677,7 +638,7 @@ PATTERNS_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="30">
+    <meta http-equiv="refresh" content="300">
     <title>🕵️ Active Patterns - PolymarketWhales</title>
     <style>
         :root {
@@ -839,6 +800,56 @@ PATTERNS_TEMPLATE = """
             font-style: italic;
         }
         
+        .status-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .status-section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .status-section-header h2 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .scenarios-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .scenario-item {
+            background: var(--bg-tertiary);
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        
+        .scenario-name {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 5px;
+        }
+        
+        .scenario-status {
+            font-size: 0.9rem;
+        }
+        
         footer {
             text-align: center;
             padding-top: 20px;
@@ -862,7 +873,7 @@ PATTERNS_TEMPLATE = """
         
         <footer>
             <div>Last updated: <span id="last-update">-</span></div>
-            <div style="margin-top: 5px;">Auto-refresh every 30 seconds</div>
+            <div style="margin-top: 5px;">Auto-refresh every 5 minutes</div>
         </footer>
     </div>
     
@@ -941,6 +952,38 @@ PATTERNS_TEMPLATE = """
             const scenarios = insider.scenarios || {};
             
             let html = '';
+            
+            // Insider Intelligence Status Section
+            if (insider && insider.scenarios) {
+                const isEnabled = String(insider.enabled) === 'true';
+                html += `
+                    <div class="status-section">
+                        <div class="status-section-header">
+                            <h2>
+                                <span>🕵️</span>
+                                <span>Insider Intelligence</span>
+                            </h2>
+                            <span class="status-badge ${isEnabled ? 'status-online' : 'status-offline'}">
+                                ${isEnabled ? 'Active' : 'Disabled'}
+                            </span>
+                        </div>
+                        <div class="scenarios-grid">
+                            <div class="scenario-item">
+                                <div class="scenario-name">CLUSTER</div>
+                                <div class="scenario-status">${scenarios.CLUSTER?.enabled == 'true' ? '✅ On' : '❌ Off'}</div>
+                            </div>
+                            <div class="scenario-item">
+                                <div class="scenario-name">ACCUMULATION</div>
+                                <div class="scenario-status">${scenarios.ACCUMULATION?.enabled == 'true' ? '✅ On' : '❌ Off'}</div>
+                            </div>
+                            <div class="scenario-item">
+                                <div class="scenario-name">BURST</div>
+                                <div class="scenario-status">${scenarios.BURST?.enabled == 'true' ? '✅ On' : '❌ Off'}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
             
             // CLUSTERS
             if (patterns.clusters && patterns.clusters.length > 0) {
@@ -1023,7 +1066,11 @@ PATTERNS_TEMPLATE = """
                                                 ${p.days} / ${p.min_days}
                                             </span>
                                         </td>
-                                        <td>${p.wallets}</td>
+                                        <td>
+                                            <span class="${p.wallets >= p.min_wallets ? 'status-good' : 'status-warning'}">
+                                                ${p.wallets} / ${p.min_wallets}
+                                            </span>
+                                        </td>
                                         <td>$${formatNumber(p.volume)}</td>
                                         <td>
                                             ${(p.wallet_list || []).map(w => 
@@ -1093,8 +1140,63 @@ PATTERNS_TEMPLATE = """
                 `;
             }
             
-            if (!html) {
-                html = '<div class="empty-state">No emerging patterns detected currently.</div>';
+            // Recently Published Alerts Table
+            if (insider && insider.published_history && insider.published_history.length > 0) {
+                html += `
+                    <div class="section">
+                        <div class="section-header">
+                            <h2>Recently Published Alerts (Last 20)</h2>
+                        </div>
+                        <div style="overflow-x: auto;">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Scenario</th>
+                                        <th>Market</th>
+                                        <th>Outcome</th>
+                                        <th>Volume</th>
+                                        <th>Wallets</th>
+                                        <th style="width: 35%;">Buffer Participants</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${insider.published_history.map(p => `
+                                    <tr>
+                                        <td style="color: var(--text-secondary);">
+                                            ${Math.floor((Date.now() / 1000 - p.timestamp)/60)}m ago
+                                        </td>
+                                        <td>
+                                            <span class="status-badge status-online" style="font-size: 0.75rem;">${p.scenario}</span>
+                                        </td>
+                                        <td>
+                                            <a href="https://polymarket.com/event/${p.market_id}" target="_blank" style="color: var(--text-primary); text-decoration: none;">
+                                                ${(p.market_title || p.market_id).substring(0, 50) + ((p.market_title || p.market_id).length > 50 ? '...' : '')}
+                                            </a>
+                                        </td>
+                                        <td>${p.outcome || '-'}</td>
+                                        <td>$${formatNumber(p.total_volume || 0)}</td>
+                                        <td>${p.participants_count || '-'}</td>
+                                        <td>
+                                            ${(p.wallet_list && p.wallet_list.length > 0) ? p.wallet_list.map(w => 
+                                                `<a href="https://polymarket.com/profile/${w}" target="_blank" class="wallet-link">${w.substring(0,5)}..${w.substring(39)}</a>`
+                                            ).join(', ') : '-'}
+                                        </td>
+                                    </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            if (!html || (html.includes('status-section') && !patterns.clusters?.length && !patterns.accumulations?.length && !patterns.bursts?.length && !insider?.published_history?.length)) {
+                if (!html || !html.includes('status-section')) {
+                    html = '<div class="empty-state">No emerging patterns detected currently.</div>';
+                } else if (!insider?.published_history?.length) {
+                    html += '<div class="empty-state">No alerts published yet.</div>';
+                }
             }
             
             document.getElementById('patterns-content').innerHTML = html;
@@ -1117,7 +1219,7 @@ PATTERNS_TEMPLATE = """
         loadData();
         
         // Auto-refresh
-        setInterval(loadData, 30000);
+        setInterval(loadData, 300000);
     </script>
 </body>
 </html>

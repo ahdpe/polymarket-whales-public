@@ -19,3 +19,4 @@ next_data.json
 profile_data.json
 profile.html
 announcement_draft_menu.txt
+scripts/export_saved_traders.py
