@@ -10,7 +10,27 @@ from aiogram.exceptions import TelegramRetryAfter, TelegramForbiddenError
 import asyncio
 import logging
 import hashlib
-from config import TELEGRAM_BOT_TOKEN, FILTERS, OWNER_ID
+import time
+import re
+from datetime import datetime
+import html
+
+# Try to import aiolimiter, fallback if not available
+_aiolimiter_available = False
+try:
+    from aiolimiter import AsyncLimiter
+    import aiolimiter
+    _aiolimiter_available = True
+    _aiolimiter_version = getattr(aiolimiter, '__version__', 'unknown')
+except ImportError:
+    AsyncLimiter = None
+    _aiolimiter_version = None
+from config import (
+    TELEGRAM_BOT_TOKEN, FILTERS, OWNER_ID,
+    RETRY_SHORT_MAX, MUTE_DURATIONS, FAIL_STREAK_MUTE_THRESHOLD,
+    HOTFIX_CHAT_ID, HOTFIX_THRESHOLD, HOTFIX_MUTE,
+    QUEUE_MAX_SIZE, WORKER_COUNT, GLOBAL_RATE, PER_CHAT_RATE
+)
 from core.localization import get_text
 from core.utils import shorten_trader_name
 from storage import saved_whales
@@ -110,6 +130,146 @@ def save_settings():
 
 # Load settings on startup
 user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types, user_wallet_ages, user_open_positions, bot_enabled = load_settings()
+
+# Auto-mute structures for problematic chat_ids
+muted_until = {}  # dict[int, float] - chat_id -> unix timestamp until muted
+fail_streak = {}  # dict[int, int] - consecutive failures per chat_id
+mute_level = {}  # dict[int, int] - mute escalation level (0/1/2/3)
+last_fail_reason = {}  # dict[int, str] - for diagnostics
+last_mute_time = {}  # dict[int, float] - timestamp of last mute (for 24h reset logic)
+
+# Mute state file path
+MUTE_STATE_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'mute_state.json')
+
+def load_mute_state():
+    """Load mute state from file."""
+    try:
+        if os.path.exists(MUTE_STATE_FILE):
+            with open(MUTE_STATE_FILE, 'r') as f:
+                data = json.load(f)
+                # Convert string keys back to int
+                muted_until.update({int(k): v for k, v in data.get('muted_until', {}).items()})
+                fail_streak.update({int(k): v for k, v in data.get('fail_streak', {}).items()})
+                mute_level.update({int(k): v for k, v in data.get('mute_level', {}).items()})
+                last_mute_time.update({int(k): v for k, v in data.get('last_mute_time', {}).items()})
+                logger.info(f"Loaded mute state: {len(muted_until)} muted, {len(fail_streak)} streaks")
+    except Exception as e:
+        logger.error(f"Error loading mute state: {e}")
+
+def save_mute_state():
+    """Save mute state to file (atomic write)."""
+    try:
+        # Ensure data directory exists
+        os.makedirs(os.path.dirname(MUTE_STATE_FILE), exist_ok=True)
+        
+        # Prepare data
+        data = {
+            'muted_until': {str(k): v for k, v in muted_until.items()},
+            'fail_streak': {str(k): v for k, v in fail_streak.items()},
+            'mute_level': {str(k): v for k, v in mute_level.items()},
+            'last_mute_time': {str(k): v for k, v in last_mute_time.items()},
+        }
+        
+        # Atomic write: write to temp file, then rename
+        temp_file = MUTE_STATE_FILE + '.tmp'
+        with open(temp_file, 'w') as f:
+            json.dump(data, f)
+        os.replace(temp_file, MUTE_STATE_FILE)
+    except Exception as e:
+        logger.error(f"Error saving mute state: {e}")
+
+def load_mute_state():
+    """Load mute state from file."""
+    try:
+        if os.path.exists(MUTE_STATE_FILE):
+            with open(MUTE_STATE_FILE, 'r') as f:
+                data = json.load(f)
+                # Convert string keys back to int
+                muted_until.update({int(k): v for k, v in data.get('muted_until', {}).items()})
+                fail_streak.update({int(k): v for k, v in data.get('fail_streak', {}).items()})
+                mute_level.update({int(k): v for k, v in data.get('mute_level', {}).items()})
+                last_mute_time.update({int(k): v for k, v in data.get('last_mute_time', {}).items()})
+                logger.info(f"Loaded mute state: {len(muted_until)} muted, {len(fail_streak)} streaks")
+    except Exception as e:
+        logger.error(f"Error loading mute state: {e}")
+
+def save_mute_state():
+    """Save mute state to file (atomic write)."""
+    try:
+        # Ensure data directory exists
+        os.makedirs(os.path.dirname(MUTE_STATE_FILE), exist_ok=True)
+        
+        # Prepare data
+        data = {
+            'muted_until': {str(k): v for k, v in muted_until.items()},
+            'fail_streak': {str(k): v for k, v in fail_streak.items()},
+            'mute_level': {str(k): v for k, v in mute_level.items()},
+            'last_mute_time': {str(k): v for k, v in last_mute_time.items()},
+        }
+        
+        # Atomic write: write to temp file, then rename
+        temp_file = MUTE_STATE_FILE + '.tmp'
+        with open(temp_file, 'w') as f:
+            json.dump(data, f)
+        os.replace(temp_file, MUTE_STATE_FILE)
+    except Exception as e:
+        logger.error(f"Error saving mute state: {e}")
+
+def cleanup_mute_state():
+    """Clean up old mute state entries to prevent memory bloat."""
+    now = time.time()
+    cleaned = 0
+    
+    # Remove expired mutes and zero streaks older than 24h
+    for chat_id in list(muted_until.keys()):
+        if now > muted_until[chat_id] + 86400:  # 24h after mute expired
+            muted_until.pop(chat_id, None)
+            if fail_streak.get(chat_id, 0) == 0:
+                fail_streak.pop(chat_id, None)
+                mute_level.pop(chat_id, None)
+                last_mute_time.pop(chat_id, None)
+                last_fail_reason.pop(chat_id, None)
+                cleaned += 1
+    
+    if cleaned > 0:
+        logger.info(f"🧹 Cleaned up {cleaned} old mute state entries")
+        save_mute_state()
+
+# Mute duration constants (loaded from config)
+# MUTE_DURATIONS imported from config
+
+# Statistics tracking
+_stats_lock = asyncio.Lock()
+_stats_reset_time = time.time()
+
+# Queue system for sending alerts
+alert_queue = None  # Will be initialized in start_telegram()
+worker_tasks = []  # List of worker tasks for graceful shutdown
+queue_stats = {
+    'sent_total': 0,
+    'dropped_total': 0,
+    'error_total': 0,
+    'sent_per_min': 0,
+    'dropped_per_min': 0,
+    'retryafter_min': 0,  # Changed from retryafter_per_min to retryafter_min
+}
+_queue_stats_lock = asyncio.Lock()
+_queue_stats_reset_time = time.time()
+
+# Track oldest task age
+_queue_oldest_enqueued = None  # Timestamp of oldest task in queue
+_queue_oldest_lock = asyncio.Lock()  # Lock for oldest tracking
+
+# Track queue lag warnings
+_queue_lag_warn_count = 0  # Consecutive minutes with lag > 120s
+
+# Rate limiters
+global_rate_limiter = None  # Will be initialized in start_telegram()
+_per_chat_next_send = {}  # dict[chat_id, float] - next allowed send time
+_per_chat_lock = asyncio.Lock()  # Lock for per_chat_next_send
+
+# Queue enabled flag
+_queue_enabled = False
 
 def is_bot_enabled():
     """Check if bot is enabled (not stopped by admin)."""
@@ -2207,94 +2367,141 @@ def is_user_active(chat_id):
 @dp.message(Command("admin"))
 async def cmd_admin(message: types.Message):
     """Show admin commands cheatsheet (owner only)."""
-    if message.chat.id != OWNER_ID:
+    if message.from_user.id != OWNER_ID:
+        await message.answer("❌ Нет доступа")
         return
     
-    msg = """🔐 **Команды администратора**
-
-🤖 **Управление ботом:**
-`/bot_stop` — остановить отправку алертов
-`/bot_start` — возобновить отправку алертов
-
-📊 **Статистика:**
-`/stats` — статистика бота
-`/users` — список пользователей
-`/cache` — кэш возраста кошельков
-`/report` — полный отчет о системе
-
-📢 **Рассылка:**
-`/broadcast <текст>` — отправить всем
-
-🐦 **Twitter:**
-`/twitter` — все настройки и статус
-`/twitter_on` / `off` — вкл/выкл
-`/twitter_min 25000` — минимум $
-`/twitter_ins_min 20000` — мин. для инсайдеров
-`/twitter_age_ins 2` — макс. возраст инсайдера
-`/twitter_pos_ins 3` — макс. позиций инсайдера
-`/twitter_interval 25` — интервал мин
-`/twitter_prob 1_99` — вероятность
-`/twitter_sell on` — SELL сигналы
-`/twitter_split on` — SPLIT сигналы
-`/twitter_merge on` — MERGE сигналы
-`/twitter_redeem on` — REDEEM сигналы
-`/twitter_cat crypto on` — категории
-
-🕵️ **Insider Alerts:**
-`/tlgrm` — статус и все настройки
-`/tlgrm_prob 10 90` — фильтр вероятности
-`/tlgrm_pending` — ожидающие алерты
-`/tlgrm_on` / `off` — глобально вкл/выкл
-`/tlgrm_channel -100...` — ID канала
-
-**Категории:**
-`/tlgrm_cat crypto on`
-`/tlgrm_cat sports on`
-`/tlgrm_cat other on`
-
-**CLUSTER** (Simultaneous entries):
-`/tlgrm_cluster on/off`
-`/tlgrm_cluster_show` / `reset`
-`/tlgrm_cluster_interval 2` — окно (ч)
-`/tlgrm_cluster_min 5000` — мин. объём ($)
-`/tlgrm_cluster_total 10000` — мин. общий объём ($)
-`/tlgrm_cluster_wallets 4` — мин. кошельков
-`/tlgrm_cluster_wallet_age 24` — макс. возраст (ч)
-`/tlgrm_cluster_side both` — buy/sell/both
-`/tlgrm_cluster_direction 75` — направленность (%)
-`/tlgrm_cluster_profiles on` — показывать участников
-`/tlgrm_cluster_pos 3` — макс. открытых позиций
-
-**ACCUMULATION** (Slow multi-wallet accumulation):
-`/tlgrm_accumulation on/off`
-`/tlgrm_accumulation_show` / `reset`
-`/tlgrm_accumulation_days 3` — мин. дней
-`/tlgrm_accumulation_min 10000` — мин. размер ($)
-`/tlgrm_accumulation_total 50000` — мин. общий объём ($)
-`/tlgrm_accumulation_wallets 3` — мин. кошельков
-`/tlgrm_accumulation_age 48` — макс. возраст (ч)
-`/tlgrm_accumulation_profiles on` — показывать участников
-`/tlgrm_accumulation_pos 3` — макс. открытых позиций
-`/tlgrm_accumulation_direction 70` — направленность (%)
-
-**BURST** (Small wallets surge):
-`/tlgrm_burst on/off`
-`/tlgrm_burst_show` / `reset`
-`/tlgrm_burst_interval 1` — окно (ч)
-`/tlgrm_burst_min 1000` — мин. размер ($)
-`/tlgrm_burst_total 5000` — мин. общий объём ($)
-`/tlgrm_burst_wallets 8` — мин. кошельков
-`/tlgrm_burst_age 72` — макс. возраст (ч)
-`/tlgrm_burst_profiles on` — показывать участников
-`/tlgrm_burst_pos 3` — макс. открытых позиций
-`/tlgrm_burst_direction 70` — направленность (%)
-
-👤 **Пользовательские:**
-`/reset` — сброс своих фильтров
-
-ℹ️ Эта памятка: `/admin`
-"""
-    await message.answer(msg, parse_mode="Markdown")
+    # Build plain text message
+    msg_lines = [
+        "🔐 === Команды администратора ===",
+        "",
+        "🤖 === Управление ботом ===",
+        "/bot_stop — остановить отправку алертов",
+        "/bot_start — возобновить отправку алертов",
+        "",
+        "📊 === Статистика ===",
+        "/stats — статистика бота",
+        "/users — список пользователей",
+        "/cache — кэш возраста кошельков",
+        "/report — полный отчет о системе",
+        "",
+        "📢 === Рассылка ===",
+        "/broadcast <текст> — отправить всем",
+        "",
+        "🔇 === Auto-Mute ===",
+        "/mute_status — показать статистику мута (muted_count, retryafter_per_min, top_muted 5)",
+        "/mute <chat_id> [hours] — вручную замутить пользователя (пример: /mute 123456789 24)",
+        "/unmute <chat_id> — размутить пользователя (пример: /unmute 123456789)",
+        "",
+        "📤 === Queue ===",
+        "/queue_status — статистика очереди (queue_size, dropped_total, sent_total, workers)",
+        "/queue_clear — очистить очередь (экстренно)",
+        "",
+        "🐦 === Twitter ===",
+        "/twitter — все настройки и статус",
+        "/twitter_on / off — вкл/выкл",
+        "/twitter_min 25000 — минимум $",
+        "/twitter_ins_min 20000 — мин. для инсайдеров",
+        "/twitter_age_ins 2 — макс. возраст инсайдера",
+        "/twitter_pos_ins 3 — макс. позиций инсайдера",
+        "/twitter_interval 25 — интервал мин",
+        "/twitter_prob 1_99 — вероятность",
+        "/twitter_sell on — SELL сигналы",
+        "/twitter_split on — SPLIT сигналы",
+        "/twitter_merge on — MERGE сигналы",
+        "/twitter_redeem on — REDEEM сигналы",
+        "/twitter_cat crypto on — категории",
+        "",
+        "🕵️ === Insider Alerts ===",
+        "/tlgrm — статус и все настройки",
+        "/tlgrm_prob 10 90 — фильтр вероятности",
+        "/tlgrm_pending — ожидающие алерты",
+        "/tlgrm_on / off — глобально вкл/выкл",
+        "/tlgrm_channel -100... — ID канала",
+        "",
+        "=== Категории ===",
+        "/tlgrm_cat crypto on",
+        "/tlgrm_cat sports on",
+        "/tlgrm_cat other on",
+        "",
+        "=== CLUSTER (Simultaneous entries) ===",
+        "/tlgrm_cluster on/off",
+        "/tlgrm_cluster_show / reset",
+        "/tlgrm_cluster_interval 2 — окно (ч)",
+        "/tlgrm_cluster_min 5000 — мин. объём ($)",
+        "/tlgrm_cluster_total 10000 — мин. общий объём ($)",
+        "/tlgrm_cluster_wallets 4 — мин. кошельков",
+        "/tlgrm_cluster_wallet_age 24 — макс. возраст (ч)",
+        "/tlgrm_cluster_side both — buy/sell/both",
+        "/tlgrm_cluster_direction 75 — направленность (%)",
+        "/tlgrm_cluster_profiles on — показывать участников",
+        "/tlgrm_cluster_pos 3 — макс. открытых позиций",
+        "",
+        "=== ACCUMULATION (Slow multi-wallet accumulation) ===",
+        "/tlgrm_accumulation on/off",
+        "/tlgrm_accumulation_show / reset",
+        "/tlgrm_accumulation_days 3 — мин. дней",
+        "/tlgrm_accumulation_min 10000 — мин. размер ($)",
+        "/tlgrm_accumulation_total 50000 — мин. общий объём ($)",
+        "/tlgrm_accumulation_wallets 3 — мин. кошельков",
+        "/tlgrm_accumulation_age 48 — макс. возраст (ч)",
+        "/tlgrm_accumulation_profiles on — показывать участников",
+        "/tlgrm_accumulation_pos 3 — макс. открытых позиций",
+        "/tlgrm_accumulation_direction 70 — направленность (%)",
+        "",
+        "=== BURST (Small wallets surge) ===",
+        "/tlgrm_burst on/off",
+        "/tlgrm_burst_show / reset",
+        "/tlgrm_burst_interval 1 — окно (ч)",
+        "/tlgrm_burst_min 1000 — мин. размер ($)",
+        "/tlgrm_burst_total 5000 — мин. общий объём ($)",
+        "/tlgrm_burst_wallets 8 — мин. кошельков",
+        "/tlgrm_burst_age 72 — макс. возраст (ч)",
+        "/tlgrm_burst_profiles on — показывать участников",
+        "/tlgrm_burst_pos 3 — макс. открытых позиций",
+        "/tlgrm_burst_direction 70 — направленность (%)",
+        "",
+        "👤 === Пользовательские ===",
+        "/reset — сброс своих фильтров",
+        "",
+        "ℹ️ Эта памятка: /admin",
+    ]
+    
+    msg = "\n".join(msg_lines)
+    
+    # Split message into chunks by lines (max 3500 chars per chunk)
+    max_chunk_size = 3500
+    chunks = []
+    if len(msg) > max_chunk_size:
+        current_chunk = []
+        current_size = 0
+        
+        for line in msg_lines:
+            line_size = len(line) + 1  # +1 for newline
+            if current_size + line_size > max_chunk_size and current_chunk:
+                chunks.append('\n'.join(current_chunk))
+                current_chunk = [line]
+                current_size = line_size
+            else:
+                current_chunk.append(line)
+                current_size += line_size
+        
+        if current_chunk:
+            chunks.append('\n'.join(current_chunk))
+    else:
+        chunks = [msg]
+    
+    # Send chunks as plain text (no parse_mode)
+    for i, chunk in enumerate(chunks):
+        if len(chunks) > 1:
+            chunk = f"(Часть {i+1}/{len(chunks)})\n\n{chunk}"
+        
+        # Debug: log last 300 chars before sending to catch parsing issues
+        if i == len(chunks) - 1:  # Only log for last chunk
+            last_300 = chunk[-300:] if len(chunk) > 300 else chunk
+            logger.info(f"DEBUG /admin: sending chunk {i+1}/{len(chunks)}, last 300 chars: {repr(last_300)}")
+        
+        await message.answer(chunk)
 
 
 @dp.message(Command("stats"))
@@ -2416,6 +2623,149 @@ async def cmd_broadcast(message: types.Message):
     
     await message.answer(f"📢 Рассылка завершена!\n✅ Отправлено: {sent}\n❌ Ошибок: {failed}")
 
+
+@dp.message(Command("mute_status"))
+async def cmd_mute_status(message: types.Message):
+    """Show mute statistics (owner only)."""
+    if message.chat.id != OWNER_ID:
+        await message.answer("❌ Нет доступа")
+        return
+    
+    now = time.time()
+    muted_list = []
+    for cid, mute_until_ts in muted_until.items():
+        if now < mute_until_ts:
+            secs_left = mute_until_ts - now
+            until_iso = datetime.fromtimestamp(mute_until_ts).strftime("%Y-%m-%d %H:%M:%S")
+            level = mute_level.get(cid, 0)
+            reason = last_fail_reason.get(cid, "unknown")
+            streak = fail_streak.get(cid, 0)
+            muted_list.append((cid, secs_left, until_iso, reason, streak, level))
+    
+    muted_list.sort(key=lambda x: x[1], reverse=True)
+    top_muted = muted_list[:10]
+    
+    # Get retryafter count from queue_stats
+    async with _queue_stats_lock:
+        retryafter_count = queue_stats.get('retryafter_min', 0)
+    
+    msg = f"""**Mute Statistics:**
+    
+**Currently Muted:** {len(muted_list)}
+**RetryAfter (last min):** {retryafter_count}
+
+**Top Muted Users:**
+"""
+    if top_muted:
+        for cid, secs_left, until_iso, reason, streak, level in top_muted:
+            hours = int(secs_left // 3600)
+            mins = int((secs_left % 3600) // 60)
+            msg += f"• `{cid}`: {hours}h {mins}m left, until {until_iso}, reason={reason}, streak={streak}, level={level}\n"
+    else:
+        msg += "None"
+    
+    await message.answer(msg, parse_mode="Markdown")
+
+@dp.message(Command("queue_status"))
+async def cmd_queue_status(message: types.Message):
+    """Show queue statistics (owner only)."""
+    if message.chat.id != OWNER_ID:
+        await message.answer("❌ Нет доступа")
+        return
+    
+    queue_size = alert_queue.qsize() if alert_queue else 0
+    
+    async with _queue_stats_lock:
+        dropped_total = queue_stats['dropped_total']
+        sent_total = queue_stats['sent_total']
+        error_total = queue_stats['error_total']
+    
+    # Get age statistics
+    oldest_age_sec, avg_age_sec = await _get_queue_age_stats()
+    
+    age_info = "Queue empty"
+    if oldest_age_sec is not None:
+        age_info = f"{int(oldest_age_sec)}s"
+        if avg_age_sec is not None:
+            age_info += f" (avg: {int(avg_age_sec)}s)"
+    
+    msg = f"""**Queue Status:**
+
+**Queue Size:** {queue_size}
+**Dropped Total:** {dropped_total}
+**Sent Total:** {sent_total}
+**Error Total:** {error_total}
+**Workers:** {len(worker_tasks)}/{WORKER_COUNT}
+**Oldest Task Age:** {age_info}
+"""
+    await message.answer(msg, parse_mode="Markdown")
+
+@dp.message(Command("queue_clear"))
+async def cmd_queue_clear(message: types.Message):
+    """Clear queue (owner only)."""
+    if message.chat.id != OWNER_ID:
+        await message.answer("❌ Нет доступа")
+        return
+    
+    if not alert_queue:
+        await message.answer("❌ Queue not initialized")
+        return
+    
+    cleared = 0
+    while not alert_queue.empty():
+        try:
+            alert_queue.get_nowait()
+            alert_queue.task_done()
+            cleared += 1
+        except asyncio.QueueEmpty:
+            break
+    
+    await message.answer(f"✅ Queue cleared: {cleared} tasks removed", parse_mode="Markdown")
+    logger.warning(f"🗑️ Queue cleared by admin: {cleared} tasks removed")
+
+@dp.message(Command("unmute"))
+async def cmd_unmute(message: types.Message):
+    """Unmute a user (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer("Usage: `/unmute <chat_id>`", parse_mode="Markdown")
+        return
+    
+    try:
+        chat_id = int(parts[1])
+        muted_until.pop(chat_id, None)
+        fail_streak.pop(chat_id, None)
+        mute_level.pop(chat_id, None)
+        last_mute_time.pop(chat_id, None)
+        last_fail_reason.pop(chat_id, None)
+        save_mute_state()
+        await message.answer(f"✅ Unmuted user `{chat_id}`", parse_mode="Markdown")
+    except ValueError:
+        await message.answer("❌ Invalid chat_id")
+
+@dp.message(Command("mute"))
+async def cmd_mute(message: types.Message):
+    """Manually mute a user (owner only)."""
+    if message.chat.id != OWNER_ID:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer("Usage: `/mute <chat_id> [hours]`\nDefault: 1 hour", parse_mode="Markdown")
+        return
+    
+    try:
+        chat_id = int(parts[1])
+        hours = int(parts[2]) if len(parts) > 2 else 1
+        mute_seconds = hours * 3600
+        
+        _apply_mute(chat_id, "manual_admin", mute_seconds=mute_seconds)
+        await message.answer(f"✅ Muted user `{chat_id}` for {hours} hour(s)", parse_mode="Markdown")
+    except ValueError:
+        await message.answer("❌ Invalid chat_id or hours")
 
 @dp.message(Command("cache"))
 async def cmd_cache(message: types.Message):
@@ -3935,7 +4285,22 @@ async def send_admin_notification(message: str, parse_mode="HTML"):
 
 async def start_telegram():
     logger.info("Starting Telegram Bot Polling...")
+    # Load mute state on startup
+    load_mute_state()
+    
+    # Start queue system
+    start_queue_workers()
+    
+    # Start periodic cleanup task
+    asyncio.create_task(_periodic_cleanup())
+    
     await dp.start_polling(bot)
+
+async def _periodic_cleanup():
+    """Periodic cleanup of mute state (every hour)."""
+    while True:
+        await asyncio.sleep(3600)  # 1 hour
+        cleanup_mute_state()
 
 
 def get_trade_alert_keyboard(lang: str, whale_key: str, is_saved: bool, level_icon: str = "🦐"):
@@ -3956,13 +4321,363 @@ def get_trade_alert_keyboard(lang: str, whale_key: str, is_saved: bool, level_ic
     ])
 
 
-async def send_trade_alert(chat_id, message_text, whale_key: str = None, is_saved: bool = False, level_icon: str = "🦐"):
+def _get_mute_duration(chat_id: int) -> int:
+    """Get mute duration based on escalation level."""
+    level = mute_level.get(chat_id, 0)
+    if level == 0:
+        level = 1  # First mute
+    if level > 3:
+        level = 3
+    return MUTE_DURATIONS[level]
+
+def _apply_mute(chat_id: int, reason: str, mute_seconds: int = None):
+    """Apply mute to chat_id."""
+    now = time.time()
+    
+    # Escalate level if needed (reset if 24h passed since last mute)
+    current_level = mute_level.get(chat_id, 0)
+    last_mute = last_mute_time.get(chat_id, 0)
+    if now - last_mute > 86400:  # 24 hours passed
+        mute_level[chat_id] = 1
+    else:
+        mute_level[chat_id] = min(current_level + 1, 3)
+    
+    # Determine mute duration (use provided or calculate from level)
+    if mute_seconds is None:
+        mute_seconds = _get_mute_duration(chat_id)
+    
+    muted_until[chat_id] = now + mute_seconds
+    last_mute_time[chat_id] = now
+    last_fail_reason[chat_id] = reason
+    
+    # Save state after applying mute
+    save_mute_state()
+    
+    return mute_seconds
+
+def _is_muted(chat_id: int) -> tuple[bool, float]:
+    """Check if chat_id is muted. Returns (is_muted, seconds_left)."""
+    if chat_id not in muted_until:
+        return False, 0.0
+    
+    now = time.time()
+    mute_until = muted_until[chat_id]
+    
+    if now < mute_until:
+        return True, mute_until - now
+    else:
+        # Mute expired, clean up
+        muted_until.pop(chat_id, None)
+        return False, 0.0
+
+async def _log_mute_stats():
+    """Log mute statistics (called periodically)."""
+    global _stats_reset_time
+    
+    async with _stats_lock:
+        now = time.time()
+        # Count currently muted users
+        muted_list = []
+        for cid, mute_until_ts in list(muted_until.items()):
+            if now < mute_until_ts:
+                muted_list.append((cid, mute_until_ts - now))
+            else:
+                # Clean up expired mutes
+                muted_until.pop(cid, None)
+        
+        muted_count = len(muted_list)
+        
+        # Get top muted chat_ids
+        muted_list.sort(key=lambda x: x[1], reverse=True)
+        top_muted = muted_list[:5]
+        
+        # Get retryafter count from queue_stats
+        async with _queue_stats_lock:
+            retryafter_count = queue_stats.get('retryafter_min', 0)
+        
+        logger.info(
+            f"📊 Mute stats: muted_count={muted_count}, "
+            f"retryafter_per_min={retryafter_count}, "
+            f"top_muted={[(cid, int(secs)) for cid, secs in top_muted]}"
+        )
+        
+        _stats_reset_time = now
+
+async def enqueue_trade_alert(chat_id, message_text, whale_key: str = None, is_saved: bool = False, level_icon: str = "🦐"):
     """
-    Send trade alert with robust error handling (RetryAfter).
-    Handles '429 Too Many Requests' by waiting and retrying.
+    Add trade alert to queue for sending.
+    Returns immediately (fire-and-forget).
+    Falls back to direct send if queue is disabled.
     """
     if not chat_id:
         return
+    
+    # Fallback to direct send if queue is disabled
+    if not _queue_enabled or alert_queue is None:
+        await send_trade_alert(chat_id, message_text, whale_key, is_saved, level_icon)
+        return
+    
+    enqueued_at = time.time()
+    task = {
+        'chat_id': chat_id,
+        'message_text': message_text,
+        'whale_key': whale_key,
+        'is_saved': is_saved,
+        'level_icon': level_icon,
+        'enqueued_at': enqueued_at,
+    }
+    
+    # Update oldest task tracking
+    async with _queue_oldest_lock:
+        global _queue_oldest_enqueued
+        if _queue_oldest_enqueued is None or enqueued_at < _queue_oldest_enqueued:
+            _queue_oldest_enqueued = enqueued_at
+    
+    try:
+        alert_queue.put_nowait(task)
+    except asyncio.QueueFull:
+        # Drop new task and log
+        async with _queue_stats_lock:
+            queue_stats['dropped_total'] += 1
+            queue_stats['dropped_per_min'] += 1
+        
+        logger.warning(f"QUEUE_FULL dropped=1 queue_size={alert_queue.qsize()}")
+        return
+
+async def _per_chat_rate_limiter_wait(chat_id: int):
+    """Wait if needed to respect per-chat rate limit."""
+    async with _per_chat_lock:
+        now = time.time()
+        next_send = _per_chat_next_send.get(chat_id, 0)
+        delay = max(0, next_send - now)
+        _per_chat_next_send[chat_id] = now + delay + (1.0 / PER_CHAT_RATE)
+    
+    if delay > 0:
+        await asyncio.sleep(delay)
+
+async def _queue_worker(worker_id: int):
+    """Worker that processes tasks from the queue."""
+    logger.info(f"📤 Queue worker {worker_id} started")
+    
+    while True:
+        try:
+            # Get task from queue (blocks until available)
+            task = await alert_queue.get()
+            
+            chat_id = task['chat_id']
+            message_text = task['message_text']
+            whale_key = task.get('whale_key')
+            is_saved = task.get('is_saved', False)
+            level_icon = task.get('level_icon', '🦐')
+            enqueued_at = task.get('enqueued_at', time.time())
+            
+            # Update oldest task tracking (this task is being processed)
+            # If this was the oldest task, we need to find the new oldest
+            # Since we can't peek into queue, we reset and let next enqueue set it
+            async with _queue_oldest_lock:
+                global _queue_oldest_enqueued
+                if _queue_oldest_enqueued == enqueued_at:
+                    # This was the oldest, reset to None (will be updated by next enqueue)
+                    _queue_oldest_enqueued = None
+                    # If queue is not empty, we can't know the new oldest without peeking
+                    # So we'll wait for next enqueue to set it, or it will be None until then
+            
+            # Apply rate limiters
+            if global_rate_limiter:
+                await global_rate_limiter.acquire()
+            await _per_chat_rate_limiter_wait(chat_id)
+            
+            # Send the alert
+            try:
+                await send_trade_alert(chat_id, message_text, whale_key, is_saved, level_icon)
+                
+                # Update stats on success
+                async with _queue_stats_lock:
+                    queue_stats['sent_total'] += 1
+                    queue_stats['sent_per_min'] += 1
+                    
+            except Exception as e:
+                # Log error and update stats
+                logger.error(f"❌ Queue worker {worker_id} error sending to {chat_id}: {e}")
+                async with _queue_stats_lock:
+                    queue_stats['error_total'] += 1
+            
+            # Mark task as done
+            alert_queue.task_done()
+            
+        except asyncio.CancelledError:
+            logger.info(f"📤 Queue worker {worker_id} cancelled")
+            break
+        except Exception as e:
+            logger.error(f"❌ Queue worker {worker_id} unexpected error: {e}")
+            # Continue processing
+
+async def _get_queue_age_stats():
+    """Get oldest and average age of tasks in queue."""
+    if not alert_queue or alert_queue.empty():
+        return None, None
+    
+    # We can't peek into queue, so we use tracked oldest
+    async with _queue_oldest_lock:
+        oldest_enqueued = _queue_oldest_enqueued
+    
+    if oldest_enqueued is None:
+        return None, None
+    
+    now = time.time()
+    oldest_age_sec = now - oldest_enqueued
+    
+    # For avg_age, we estimate based on queue size and processing rate
+    # This is an approximation since we can't access queue items
+    queue_size = alert_queue.qsize()
+    if queue_size > 1:
+        # Estimate: tasks are distributed evenly, so avg is roughly half of oldest
+        avg_age_sec = oldest_age_sec / 2
+    else:
+        avg_age_sec = oldest_age_sec
+    
+    return oldest_age_sec, avg_age_sec
+
+async def _log_queue_stats():
+    """Periodically log queue statistics."""
+    global _queue_stats_reset_time, _queue_lag_warn_count
+    
+    while True:
+        await asyncio.sleep(60)  # Every minute
+        
+        try:
+            async with _queue_stats_lock:
+                queue_size = alert_queue.qsize() if alert_queue else 0
+                oldest_age_sec, avg_age_sec = await _get_queue_age_stats()
+                
+                age_info = ""
+                if oldest_age_sec is not None:
+                    age_info = f", oldest_age_sec={int(oldest_age_sec)}"
+                    if avg_age_sec is not None:
+                        age_info += f", avg_age_sec={int(avg_age_sec)}"
+                
+                # Check for warnings
+                warnings = []
+                
+                # WARN_QUEUE_DROPS if dropped_per_min > 0
+                if queue_stats.get('dropped_per_min', 0) > 0:
+                    warnings.append("WARN_QUEUE_DROPS")
+                
+                # WARN_QUEUE_LAG if oldest_age_sec > 120s for 3 consecutive minutes
+                if oldest_age_sec is not None and oldest_age_sec > 120:
+                    _queue_lag_warn_count += 1
+                    if _queue_lag_warn_count >= 3:
+                        warnings.append("WARN_QUEUE_LAG")
+                else:
+                    _queue_lag_warn_count = 0  # Reset counter if lag is resolved
+                
+                warn_info = ""
+                if warnings:
+                    warn_info = f", warnings=[{', '.join(warnings)}]"
+                
+                retryafter_count = queue_stats.get('retryafter_min', 0)
+                
+                logger.info(
+                    f"📊 Queue stats: queue_size={queue_size}{age_info}, "
+                    f"sent_per_min={queue_stats.get('sent_per_min', 0)}, "
+                    f"dropped_per_min={queue_stats.get('dropped_per_min', 0)}, "
+                    f"retryafter_per_min={retryafter_count}, "
+                    f"worker_count={len(worker_tasks)}{warn_info}"
+                )
+                
+                # Reset per-minute counters
+                queue_stats['sent_per_min'] = 0
+                queue_stats['dropped_per_min'] = 0
+                queue_stats['retryafter_min'] = 0
+                _queue_stats_reset_time = time.time()
+        except Exception as e:
+            import traceback
+            logger.error(f"❌ Error in _log_queue_stats(): {e}\n{traceback.format_exc()}")
+            await asyncio.sleep(5)  # Short sleep before retry
+
+def start_queue_workers():
+    """Start queue workers and initialize queue."""
+    global alert_queue, global_rate_limiter, worker_tasks, _queue_enabled
+    
+    # Check if aiolimiter is available
+    if not _aiolimiter_available:
+        logger.error(
+            "❌ CRITICAL: aiolimiter not installed! Queue system disabled.\n"
+            "Install with: pip install aiolimiter\n"
+            "Falling back to direct send (no rate limiting)."
+        )
+        _queue_enabled = False
+        return
+    
+    logger.info(f"✅ aiolimiter version: {_aiolimiter_version}")
+    
+    # Initialize queue
+    alert_queue = asyncio.Queue(maxsize=QUEUE_MAX_SIZE)
+    
+    # Initialize global rate limiter
+    global_rate_limiter = AsyncLimiter(GLOBAL_RATE, 1)
+    
+    # Start workers
+    worker_tasks = []
+    for i in range(WORKER_COUNT):
+        task = asyncio.create_task(_queue_worker(i + 1))
+        worker_tasks.append(task)
+    
+    # Start stats logging (includes both queue and mute stats)
+    asyncio.create_task(_log_queue_stats())
+    asyncio.create_task(_log_mute_stats_periodic())
+    
+    _queue_enabled = True
+    logger.info(f"📤 Queue system started: {WORKER_COUNT} workers, max_size={QUEUE_MAX_SIZE}, global_rate={GLOBAL_RATE}/sec, per_chat_rate={PER_CHAT_RATE}/sec")
+
+async def _log_mute_stats_periodic():
+    """Periodically log mute statistics (called from queue system)."""
+    while True:
+        await asyncio.sleep(60)  # Every minute
+        await _log_mute_stats()
+
+async def stop_queue_workers():
+    """Stop queue workers gracefully."""
+    global worker_tasks
+    
+    if not alert_queue or not worker_tasks:
+        return
+    
+    logger.info("📤 Stopping queue workers...")
+    
+    # Wait for queue to empty (with timeout)
+    try:
+        await asyncio.wait_for(alert_queue.join(), timeout=10.0)
+        logger.info("📤 Queue emptied, all tasks processed")
+    except asyncio.TimeoutError:
+        logger.warning("📤 Queue join timeout (10s), cancelling workers")
+    
+    # Cancel all workers
+    for task in worker_tasks:
+        if not task.done():
+            task.cancel()
+    
+    # Wait for cancellation
+    if worker_tasks:
+        await asyncio.gather(*worker_tasks, return_exceptions=True)
+    
+    worker_tasks = []
+    logger.info("📤 Queue workers stopped")
+
+async def send_trade_alert(chat_id, message_text, whale_key: str = None, is_saved: bool = False, level_icon: str = "🦐"):
+    """
+    Send trade alert with robust error handling (RetryAfter) and auto-mute for problematic users.
+    """
+    if not chat_id:
+        return
+    
+    # A) Check if muted before any sending attempt
+    is_muted, seconds_left = _is_muted(chat_id)
+    if is_muted:
+        until_ts = muted_until.get(chat_id, time.time())
+        until_iso = datetime.fromtimestamp(until_ts).strftime("%Y-%m-%d %H:%M:%S")
+        logger.info(f"🔇 MUTED_SKIP chat_id={chat_id} seconds_left={int(seconds_left)} until_iso={until_iso}")
+        return  # Skip sending, return immediately
         
     lang = get_user_lang(chat_id)
     reply_markup = None
@@ -3979,18 +4694,49 @@ async def send_trade_alert(chat_id, message_text, whale_key: str = None, is_save
                 parse_mode="Markdown",
                 reply_markup=reply_markup
             )
+            # B) Success - reset fail streak and optionally reset mute level
+            fail_streak[chat_id] = 0
+            last_fail_reason.pop(chat_id, None)
+            
+            # Reset mute level if 24 hours passed since last mute and no errors
+            now = time.time()
+            last_mute = last_mute_time.get(chat_id, 0)
+            if now - last_mute > 86400:  # 24 hours
+                mute_level.pop(chat_id, None)
+                save_mute_state()  # Save state after reset
+            
+            # Optional: log success (can be less frequent)
+            if attempt > 0:
+                logger.info(f"✅ SEND_OK chat_id={chat_id} after_retry={attempt}")
             return  # Success, exit function
             
         except TelegramRetryAfter as e:
-            # Telegram says we are sending too fast, wait and retry
+            # C) Handle TelegramRetryAfter
+            async with _queue_stats_lock:
+                queue_stats['retryafter_min'] += 1
+            
             wait_time = e.retry_after
-            if wait_time > 60:
-                logger.error(f"❌ Flood limit for {chat_id} is too long ({wait_time}s). Skipping to avoid blocking bot.")
-                return # Skip this user, don't block everyone else
-                
-            logger.warning(f"⚠️ Flood limit for {chat_id}. Waiting {wait_time}s (Attempt {attempt+1}/{max_retries})")
-            await asyncio.sleep(wait_time)
-            # Loop will continue and retry
+            
+            # Hotfix for problematic chat_id
+            if chat_id == HOTFIX_CHAT_ID and wait_time > HOTFIX_THRESHOLD:
+                mute_seconds = _apply_mute(chat_id, f"hotfix_retryafter_{wait_time}s", mute_seconds=HOTFIX_MUTE)
+                until_ts = muted_until.get(chat_id, time.time())
+                until_iso = datetime.fromtimestamp(until_ts).strftime("%Y-%m-%d %H:%M:%S")
+                logger.warning(f"🔇 MUTED chat_id={chat_id} retry_after={wait_time}s mute_for={mute_seconds}s until_iso={until_iso} (hotfix)")
+                return
+            
+            if wait_time <= RETRY_SHORT_MAX:
+                # Short retry - attempt once
+                logger.warning(f"⚠️ RETRY_AFTER short chat_id={chat_id} retry_after={wait_time}s attempt={attempt+1}")
+                await asyncio.sleep(wait_time)
+                # Loop will continue and retry
+            else:
+                # Long retry - mute immediately
+                mute_seconds = _apply_mute(chat_id, f"retryafter_{wait_time}s")
+                until_ts = muted_until.get(chat_id, time.time())
+                until_iso = datetime.fromtimestamp(until_ts).strftime("%Y-%m-%d %H:%M:%S")
+                logger.warning(f"🔇 MUTED chat_id={chat_id} retry_after={wait_time}s mute_for={mute_seconds}s until_iso={until_iso}")
+                return  # Don't retry, user is muted
             
         except TelegramForbiddenError:
             # User blocked the bot or account deactivated
@@ -4004,7 +4750,23 @@ async def send_trade_alert(chat_id, message_text, whale_key: str = None, is_save
             return  # Stop trying
             
         except Exception as e:
-            # Other unexpected errors
-            logger.error(f"❌ Failed to send Telegram message to {chat_id}: {e}")
-            return  # Stop trying
+            # D) Other errors - track streak
+            fail_streak[chat_id] = fail_streak.get(chat_id, 0) + 1
+            streak = fail_streak[chat_id]
+            error_str = str(e)
+            last_fail_reason[chat_id] = error_str
+            
+            logger.warning(f"⚠️ SEND_FAIL chat_id={chat_id} streak={streak} error={error_str}")
+            
+            if streak >= FAIL_STREAK_MUTE_THRESHOLD:
+                # Mute after 3 consecutive failures
+                mute_seconds = _apply_mute(chat_id, "consecutive_failures")
+                until_ts = muted_until.get(chat_id, time.time())
+                until_iso = datetime.fromtimestamp(until_ts).strftime("%Y-%m-%d %H:%M:%S")
+                logger.warning(f"🔇 MUTED chat_id={chat_id} reason=consecutive_failures mute_for={mute_seconds}s until_iso={until_iso}")
+                return  # Stop trying
+            
+            # Continue retrying if streak < 3
+            if attempt < max_retries - 1:
+                await asyncio.sleep(1)  # Brief delay before retry
 

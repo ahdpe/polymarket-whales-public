@@ -10,11 +10,12 @@ import sqlite3
 import json
 from services.polymarket import PolymarketService
 from services.telegram_service import (
-    start_telegram, send_trade_alert, user_filters, 
+    start_telegram, enqueue_trade_alert, user_filters, 
     get_user_categories, get_default_categories, get_user_lang,
     get_user_probability_filter, get_user_side_types,
     get_user_wallet_age_filter, get_user_open_positions_filter,
-    send_admin_notification, set_poly_service, set_insider_alerts_service
+    send_admin_notification, set_poly_service, set_insider_alerts_service,
+    stop_queue_workers
 )
 from services.report_service import generate_report
 from core.filters import get_alert_level
@@ -465,7 +466,7 @@ async def handle_trade(trade_data):
                      f"trader={trader_address[:10]}... value=${value_usd:,.0f} "
                      f"market={market_title[:50]}"
                  )
-             await send_trade_alert(chat_id, msg, whale_key=whale_key, is_saved=is_saved, level_icon=level_icon)
+             await enqueue_trade_alert(chat_id, msg, whale_key=whale_key, is_saved=is_saved, level_icon=level_icon)
         
         # Post to Twitter (if enabled and trade is big enough)
         if twitter_wants:
@@ -709,14 +710,17 @@ async def main():
     try:
         await asyncio.gather(*tasks)
     finally:
+        # Stop queue workers gracefully
+        await stop_queue_workers()
+        
         # Cleanup: cancel all tasks
         for task in tasks:
             if not task.done():
                 task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         logger.info("All tasks cancelled and cleaned up")
 
 if __name__ == "__main__":
