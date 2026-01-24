@@ -139,7 +139,7 @@ TRANSLATIONS = {
 Если в названии есть: nfl, nba, football, soccer, ufc, f1, lakers, goal и др.
 
 💬 Обратная связь: @Andrey\_Os
-💻 [GitHub](https://github.com/ahdpe/polymarket-whales-public)
+📢 Polymarket Insider Signals: @PMInsiderSignals
 🐦 [Twitter/X](https://x.com/PolyMrktWhales)
 
 💝 *Поддержать проект:*
@@ -319,7 +319,7 @@ Keywords: bitcoin, btc, ethereum, eth, solana, doge, pepe, binance, nft, airdrop
 Keywords: nfl, nba, football, soccer, ufc, f1, lakers, goal, etc.
 
 💬 Feedback: @Andrey\_Os
-💻 [GitHub](https://github.com/ahdpe/polymarket-whales-public)
+📢 Polymarket Insider Signals: @PMInsiderSignals
 🐦 [Twitter/X](https://x.com/PolyMrktWhales)
 
 💝 *Support the project:*
