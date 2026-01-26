@@ -29,12 +29,14 @@ from config import (
     TELEGRAM_BOT_TOKEN, FILTERS, OWNER_ID,
     RETRY_SHORT_MAX, MUTE_DURATIONS, FAIL_STREAK_MUTE_THRESHOLD,
     HOTFIX_CHAT_ID, HOTFIX_THRESHOLD, HOTFIX_MUTE,
-    QUEUE_MAX_SIZE, WORKER_COUNT, GLOBAL_RATE, PER_CHAT_RATE
+    QUEUE_MAX_SIZE, WORKER_COUNT, GLOBAL_RATE, PER_CHAT_RATE,
+    DB_ASYNC_OFFLOAD
 )
 from core.localization import get_text
 from core.utils import shorten_trader_name
 from storage import saved_whales
 from services.report_service import generate_report
+from infra.db_runner import run_db
 
 # Global reference to PolymarketService instance (set during startup)
 _poly_service = None
@@ -1390,22 +1392,48 @@ async def callback_save(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     lang = get_user_lang(chat_id)
     key = callback.data.replace("save:", "")
-    whale_id = saved_whales.get_whale_id(key)
+    update_id = callback.update.update_id
+    
+    try:
+        whale_id = await run_db(saved_whales.get_whale_id, key, op_name="saved_whales.get_whale_id")
+        logger.debug(f"db_offload_used={DB_ASYNC_OFFLOAD} op=saved_whales.get_whale_id update_id={update_id}")
+    except Exception as e:
+        logger.exception(f"db_error in callback_save op=saved_whales.get_whale_id update_id={update_id}")
+        return
     
     if not whale_id:
         await callback.answer("Error: trader not found")
         return
     
-    if saved_whales.is_saved(chat_id, whale_id):
+    try:
+        is_saved_result = await run_db(saved_whales.is_saved, chat_id, whale_id, op_name="saved_whales.is_saved")
+        logger.debug(f"db_offload_used={DB_ASYNC_OFFLOAD} op=saved_whales.is_saved update_id={update_id}")
+    except Exception as e:
+        logger.exception(f"db_error in callback_save op=saved_whales.is_saved update_id={update_id}")
+        return
+    
+    if is_saved_result:
         await callback.answer(get_text(lang, 'saved_btn'))
         return
     
     # Get name and icon from whale_keys and save
-    whale_data = saved_whales.get_whale_data(key)
+    try:
+        whale_data = await run_db(saved_whales.get_whale_data, key, op_name="saved_whales.get_whale_data")
+        logger.debug(f"db_offload_used={DB_ASYNC_OFFLOAD} op=saved_whales.get_whale_data update_id={update_id}")
+    except Exception as e:
+        logger.exception(f"db_error in callback_save op=saved_whales.get_whale_data update_id={update_id}")
+        return
+    
     name = whale_data['name'] if whale_data else None
     level_icon = whale_data.get('level_icon') if whale_data else None
     
-    saved_whales.save(chat_id, whale_id, name=name, level_icon=level_icon)
+    try:
+        await run_db(saved_whales.save, chat_id, whale_id, name, level_icon, op_name="saved_whales.save")
+        logger.debug(f"db_offload_used={DB_ASYNC_OFFLOAD} op=saved_whales.save update_id={update_id}")
+    except Exception as e:
+        logger.exception(f"db_error in callback_save op=saved_whales.save update_id={update_id}")
+        return
+    
     await callback.answer(get_text(lang, 'saved_added'))
     
     # Update button in message to show "Saved"
@@ -1495,24 +1523,50 @@ async def callback_note(callback: types.CallbackQuery, state: FSMContext):
     """Handle note button - start FSM for note input."""
     chat_id = callback.message.chat.id
     lang = get_user_lang(chat_id)
+    update_id = callback.update.update_id
     
     parts = callback.data.split(':')
     key = parts[1] if len(parts) > 1 else callback.data.replace("note:", "")
     
-    whale_id = saved_whales.get_whale_id(key)
+    try:
+        whale_id = await run_db(saved_whales.get_whale_id, key, op_name="saved_whales.get_whale_id")
+        logger.debug(f"db_offload_used={DB_ASYNC_OFFLOAD} op=saved_whales.get_whale_id update_id={update_id}")
+    except Exception as e:
+        logger.exception(f"db_error in callback_note op=saved_whales.get_whale_id update_id={update_id}")
+        return
+    
     if not whale_id:
         await callback.answer("Error: trader not found")
         return
     
     # Check if we need to save first? (e.g. from alert directly)
-    if not saved_whales.is_saved(chat_id, whale_id):
+    try:
+        is_saved_result = await run_db(saved_whales.is_saved, chat_id, whale_id, op_name="saved_whales.is_saved")
+        logger.debug(f"db_offload_used={DB_ASYNC_OFFLOAD} op=saved_whales.is_saved update_id={update_id}")
+    except Exception as e:
+        logger.exception(f"db_error in callback_note op=saved_whales.is_saved update_id={update_id}")
+        return
+    
+    if not is_saved_result:
         # We need to fetch whale data, but callback doesn't have it easily.
         # Fallback: just save id
         # Try to get level from whale_keys - use whale_id to get correct data
-        whale_data = saved_whales.get_whale_data_by_id(whale_id)
+        try:
+            whale_data = await run_db(saved_whales.get_whale_data_by_id, whale_id, op_name="saved_whales.get_whale_data_by_id")
+            logger.debug(f"db_offload_used={DB_ASYNC_OFFLOAD} op=saved_whales.get_whale_data_by_id update_id={update_id}")
+        except Exception as e:
+            logger.exception(f"db_error in callback_note op=saved_whales.get_whale_data_by_id update_id={update_id}")
+            return
+        
         name = whale_data.get('name') if whale_data else None
         level_icon = whale_data.get('level_icon') if whale_data else None
-        saved_whales.save(chat_id, whale_id, name=name, level_icon=level_icon)
+        
+        try:
+            await run_db(saved_whales.save, chat_id, whale_id, name, level_icon, op_name="saved_whales.save")
+            logger.debug(f"db_offload_used={DB_ASYNC_OFFLOAD} op=saved_whales.save update_id={update_id}")
+        except Exception as e:
+            logger.exception(f"db_error in callback_note op=saved_whales.save update_id={update_id}")
+            return
     
     await state.set_state(NoteState.waiting_for_note)
     
