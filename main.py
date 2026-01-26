@@ -31,12 +31,23 @@ from services.status_server import start_status_server
 
 # Configure logging
 log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+from logging.handlers import RotatingFileHandler
+
+# Rotating file handler: max 50MB per file, keep 5 backup files (total ~250MB)
+file_handler = RotatingFileHandler(
+    'bot_output.log',
+    mode='a',
+    maxBytes=50 * 1024 * 1024,  # 50MB
+    backupCount=5,
+    encoding='utf-8'
+)
+
 logging.basicConfig(
     level=logging.INFO, 
     format=log_format,
     handlers=[
         logging.StreamHandler(),  # Keep stderr for systemd/journal
-        logging.FileHandler('bot_output.log', mode='a', encoding='utf-8')  # Also write to file
+        file_handler  # Rotating file handler
     ]
 )
 logger = logging.getLogger(__name__)
@@ -629,8 +640,10 @@ async def start_insider_collector():
     tasks = []
     
     # Start Telegram in background
+    logger.info("Creating Telegram task...")
     tg_task = asyncio.create_task(start_telegram())
     tasks.append(tg_task)
+    logger.info("Telegram task created and added to tasks list")
     
     # Start Polymarket Service
     global poly_service

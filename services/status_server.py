@@ -314,6 +314,14 @@ HTML_TEMPLATE = """
                         <span class="stat-value" style="color: var(--text-secondary)">${users.inactive || 0}</span>
                     </div>
                     <div class="stat-row">
+                        <span class="stat-label">⏸️ Paused</span>
+                        <span class="stat-value" style="color: var(--text-secondary)">${users.paused || 0}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">🛑 Blocked</span>
+                        <span class="stat-value" style="color: #ff6b6b">${users.blocked || 0}</span>
+                    </div>
+                    <div class="stat-row">
                         <span class="stat-label">Languages</span>
                         <span class="stat-value">EN: ${users.languages?.en || 0} | RU: ${users.languages?.ru || 0}</span>
                     </div>
@@ -884,7 +892,7 @@ PATTERNS_TEMPLATE = """
             return num.toLocaleString();
         }
         
-        function formatSettings(scenario) {
+        function formatSettings(scenario, type) {
             if (!scenario) return '';
             
             const parts = [];
@@ -933,14 +941,12 @@ PATTERNS_TEMPLATE = """
                 parts.push(`<span class="settings-group">📍 <strong>Positions:</strong> ≤${scenario.max_pos}</span>`);
             }
             
-            // Interval (for CLUSTER and BURST)
+            // Interval (for CLUSTER, BURST, and ACCUMULATION)
             if (scenario.interval) {
-                parts.push(`<span class="settings-group">⏱️ <strong>Interval:</strong> ${scenario.interval}h</span>`);
-            }
-            
-            // Min days (for ACCUMULATION)
-            if (scenario.min_days) {
-                parts.push(`<span class="settings-group">📅 <strong>Min days:</strong> ${scenario.min_days}</span>`);
+                // For ACCUMULATION, interval is in days; for others, in hours
+                const isAccumulation = type === 'ACCUMULATION';
+                const unit = isAccumulation ? 'd' : 'h';
+                parts.push(`<span class="settings-group">⏱️ <strong>Interval:</strong> ${scenario.interval}${unit}</span>`);
             }
             
             return parts.length > 0 ? `<div class="section-settings">${parts.join(' | ')}</div>` : '';
@@ -987,7 +993,7 @@ PATTERNS_TEMPLATE = """
             
             // CLUSTERS
             if (patterns.clusters && patterns.clusters.length > 0) {
-                const clusterSettings = formatSettings(scenarios.CLUSTER);
+                const clusterSettings = formatSettings(scenarios.CLUSTER, 'CLUSTER');
                 html += `
                     <div class="section">
                         <div class="section-header">
@@ -1003,6 +1009,7 @@ PATTERNS_TEMPLATE = """
                                         <th>Volume</th>
                                         <th style="width: 35%;">Buffer Participants</th>
                                         <th>Last Activity</th>
+                                        <th>Why not published</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1027,6 +1034,9 @@ PATTERNS_TEMPLATE = """
                                         <td style="color: var(--text-secondary);">
                                             ${Math.floor((Date.now() / 1000 - p.last_ts)/60)}m ago
                                         </td>
+                                        <td style="color: var(--text-secondary); font-size: 0.9rem;">
+                                            ${p.blocked_reason || '—'}
+                                        </td>
                                     </tr>
                                     `).join('')}
                                 </tbody>
@@ -1038,7 +1048,7 @@ PATTERNS_TEMPLATE = """
             
             // ACCUMULATIONS
             if (patterns.accumulations && patterns.accumulations.length > 0) {
-                const accumulationSettings = formatSettings(scenarios.ACCUMULATION);
+                const accumulationSettings = formatSettings(scenarios.ACCUMULATION, 'ACCUMULATION');
                 html += `
                     <div class="section">
                         <div class="section-header">
@@ -1050,22 +1060,17 @@ PATTERNS_TEMPLATE = """
                                 <thead>
                                     <tr>
                                         <th>Market</th>
-                                        <th>Days</th>
                                         <th>Wallets</th>
                                         <th>Volume</th>
                                         <th style="width: 35%;">Buffer Participants</th>
                                         <th>Last Activity</th>
+                                        <th>Why not published</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     ${patterns.accumulations.map(p => `
                                     <tr>
                                         <td>${p.title.substring(0, 50) + (p.title.length > 50 ? '...' : '')}</td>
-                                        <td>
-                                            <span class="${p.days >= p.min_days ? 'status-good' : 'status-warning'}">
-                                                ${p.days} / ${p.min_days}
-                                            </span>
-                                        </td>
                                         <td>
                                             <span class="${p.wallets >= p.min_wallets ? 'status-good' : 'status-warning'}">
                                                 ${p.wallets} / ${p.min_wallets}
@@ -1079,6 +1084,9 @@ PATTERNS_TEMPLATE = """
                                         </td>
                                         <td style="color: var(--text-secondary);">
                                             ${Math.floor((Date.now() / 1000 - p.last_ts)/60)}m ago
+                                        </td>
+                                        <td style="color: var(--text-secondary); font-size: 0.9rem;">
+                                            ${p.blocked_reason || '—'}
                                         </td>
                                     </tr>
                                     `).join('')}
@@ -1107,6 +1115,7 @@ PATTERNS_TEMPLATE = """
                                         <th>Volume</th>
                                         <th style="width: 35%;">Buffer Participants</th>
                                         <th>Last Activity</th>
+                                        <th>Why not published</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1130,6 +1139,9 @@ PATTERNS_TEMPLATE = """
                                         </td>
                                         <td style="color: var(--text-secondary);">
                                             ${Math.floor((Date.now() / 1000 - p.last_ts)/60)}m ago
+                                        </td>
+                                        <td style="color: var(--text-secondary); font-size: 0.9rem;">
+                                            ${p.blocked_reason || '—'}
                                         </td>
                                     </tr>
                                     `).join('')}

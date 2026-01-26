@@ -116,10 +116,14 @@ def get_user_stats() -> dict:
         side_types = data.get("side_types", {})
         wallet_ages = data.get("wallet_ages", {})
         open_positions = data.get("open_positions", {})
+        blocked_users = data.get("blocked_users", {})  # Track blocked users
         
         total_users = len(filters)
         active_users = sum(1 for v in statuses.values() if v)
-        inactive_users = total_users - active_users
+        blocked_count = len(blocked_users)
+        # Paused = inactive users who are NOT blocked
+        paused_users = total_users - active_users - blocked_count
+        inactive_users = total_users - active_users  # Total inactive (paused + blocked)
         
         # Language distribution
         lang_counter = Counter(languages.values())
@@ -156,6 +160,8 @@ def get_user_stats() -> dict:
             "total": total_users,
             "active": active_users,
             "inactive": inactive_users,
+            "paused": paused_users,  # Manually paused
+            "blocked": blocked_count,  # Blocked the bot
             "bot_enabled": data.get("bot_enabled", True),
             "languages": dict(lang_counter),
             "thresholds": {str(k): v for k, v in sorted(threshold_counter.items())},

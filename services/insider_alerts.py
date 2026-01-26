@@ -45,7 +45,6 @@ DEFAULT_SETTINGS = {
     # ACCUMULATION scenario (slow multi-wallet accumulation)
     'accumulation_enabled': 'false',
     'accumulation_interval_days': '14',
-    'accumulation_min_days': '3',
     'accumulation_min_usd': '10000',
     'accumulation_min_total_usd': '50000',
     'accumulation_min_wallets': '3',
@@ -99,6 +98,48 @@ class InsiderAlertsService:
         self._active_bursts = {}        # market_id -> data
 
         logger.info("InsiderAlertsService v2 (Bold Formatting) initialized")
+
+    def _get_buffer_dict_for_scenario(self, scenario: str) -> Optional[Dict[str, Dict[str, Any]]]:
+        s = (scenario or "").upper()
+        if s == "CLUSTER":
+            return self._active_clusters
+        if s == "ACCUMULATION":
+            return self._active_accumulations
+        if s == "BURST":
+            return self._active_bursts
+        return None
+
+    def _set_blocked_reason(
+        self,
+        buffer_dict: Dict[str, Dict[str, Any]],
+        market_id: str,
+        *,
+        code: str,
+        reason: str,
+    ) -> None:
+        """
+        Non-invasive: store diagnostics for status UI only.
+        Safe to call even if buffer entry doesn't exist.
+        """
+        if not buffer_dict or not market_id:
+            return
+        entry = buffer_dict.get(market_id)
+        if not isinstance(entry, dict):
+            return
+        entry["blocked_code"] = code
+        entry["blocked_reason"] = reason
+        entry["blocked_at"] = int(time.time())
+
+    def _clear_blocked_reason(self, buffer_dict: Dict[str, Dict[str, Any]], market_id: str) -> None:
+        """Clear diagnostics after successful publish or when no longer relevant."""
+        if not buffer_dict or not market_id:
+            return
+        entry = buffer_dict.get(market_id)
+        if not isinstance(entry, dict):
+            return
+        entry.pop("blocked_code", None)
+        entry.pop("blocked_reason", None)
+        entry.pop("blocked_at", None)
 
     def set_bot(self, bot):
         """Set bot instance for sending messages."""
@@ -407,34 +448,61 @@ class InsiderAlertsService:
             unique_wallets = set(t['wallet'] for t in trades)
             total_volume = sum(t['trade_size_usd'] for t in trades)
 
-            # Store as pending/active pattern if it has at least 2 participants or significant volume
-            if len(unique_wallets) >= 2 or total_volume >= min_total * 0.2:
-                 self._active_clusters[market_id] = {
+            # Store as pending/active pattern - any wallet passing basic filters goes to buffer
+            # Buffer accumulates wallets over time
+            if trades:
+                self._active_clusters[market_id] = {
                     'wallets': len(unique_wallets),
                     'wallet_list': list(unique_wallets),
                     'volume': total_volume,
                     'last_ts': max(t['timestamp'] for t in trades) if trades else 0,
                     'title': trades[0].get('market_title', 'Unknown'),
                     'min_wallets': min_wallets,
-                    'min_total': min_total
-                 }
+                    'min_total': min_total,
+                }
 
+            # Check publication conditions
             if len(unique_wallets) < min_wallets:
+                self._set_blocked_reason(
+                    self._active_clusters,
+                    market_id,
+                    code="MIN_WALLETS",
+                    reason=f"wallets {len(unique_wallets)}/{min_wallets}",
+                )
                 return None
             
             if total_volume < min_total:
+                self._set_blocked_reason(
+                    self._active_clusters,
+                    market_id,
+                    code="MIN_TOTAL",
+                    reason=f"volume ${total_volume:,.0f} < ${min_total:,.0f}",
+                )
                 return None
 
             dominant_outcome, directionality = self._calculate_directionality(trades)
 
             if directionality < min_dir:
+                self._set_blocked_reason(
+                    self._active_clusters,
+                    market_id,
+                    code="DIRECTIONALITY_TOO_LOW",
+                    reason=f"direction {directionality:.1f}% < {min_dir:.1f}%",
+                )
                 return None
 
             # Check if already published recently
             cooldown = int(self.settings.get('cooldown_hours', '24'))
             if alerts_storage.was_published('CLUSTER', market_id, dominant_outcome, cooldown):
+                self._set_blocked_reason(
+                    self._active_clusters,
+                    market_id,
+                    code="COOLDOWN_ACTIVE",
+                    reason=f"cooldown {cooldown}h active",
+                )
                 return None
 
+            self._clear_blocked_reason(self._active_clusters, market_id)
             return {
                 'market_id': market_id,
                 'outcome': dominant_outcome,
@@ -454,7 +522,6 @@ class InsiderAlertsService:
     def _check_accumulation(self, market_id: str) -> Optional[Dict[str, Any]]:
         """Check for slow multi-wallet accumulation pattern."""
         try:
-            min_days = int(self.settings.get('accumulation_min_days', '3'))
             min_usd = float(self.settings.get('accumulation_min_usd', '10000'))
             min_total = float(self.settings.get('accumulation_min_total_usd', '50000'))
             min_wallets = int(self.settings.get('accumulation_min_wallets', '3'))
@@ -500,39 +567,61 @@ class InsiderAlertsService:
                 trade_date = datetime.fromtimestamp(trade['timestamp']).date()
                 days_with_activity.add(trade_date)
 
-            # Store pending data for dashboard
-            if len(days_with_activity) >= 1:
-                 self._active_accumulations[market_id] = {
+            # Store pending data for dashboard - any wallet passing basic filters goes to buffer
+            # Buffer accumulates wallets over time
+            if large_trades:
+                self._active_accumulations[market_id] = {
                     'wallets': len(unique_wallets),
                     'wallet_list': list(unique_wallets),
                     'volume': total_volume,
                     'last_ts': max(t['timestamp'] for t in large_trades) if large_trades else 0,
                     'title': large_trades[0].get('market_title', 'Unknown'),
                     'days': len(days_with_activity),
-                    'min_days': min_days,
                     'min_wallets': min_wallets,
-                    'min_total': min_total
-                 }
+                    'min_total': min_total,
+                }
 
-            # Check thresholds
-            if len(days_with_activity) < min_days:
-                return None
-
+            # Check publication conditions
             if len(unique_wallets) < min_wallets:
+                self._set_blocked_reason(
+                    self._active_accumulations,
+                    market_id,
+                    code="MIN_WALLETS",
+                    reason=f"wallets {len(unique_wallets)}/{min_wallets}",
+                )
                 return None
 
             if total_volume < min_total:
+                self._set_blocked_reason(
+                    self._active_accumulations,
+                    market_id,
+                    code="MIN_TOTAL",
+                    reason=f"volume ${total_volume:,.0f} < ${min_total:,.0f}",
+                )
                 return None
 
             dominant_outcome, directionality = self._calculate_directionality(large_trades)
 
             if directionality < min_dir:
+                self._set_blocked_reason(
+                    self._active_accumulations,
+                    market_id,
+                    code="DIRECTIONALITY_TOO_LOW",
+                    reason=f"direction {directionality:.1f}% < {min_dir:.1f}%",
+                )
                 return None
 
             cooldown = int(self.settings.get('cooldown_hours', '24'))
             if alerts_storage.was_published('ACCUMULATION', market_id, dominant_outcome, cooldown):
+                self._set_blocked_reason(
+                    self._active_accumulations,
+                    market_id,
+                    code="COOLDOWN_ACTIVE",
+                    reason=f"cooldown {cooldown}h active",
+                )
                 return None
 
+            self._clear_blocked_reason(self._active_accumulations, market_id)
             return {
                 'market_id': market_id,
                 'outcome': dominant_outcome,
@@ -593,32 +682,60 @@ class InsiderAlertsService:
             unique_wallets = set(t['wallet'] for t in qualifying_trades)
             total_volume = sum(t['trade_size_usd'] for t in qualifying_trades)
 
-            if len(unique_wallets) >= 2 or total_volume >= min_total * 0.2:
-                 self._active_bursts[market_id] = {
+            # Store as pending/active pattern - any wallet passing basic filters goes to buffer
+            # Buffer accumulates wallets over time
+            if qualifying_trades:
+                self._active_bursts[market_id] = {
                     'wallets': len(unique_wallets),
                     'wallet_list': list(unique_wallets),
                     'volume': total_volume,
                     'last_ts': max(t['timestamp'] for t in qualifying_trades) if qualifying_trades else 0,
                     'title': qualifying_trades[0].get('market_title', 'Unknown'),
                     'min_wallets': min_wallets,
-                    'min_total': min_total
-                 }
+                    'min_total': min_total,
+                }
 
+            # Check publication conditions
             if len(unique_wallets) < min_wallets:
+                self._set_blocked_reason(
+                    self._active_bursts,
+                    market_id,
+                    code="MIN_WALLETS",
+                    reason=f"wallets {len(unique_wallets)}/{min_wallets}",
+                )
                 return None
             
             if total_volume < min_total:
+                self._set_blocked_reason(
+                    self._active_bursts,
+                    market_id,
+                    code="MIN_TOTAL",
+                    reason=f"volume ${total_volume:,.0f} < ${min_total:,.0f}",
+                )
                 return None
 
             dominant_outcome, directionality = self._calculate_directionality(qualifying_trades)
 
             if directionality < min_dir:
+                self._set_blocked_reason(
+                    self._active_bursts,
+                    market_id,
+                    code="DIRECTIONALITY_TOO_LOW",
+                    reason=f"direction {directionality:.1f}% < {min_dir:.1f}%",
+                )
                 return None
 
             cooldown = int(self.settings.get('cooldown_hours', '24'))
             if alerts_storage.was_published('BURST', market_id, dominant_outcome, cooldown):
+                self._set_blocked_reason(
+                    self._active_bursts,
+                    market_id,
+                    code="COOLDOWN_ACTIVE",
+                    reason=f"cooldown {cooldown}h active",
+                )
                 return None
 
+            self._clear_blocked_reason(self._active_bursts, market_id)
             return {
                 'market_id': market_id,
                 'outcome': dominant_outcome,
@@ -797,22 +914,47 @@ class InsiderAlertsService:
             channel_id = self.get_channel_id()
             if not channel_id:
                 logger.warning(f"Cannot publish {scenario} alert: no channel_id configured")
+                buffer_dict = self._get_buffer_dict_for_scenario(scenario)
+                if buffer_dict is not None:
+                    self._set_blocked_reason(
+                        buffer_dict,
+                        alert_data.get("market_id", ""),
+                        code="NO_CHANNEL_ID",
+                        reason="no channel_id configured",
+                    )
                 return
 
             if not self._bot:
                 logger.warning(f"Cannot publish {scenario} alert: bot not set")
+                buffer_dict = self._get_buffer_dict_for_scenario(scenario)
+                if buffer_dict is not None:
+                    self._set_blocked_reason(
+                        buffer_dict,
+                        alert_data.get("market_id", ""),
+                        code="BOT_NOT_SET",
+                        reason="bot not set",
+                    )
                 return
 
             import asyncio
             
             # Verify positions before sending (async wrapper)
             async def verify_and_send():
+                buffer_dict = self._get_buffer_dict_for_scenario(scenario)
+                market_id = alert_data.get("market_id", "")
                 try:
                     # Filter out wallets that already sold
-                    verified_data = await self._verify_positions(alert_data)
+                    verified_data = await self._verify_positions(alert_data, scenario)
                     
                     if verified_data is None:
                         logger.info(f"Skipping {scenario} alert: not enough wallets still holding positions")
+                        if buffer_dict is not None:
+                            self._set_blocked_reason(
+                                buffer_dict,
+                                market_id,
+                                code="NOT_ENOUGH_HOLDING",
+                                reason="not enough wallets still holding positions",
+                            )
                         return
                     
                     # Analyze shared funding sources (enrichment only, not filtering)
@@ -861,6 +1003,8 @@ class InsiderAlertsService:
                     )
                     
                     logger.info(f"Published {scenario} alert for market {alert_data['market_id']}")
+                    if buffer_dict is not None:
+                        self._clear_blocked_reason(buffer_dict, market_id)
 
                     # Mark trades as consumed so they don't trigger other scenarios simultaneously
                     # User requirement: "if a trade fell into a signal, it must be cleared from buffer"
@@ -873,11 +1017,27 @@ class InsiderAlertsService:
                     
                 except Exception as e:
                     logger.error(f"Error in verify_and_send: {e}", exc_info=True)
+                    if buffer_dict is not None:
+                        # Keep it short for UI; still helpful for debugging
+                        self._set_blocked_reason(
+                            buffer_dict,
+                            market_id,
+                            code="PUBLISH_ERROR",
+                            reason=str(e)[:180],
+                        )
             
             asyncio.create_task(verify_and_send())
 
         except Exception as e:
             logger.error(f"Error publishing {scenario} alert: {e}", exc_info=True)
+            buffer_dict = self._get_buffer_dict_for_scenario(scenario)
+            if buffer_dict is not None:
+                self._set_blocked_reason(
+                    buffer_dict,
+                    alert_data.get("market_id", ""),
+                    code="PUBLISH_ERROR",
+                    reason=str(e)[:180],
+                )
 
     async def _cleanup_invalid_trades(self, market_id: str) -> None:
         """
@@ -964,7 +1124,7 @@ class InsiderAlertsService:
                     buffer_dict[market_id]['wallets'] = len(valid_wallets)
                     buffer_dict[market_id]['wallet_list'] = valid_wallets
 
-    async def _verify_positions(self, alert_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def _verify_positions(self, alert_data: Dict[str, Any], scenario: str = 'CLUSTER') -> Optional[Dict[str, Any]]:
         """
         Verify that participants still hold significant positions AND still have few total positions.
         Returns filtered alert_data or None if not enough wallets remain.
@@ -973,6 +1133,10 @@ class InsiderAlertsService:
         A wallet is considered valid if:
         1. Position value in this market >= minimum threshold
         2. Current total open positions <= max_positions threshold
+        
+        Args:
+            alert_data: Alert data to verify
+            scenario: Scenario name (CLUSTER, BURST, ACCUMULATION) to use correct settings
         """
         if not self._poly_service:
             logger.debug("No poly_service set, skipping position verification")
@@ -980,18 +1144,20 @@ class InsiderAlertsService:
         
         market_id = alert_data.get('market_id', '')
         trades = alert_data.get('trades', [])
-        min_wallets = int(self.settings.get('cluster_min_wallets', '4'))
         
-        # Get minimum position value threshold (same as min trade size)
-        # This ensures wallet still holds at least the minimum trade amount
-        min_position_value = float(self.settings.get('cluster_min_usd', '5000'))
-        
-        # Get max positions threshold (use the strictest one from scenarios)
-        max_positions = min(
-            int(self.settings.get('burst_max_positions', '3')),
-            int(self.settings.get('cluster_max_positions', '3')),
-            int(self.settings.get('accumulation_max_positions', '3'))
-        )
+        # Get settings based on scenario
+        if scenario == 'BURST':
+            min_wallets = int(self.settings.get('burst_min_wallets', '8'))
+            min_position_value = float(self.settings.get('burst_min_usd', '1000'))
+            max_positions = int(self.settings.get('burst_max_positions', '3'))
+        elif scenario == 'ACCUMULATION':
+            min_wallets = int(self.settings.get('accumulation_min_wallets', '3'))
+            min_position_value = float(self.settings.get('accumulation_min_usd', '10000'))
+            max_positions = int(self.settings.get('accumulation_max_positions', '3'))
+        else:  # CLUSTER (default)
+            min_wallets = int(self.settings.get('cluster_min_wallets', '4'))
+            min_position_value = float(self.settings.get('cluster_min_usd', '5000'))
+            max_positions = int(self.settings.get('cluster_max_positions', '3'))
         
         if not market_id or not trades:
             return alert_data
@@ -1117,7 +1283,7 @@ class InsiderAlertsService:
         # ACCUMULATION status
         status['scenarios']['ACCUMULATION'] = {
             'enabled': self.settings.get('accumulation_enabled', 'false'),
-            'min_days': self.settings.get('accumulation_min_days', '3'),
+            'interval': self.settings.get('accumulation_interval_days', '14'),
             'min_usd': self.settings.get('accumulation_min_usd', '10000'),
             'min_total': self.settings.get('accumulation_min_total_usd', '50000'),
             'min_wallets': self.settings.get('accumulation_min_wallets', '3'),

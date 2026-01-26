@@ -16,7 +16,8 @@ DB_PATH = "data/insider_alerts.db"
 def _get_connection():
     """Get database connection with WAL mode for performance."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    # Set timeout to 5 seconds to prevent indefinite blocking on locks
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     conn.row_factory = sqlite3.Row
@@ -198,6 +199,28 @@ def cleanup_old_trades(ttl_hours: int = 72) -> int:
         )
         deleted = cursor.rowcount
         conn.commit()
+        
+        # Run VACUUM periodically to reclaim space (every 24 hours or if deleted > 10k)
+        import os
+        vacuum_file = os.path.join(os.path.dirname(DB_PATH), '.last_vacuum_insider')
+        last_vacuum = 0
+        if os.path.exists(vacuum_file):
+            try:
+                last_vacuum = float(open(vacuum_file).read().strip())
+            except:
+                pass
+        
+        should_vacuum = (time.time() - last_vacuum > 86400) or deleted > 10000
+        if should_vacuum:
+            try:
+                logger.info(f"Running VACUUM on insider_alerts.db (deleted {deleted} old trades)")
+                conn.execute("VACUUM")
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                with open(vacuum_file, 'w') as f:
+                    f.write(str(time.time()))
+            except Exception as e:
+                logger.error(f"Error during VACUUM: {e}")
+        
         if deleted > 0:
             logger.info(f"Cleaned up {deleted} old trades (older than {ttl_hours}h)")
         return deleted

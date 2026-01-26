@@ -133,7 +133,20 @@ class TradePersistence:
 
         cutoff_ms = int((time.time() - (TTL_HOURS * 3600)) * 1000)
         with self.conn:
-            self.conn.execute("DELETE FROM seen_trades WHERE seen_at < ?", (cutoff_ms,))
+            cursor = self.conn.execute("DELETE FROM seen_trades WHERE seen_at < ?", (cutoff_ms,))
+            deleted = cursor.rowcount
+            
+            # Run VACUUM periodically to reclaim space (every 24 hours or if deleted > 100k)
+            should_vacuum = (time.time() - getattr(self, '_last_vacuum', 0) > 86400) or deleted > 100000
+            if should_vacuum:
+                try:
+                    logger.info(f"Running VACUUM on trades.db (deleted {deleted} old records)")
+                    self.conn.execute("VACUUM")
+                    self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    self._last_vacuum = time.time()
+                except Exception as e:
+                    logger.error(f"Error during VACUUM: {e}")
+        
         self.last_cleanup = time.time()
 
     def close(self):

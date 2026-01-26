@@ -102,11 +102,12 @@ def load_settings():
                 side_types = {int(k): v for k, v in data.get('side_types', {}).items()}
                 wallet_ages = {int(k): v for k, v in data.get('wallet_ages', {}).items()}
                 open_positions = {int(k): v for k, v in data.get('open_positions', {}).items()}
+                blocked_users = {int(k): v for k, v in data.get('blocked_users', {}).items()}  # Track blocked users
                 bot_enabled = data.get('bot_enabled', True)  # Default: enabled
-                return filters, categories, languages, statuses, usernames, probabilities, side_types, wallet_ages, open_positions, bot_enabled
+                return filters, categories, languages, statuses, usernames, probabilities, side_types, wallet_ages, open_positions, blocked_users, bot_enabled
     except Exception as e:
         logger.error(f"Error loading settings: {e}")
-    return {}, {}, {}, {}, {}, {}, {}, {}, {}, True  # Default: enabled
+    return {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, True  # Default: enabled
 
 def save_settings():
     """Save user settings to file."""
@@ -121,6 +122,7 @@ def save_settings():
             'side_types': {str(k): v for k, v in user_side_types.items()},
             'wallet_ages': {str(k): v for k, v in user_wallet_ages.items()},
             'open_positions': {str(k): v for k, v in user_open_positions.items()},
+            'blocked_users': {str(k): v for k, v in blocked_users.items()},  # Save blocked users
             'bot_enabled': bot_enabled
         }
         with open(SETTINGS_FILE, 'w') as f:
@@ -129,7 +131,7 @@ def save_settings():
         logger.error(f"Error saving settings: {e}")
 
 # Load settings on startup
-user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types, user_wallet_ages, user_open_positions, bot_enabled = load_settings()
+user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types, user_wallet_ages, user_open_positions, blocked_users, bot_enabled = load_settings()
 
 # Auto-mute structures for problematic chat_ids
 muted_until = {}  # dict[int, float] - chat_id -> unix timestamp until muted
@@ -300,6 +302,12 @@ def get_default_side_types():
 def ensure_user_exists(chat_id):
     """Ensure user has all necessary settings initialized."""
     chat_id = int(chat_id) # Strict type coercion
+    
+    # If user sends a message, they're not blocked anymore - remove from blocked list
+    if chat_id in blocked_users:
+        logger.info(f"✅ User {chat_id} unblocked the bot (sent a message)")
+        del blocked_users[chat_id]
+        save_settings()
     
     if chat_id not in user_filters:
         logger.info(f"Initialized filters for new/reset user {chat_id}")
@@ -2306,6 +2314,16 @@ async def callback_side_type(callback: CallbackQuery):
         # Avoid error if keyboard is identical
         pass
 
+# Global catch-all handler for unhandled callback queries (MUST be last - after all specific handlers)
+@dp.callback_query()
+async def callback_query_catch_all(callback: CallbackQuery):
+    """Catch-all handler for unhandled callback queries - logs for debugging."""
+    try:
+        logger.warning(f"⚠️ Unhandled callback_query: data='{callback.data}' from chat_id={callback.message.chat.id}")
+        await callback.answer("⚠️ Кнопка не обработана", show_alert=False)
+    except Exception as e:
+        logger.error(f"Error in callback_query_catch_all: {e}")
+
 def get_user_min_threshold(chat_id):
     """Get user's minimum threshold. Return default if not set."""
     return user_filters.get(chat_id, FILTERS[-1]['min'])
@@ -2440,7 +2458,7 @@ async def cmd_admin(message: types.Message):
         "=== ACCUMULATION (Slow multi-wallet accumulation) ===",
         "/tlgrm_accumulation on/off",
         "/tlgrm_accumulation_show / reset",
-        "/tlgrm_accumulation_days 3 — мин. дней",
+        "/tlgrm_accumulation_interval 14 — окно (дней)",
         "/tlgrm_accumulation_min 10000 — мин. размер ($)",
         "/tlgrm_accumulation_total 50000 — мин. общий объём ($)",
         "/tlgrm_accumulation_wallets 3 — мин. кошельков",
@@ -2515,7 +2533,11 @@ async def cmd_stats(message: types.Message):
     
     total_users = len(user_filters)
     active_users = sum(1 for uid in user_statuses if user_statuses.get(uid, True))
-    paused_users = total_users - active_users
+    
+    # Calculate paused vs blocked
+    blocked_count = len(blocked_users)
+    # Paused = inactive users who are NOT blocked
+    paused_users = total_users - active_users - blocked_count
     
     # Filter distribution
     filter_dist = {}
@@ -2538,6 +2560,7 @@ async def cmd_stats(message: types.Message):
 👥 **Пользователи:** {total_users}
 ▶️ Активных: {active_users}
 ⏸️ На паузе: {paused_users}
+🛑 Заблокировали: {blocked_count}
 
 💰 **Фильтры по сумме:**
 """
@@ -2577,7 +2600,12 @@ async def cmd_users(message: types.Message):
     
     for uid in user_filters.keys():
         threshold = user_filters.get(uid, 100)
-        status = "▶️ Active" if user_statuses.get(uid, True) else "⏸️ Paused"
+        if uid in blocked_users:
+            status = "🛑 Blocked"
+        elif user_statuses.get(uid, True):
+            status = "▶️ Active"
+        else:
+            status = "⏸️ Paused"
         lang = user_languages.get(uid, 'ru').upper()
         username = user_usernames.get(uid, f"ID:{uid}")
         
@@ -2627,7 +2655,7 @@ async def cmd_broadcast(message: types.Message):
 @dp.message(Command("mute_status"))
 async def cmd_mute_status(message: types.Message):
     """Show mute statistics (owner only)."""
-    if message.chat.id != OWNER_ID:
+    if message.from_user is None or message.from_user.id != OWNER_ID:
         await message.answer("❌ Нет доступа")
         return
     
@@ -2640,7 +2668,8 @@ async def cmd_mute_status(message: types.Message):
             level = mute_level.get(cid, 0)
             reason = last_fail_reason.get(cid, "unknown")
             streak = fail_streak.get(cid, 0)
-            muted_list.append((cid, secs_left, until_iso, reason, streak, level))
+            username = user_usernames.get(cid, f"ID:{cid}")
+            muted_list.append((cid, secs_left, until_iso, reason, streak, level, username))
     
     muted_list.sort(key=lambda x: x[1], reverse=True)
     top_muted = muted_list[:10]
@@ -2649,22 +2678,29 @@ async def cmd_mute_status(message: types.Message):
     async with _queue_stats_lock:
         retryafter_count = queue_stats.get('retryafter_min', 0)
     
-    msg = f"""**Mute Statistics:**
-    
+    try:
+        msg = f"""**Mute Statistics:**
+        
 **Currently Muted:** {len(muted_list)}
 **RetryAfter (last min):** {retryafter_count}
 
 **Top Muted Users:**
 """
-    if top_muted:
-        for cid, secs_left, until_iso, reason, streak, level in top_muted:
-            hours = int(secs_left // 3600)
-            mins = int((secs_left % 3600) // 60)
-            msg += f"• `{cid}`: {hours}h {mins}m left, until {until_iso}, reason={reason}, streak={streak}, level={level}\n"
-    else:
-        msg += "None"
-    
-    await message.answer(msg, parse_mode="Markdown")
+        if top_muted:
+            for cid, secs_left, until_iso, reason, streak, level, username in top_muted:
+                hours = int(secs_left // 3600)
+                mins = int((secs_left % 3600) // 60)
+                # Escape special Markdown characters in username and reason
+                safe_username = username.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]')
+                safe_reason = str(reason).replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]')
+                msg += f"• `{cid}` (@{safe_username}): {hours}h {mins}m left, until {until_iso}, reason={safe_reason}, streak={streak}, level={level}\n"
+        else:
+            msg += "None"
+        
+        await message.answer(msg, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Error in cmd_mute_status: {e}", exc_info=True)
+        await message.answer(f"❌ Ошибка при получении статистики мута: {e}")
 
 @dp.message(Command("queue_status"))
 async def cmd_queue_status(message: types.Message):
@@ -3305,7 +3341,23 @@ async def cmd_tlgrm(message: types.Message):
         await message.answer("❌ Insider Alerts Service not initialized")
         return
     
-    status = _insider_alerts_service.get_status()
+    # Wrap get_status() in timeout to prevent hanging on DB locks
+    try:
+        import asyncio
+        # Run synchronous get_status() in executor with timeout
+        loop = asyncio.get_event_loop()
+        status = await asyncio.wait_for(
+            loop.run_in_executor(None, _insider_alerts_service.get_status),
+            timeout=5.0
+        )
+    except asyncio.TimeoutError:
+        await message.answer("❌ Timeout getting status (database may be busy). Try again later.")
+        logger.warning("cmd_tlgrm: get_status() timed out after 5s")
+        return
+    except Exception as e:
+        await message.answer(f"❌ Error getting status: {str(e)[:200]}")
+        logger.error(f"cmd_tlgrm: get_status() error: {e}", exc_info=True)
+        return
     enabled_str = "✅ Enabled" if status['enabled'] else "❌ Disabled"
     channel = status.get('channel_id') or '(not set)'
     
@@ -3356,7 +3408,7 @@ Probability: `{prob_text}`
     r_enabled = "✅" if r['enabled'] == 'true' else "❌"
     msg += f"""
 {r_enabled} **ACCUMULATION** (Slow multi-wallet accumulation)
-  • Min days: {r['min_days']}
+  • Interval: {r['interval']}d
   • Max wallet age: {r['max_age']}h
   • Min trade size: ${r['min_usd']}
   • Min total volume: ${r.get('min_total', 'N/A')}
@@ -3687,9 +3739,9 @@ async def cmd_tlgrm_accumulation(message: types.Message):
         await message.answer("Usage: `/tlgrm_accumulation on|off`", parse_mode="Markdown")
 
 
-@dp.message(Command("tlgrm_accumulation_days"))
-async def cmd_tlgrm_accumulation_days(message: types.Message):
-    """Set ACCUMULATION minimum days (owner only)."""
+@dp.message(Command("tlgrm_accumulation_interval"))
+async def cmd_tlgrm_accumulation_interval(message: types.Message):
+    """Set ACCUMULATION interval window in days (owner only)."""
     if message.chat.id != OWNER_ID:
         return
     
@@ -3698,14 +3750,14 @@ async def cmd_tlgrm_accumulation_days(message: types.Message):
     
     parts = message.text.split()
     if len(parts) < 2:
-        current = _insider_alerts_service.settings.get('accumulation_min_days', '3')
-        await message.answer(f"Current: {current} days\nUsage: `/tlgrm_accumulation_days <count>`", parse_mode="Markdown")
+        current = _insider_alerts_service.settings.get('accumulation_interval_days', '14')
+        await message.answer(f"Current: {current} days\nUsage: `/tlgrm_accumulation_interval <days>`", parse_mode="Markdown")
         return
     
     try:
-        days = int(parts[1])
-        _insider_alerts_service.update_setting('accumulation_min_days', str(days))
-        await message.answer(f"✅ ACCUMULATION min days: {days}")
+        days = float(parts[1])
+        _insider_alerts_service.update_setting('accumulation_interval_days', str(days))
+        await message.answer(f"✅ ACCUMULATION interval: {days} days")
     except ValueError:
         await message.answer("❌ Invalid number")
 
@@ -4236,12 +4288,13 @@ async def cmd_tlgrm_accumulation_show(message: types.Message):
     s = _insider_alerts_service.settings
     msg = f"""**ACCUMULATION Configuration:**
 Enabled: {s.get('accumulation_enabled')}
-Min Days: {s.get('accumulation_min_days')}
+Interval: {s.get('accumulation_interval_days')}d
 Max Wallet Age: {s.get('accumulation_wallet_age_hours')}h
 Min Trade Size: ${s.get('accumulation_min_usd')}
 Min Total Volume: ${s.get('accumulation_min_total_usd')}
 Min Wallets: {s.get('accumulation_min_wallets')}
 Min Directionality: {s.get('accumulation_min_direction_pct')}%
+Max Positions: {s.get('accumulation_max_positions')}
 Show Profiles: {s.get('accumulation_include_profiles')}
 """
     await message.answer(msg, parse_mode="Markdown")
@@ -4253,7 +4306,7 @@ async def cmd_tlgrm_accumulation_reset(message: types.Message):
     if not _insider_alerts_service: return
     
     defaults = {
-        'accumulation_min_days': '3',
+        'accumulation_interval_days': '14',
         'accumulation_min_usd': '10000',
         'accumulation_min_total_usd': '50000',
         'accumulation_min_wallets': '3',
@@ -4284,17 +4337,34 @@ async def send_admin_notification(message: str, parse_mode="HTML"):
         logger.error(f"Failed to send admin notification: {e}")
 
 async def start_telegram():
-    logger.info("Starting Telegram Bot Polling...")
-    # Load mute state on startup
-    load_mute_state()
-    
-    # Start queue system
-    start_queue_workers()
-    
-    # Start periodic cleanup task
-    asyncio.create_task(_periodic_cleanup())
-    
-    await dp.start_polling(bot)
+    try:
+        logger.info("Starting Telegram Bot Polling...")
+        # Load mute state on startup
+        load_mute_state()
+        logger.info("Mute state loaded")
+        
+        # Start queue system
+        start_queue_workers()
+        logger.info("Queue workers started")
+        
+        # Start periodic cleanup task
+        asyncio.create_task(_periodic_cleanup())
+        logger.info("Periodic cleanup task started")
+        
+        logger.info("Starting dp.start_polling()...")
+        # Add heartbeat task to monitor polling health
+        async def polling_heartbeat():
+            """Log heartbeat every 5 minutes to confirm polling is alive."""
+            while True:
+                await asyncio.sleep(300)  # 5 minutes
+                logger.info("💓 Telegram polling heartbeat - still alive")
+        asyncio.create_task(polling_heartbeat())
+        
+        await dp.start_polling(bot)
+        logger.info("dp.start_polling() completed (should not happen normally)")
+    except Exception as e:
+        logger.error(f"CRITICAL: Error in start_telegram(): {e}", exc_info=True)
+        raise
 
 async def _periodic_cleanup():
     """Periodic cleanup of mute state (every hour)."""
@@ -4744,7 +4814,9 @@ async def send_trade_alert(chat_id, message_text, whale_key: str = None, is_save
             try:
                 if user_statuses.get(chat_id):
                     user_statuses[chat_id] = False
-                    save_settings()
+                # Mark as blocked (with timestamp)
+                blocked_users[chat_id] = int(time.time())
+                save_settings()
             except Exception as e2:
                 logger.error(f"Error auto-stopping user {chat_id}: {e2}")
             return  # Stop trying
