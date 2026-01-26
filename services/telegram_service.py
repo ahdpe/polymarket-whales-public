@@ -81,6 +81,54 @@ logger = logging.getLogger(__name__)
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()
 
+# Telemetry: update tracking and loop lag monitoring
+_last_update_received_ts = None  # time.time() when last update was received
+_last_update_handled_ts = None   # time.time() when last update was handled
+_telemetry_lock = asyncio.Lock()  # Lock for telemetry variables
+
+# Loop lag monitoring
+_loop_lag_current = 0.0  # Current loop lag in seconds
+_loop_lag_max_5m = 0.0   # Maximum loop lag in last 5 minutes
+_loop_lag_max_reset_time = time.time()  # When to reset max_5m
+
+# Middleware to track update reception and handler execution
+from typing import Callable, Dict, Any, Awaitable
+
+@dp.update.middleware()
+async def telemetry_middleware(
+    handler: Callable[[types.Update, Dict[str, Any]], Awaitable[Any]],
+    event: types.Update,
+    data: Dict[str, Any]
+) -> Any:
+    """Middleware to track when updates are received and handled."""
+    global _last_update_received_ts, _last_update_handled_ts
+    update_id = event.update_id
+    
+    # Track when update is received
+    async with _telemetry_lock:
+        _last_update_received_ts = time.time()
+    
+    # Track when handler starts
+    handler_start_ts = time.time()
+    async with _telemetry_lock:
+        _last_update_handled_ts = handler_start_ts
+    
+    try:
+        result = await handler(event, data)
+        # Track when handler ends (for latency calculation if needed)
+        handler_end_ts = time.time()
+        handler_latency = handler_end_ts - handler_start_ts
+        # Log handler completion (only update_id, no user data)
+        if handler_latency > 1.0:  # Only log slow handlers
+            logger.debug(f"telemetry: update_id={update_id} handler_latency={handler_latency:.3f}s")
+        return result
+    except Exception as e:
+        # Still track end time even on error
+        handler_end_ts = time.time()
+        handler_latency = handler_end_ts - handler_start_ts
+        logger.debug(f"telemetry: update_id={update_id} handler_error latency={handler_latency:.3f}s")
+        raise
+
 # Settings file path
 import os
 import json
@@ -4352,12 +4400,54 @@ async def start_telegram():
         logger.info("Periodic cleanup task started")
         
         logger.info("Starting dp.start_polling()...")
-        # Add heartbeat task to monitor polling health
+        
+        # Start loop lag monitor
+        asyncio.create_task(_loop_lag_monitor())
+        logger.info("Loop lag monitor started")
+        
+        # Add heartbeat task to monitor polling health with telemetry
         async def polling_heartbeat():
-            """Log heartbeat every 5 minutes to confirm polling is alive."""
+            """Log heartbeat every 5 minutes with telemetry metrics."""
             while True:
                 await asyncio.sleep(300)  # 5 minutes
-                logger.info("💓 Telegram polling heartbeat - still alive")
+                
+                # Gather telemetry data
+                async with _telemetry_lock:
+                    last_received = _last_update_received_ts
+                    last_handled = _last_update_handled_ts
+                    loop_lag_curr = _loop_lag_current
+                    loop_lag_max = _loop_lag_max_5m
+                
+                now = time.time()
+                seconds_since_last_received = None if last_received is None else (now - last_received)
+                seconds_since_last_handled = None if last_handled is None else (now - last_handled)
+                
+                # Get tasks count
+                tasks_count = len(asyncio.all_tasks())
+                
+                # Get queue size
+                queue_size = alert_queue.qsize() if alert_queue else None
+                
+                # Build heartbeat log message
+                heartbeat_parts = ["💓 Telegram polling heartbeat"]
+                if seconds_since_last_received is not None:
+                    heartbeat_parts.append(f"last_received={seconds_since_last_received:.1f}s ago")
+                else:
+                    heartbeat_parts.append("last_received=never")
+                
+                if seconds_since_last_handled is not None:
+                    heartbeat_parts.append(f"last_handled={seconds_since_last_handled:.1f}s ago")
+                else:
+                    heartbeat_parts.append("last_handled=never")
+                
+                heartbeat_parts.append(f"loop_lag_current={loop_lag_curr:.3f}s")
+                heartbeat_parts.append(f"loop_lag_max_5m={loop_lag_max:.3f}s")
+                heartbeat_parts.append(f"tasks_count={tasks_count}")
+                
+                if queue_size is not None:
+                    heartbeat_parts.append(f"queue_size={queue_size}")
+                
+                logger.info(" | ".join(heartbeat_parts))
         asyncio.create_task(polling_heartbeat())
         
         await dp.start_polling(bot)
@@ -4371,6 +4461,36 @@ async def _periodic_cleanup():
     while True:
         await asyncio.sleep(3600)  # 1 hour
         cleanup_mute_state()
+
+async def _loop_lag_monitor():
+    """Monitor event loop lag every 1 second."""
+    global _loop_lag_current, _loop_lag_max_5m, _loop_lag_max_reset_time
+    loop = asyncio.get_event_loop()
+    
+    while True:
+        try:
+            # Measure loop lag by scheduling a callback and measuring delay
+            start_time = time.time()
+            await asyncio.sleep(1.0)
+            expected_time = start_time + 1.0
+            actual_time = time.time()
+            lag = actual_time - expected_time
+            
+            async with _telemetry_lock:
+                _loop_lag_current = lag
+                if lag > _loop_lag_max_5m:
+                    _loop_lag_max_5m = lag
+                
+                # Reset max every 5 minutes
+                now = time.time()
+                if now - _loop_lag_max_reset_time >= 300:
+                    _loop_lag_max_5m = lag
+                    _loop_lag_max_reset_time = now
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Error in loop lag monitor: {e}")
+            await asyncio.sleep(1)
 
 
 def get_trade_alert_keyboard(lang: str, whale_key: str, is_saved: bool, level_icon: str = "🦐"):
