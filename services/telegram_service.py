@@ -29,14 +29,12 @@ from config import (
     TELEGRAM_BOT_TOKEN, FILTERS, OWNER_ID,
     RETRY_SHORT_MAX, MUTE_DURATIONS, FAIL_STREAK_MUTE_THRESHOLD,
     HOTFIX_CHAT_ID, HOTFIX_THRESHOLD, HOTFIX_MUTE,
-    QUEUE_MAX_SIZE, WORKER_COUNT, GLOBAL_RATE, PER_CHAT_RATE,
-    DB_ASYNC_OFFLOAD
+    QUEUE_MAX_SIZE, WORKER_COUNT, GLOBAL_RATE, PER_CHAT_RATE
 )
 from core.localization import get_text
 from core.utils import shorten_trader_name
 from storage import saved_whales
 from services.report_service import generate_report
-from infra.db_runner import run_db
 
 # Global reference to PolymarketService instance (set during startup)
 _poly_service = None
@@ -82,54 +80,6 @@ logger = logging.getLogger(__name__)
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()
-
-# Telemetry: update tracking and loop lag monitoring
-_last_update_received_ts = None  # time.time() when last update was received
-_last_update_handled_ts = None   # time.time() when last update was handled
-_telemetry_lock = asyncio.Lock()  # Lock for telemetry variables
-
-# Loop lag monitoring
-_loop_lag_current = 0.0  # Current loop lag in seconds
-_loop_lag_max_5m = 0.0   # Maximum loop lag in last 5 minutes
-_loop_lag_max_reset_time = time.time()  # When to reset max_5m
-
-# Middleware to track update reception and handler execution
-from typing import Callable, Dict, Any, Awaitable
-
-@dp.update.middleware()
-async def telemetry_middleware(
-    handler: Callable[[types.Update, Dict[str, Any]], Awaitable[Any]],
-    event: types.Update,
-    data: Dict[str, Any]
-) -> Any:
-    """Middleware to track when updates are received and handled."""
-    global _last_update_received_ts, _last_update_handled_ts
-    update_id = event.update_id
-    
-    # Track when update is received
-    async with _telemetry_lock:
-        _last_update_received_ts = time.time()
-    
-    # Track when handler starts
-    handler_start_ts = time.time()
-    async with _telemetry_lock:
-        _last_update_handled_ts = handler_start_ts
-    
-    try:
-        result = await handler(event, data)
-        # Track when handler ends (for latency calculation if needed)
-        handler_end_ts = time.time()
-        handler_latency = handler_end_ts - handler_start_ts
-        # Log handler completion (only update_id, no user data)
-        if handler_latency > 1.0:  # Only log slow handlers
-            logger.debug(f"telemetry: update_id={update_id} handler_latency={handler_latency:.3f}s")
-        return result
-    except Exception as e:
-        # Still track end time even on error
-        handler_end_ts = time.time()
-        handler_latency = handler_end_ts - handler_start_ts
-        logger.debug(f"telemetry: update_id={update_id} handler_error latency={handler_latency:.3f}s")
-        raise
 
 # Settings file path
 import os
@@ -1392,48 +1342,22 @@ async def callback_save(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     lang = get_user_lang(chat_id)
     key = callback.data.replace("save:", "")
-    update_id = callback.update.update_id
-    
-    try:
-        whale_id = await run_db(saved_whales.get_whale_id, key, op_name="saved_whales.get_whale_id")
-        logger.debug(f"db_offload_used={DB_ASYNC_OFFLOAD} op=saved_whales.get_whale_id update_id={update_id}")
-    except Exception as e:
-        logger.exception(f"db_error in callback_save op=saved_whales.get_whale_id update_id={update_id}")
-        return
+    whale_id = saved_whales.get_whale_id(key)
     
     if not whale_id:
         await callback.answer("Error: trader not found")
         return
     
-    try:
-        is_saved_result = await run_db(saved_whales.is_saved, chat_id, whale_id, op_name="saved_whales.is_saved")
-        logger.debug(f"db_offload_used={DB_ASYNC_OFFLOAD} op=saved_whales.is_saved update_id={update_id}")
-    except Exception as e:
-        logger.exception(f"db_error in callback_save op=saved_whales.is_saved update_id={update_id}")
-        return
-    
-    if is_saved_result:
+    if saved_whales.is_saved(chat_id, whale_id):
         await callback.answer(get_text(lang, 'saved_btn'))
         return
     
     # Get name and icon from whale_keys and save
-    try:
-        whale_data = await run_db(saved_whales.get_whale_data, key, op_name="saved_whales.get_whale_data")
-        logger.debug(f"db_offload_used={DB_ASYNC_OFFLOAD} op=saved_whales.get_whale_data update_id={update_id}")
-    except Exception as e:
-        logger.exception(f"db_error in callback_save op=saved_whales.get_whale_data update_id={update_id}")
-        return
-    
+    whale_data = saved_whales.get_whale_data(key)
     name = whale_data['name'] if whale_data else None
     level_icon = whale_data.get('level_icon') if whale_data else None
     
-    try:
-        await run_db(saved_whales.save, chat_id, whale_id, name, level_icon, op_name="saved_whales.save")
-        logger.debug(f"db_offload_used={DB_ASYNC_OFFLOAD} op=saved_whales.save update_id={update_id}")
-    except Exception as e:
-        logger.exception(f"db_error in callback_save op=saved_whales.save update_id={update_id}")
-        return
-    
+    saved_whales.save(chat_id, whale_id, name=name, level_icon=level_icon)
     await callback.answer(get_text(lang, 'saved_added'))
     
     # Update button in message to show "Saved"
@@ -1523,50 +1447,24 @@ async def callback_note(callback: types.CallbackQuery, state: FSMContext):
     """Handle note button - start FSM for note input."""
     chat_id = callback.message.chat.id
     lang = get_user_lang(chat_id)
-    update_id = callback.update.update_id
     
     parts = callback.data.split(':')
     key = parts[1] if len(parts) > 1 else callback.data.replace("note:", "")
     
-    try:
-        whale_id = await run_db(saved_whales.get_whale_id, key, op_name="saved_whales.get_whale_id")
-        logger.debug(f"db_offload_used={DB_ASYNC_OFFLOAD} op=saved_whales.get_whale_id update_id={update_id}")
-    except Exception as e:
-        logger.exception(f"db_error in callback_note op=saved_whales.get_whale_id update_id={update_id}")
-        return
-    
+    whale_id = saved_whales.get_whale_id(key)
     if not whale_id:
         await callback.answer("Error: trader not found")
         return
     
     # Check if we need to save first? (e.g. from alert directly)
-    try:
-        is_saved_result = await run_db(saved_whales.is_saved, chat_id, whale_id, op_name="saved_whales.is_saved")
-        logger.debug(f"db_offload_used={DB_ASYNC_OFFLOAD} op=saved_whales.is_saved update_id={update_id}")
-    except Exception as e:
-        logger.exception(f"db_error in callback_note op=saved_whales.is_saved update_id={update_id}")
-        return
-    
-    if not is_saved_result:
+    if not saved_whales.is_saved(chat_id, whale_id):
         # We need to fetch whale data, but callback doesn't have it easily.
         # Fallback: just save id
         # Try to get level from whale_keys - use whale_id to get correct data
-        try:
-            whale_data = await run_db(saved_whales.get_whale_data_by_id, whale_id, op_name="saved_whales.get_whale_data_by_id")
-            logger.debug(f"db_offload_used={DB_ASYNC_OFFLOAD} op=saved_whales.get_whale_data_by_id update_id={update_id}")
-        except Exception as e:
-            logger.exception(f"db_error in callback_note op=saved_whales.get_whale_data_by_id update_id={update_id}")
-            return
-        
+        whale_data = saved_whales.get_whale_data_by_id(whale_id)
         name = whale_data.get('name') if whale_data else None
         level_icon = whale_data.get('level_icon') if whale_data else None
-        
-        try:
-            await run_db(saved_whales.save, chat_id, whale_id, name, level_icon, op_name="saved_whales.save")
-            logger.debug(f"db_offload_used={DB_ASYNC_OFFLOAD} op=saved_whales.save update_id={update_id}")
-        except Exception as e:
-            logger.exception(f"db_error in callback_note op=saved_whales.save update_id={update_id}")
-            return
+        saved_whales.save(chat_id, whale_id, name=name, level_icon=level_icon)
     
     await state.set_state(NoteState.waiting_for_note)
     
@@ -2524,7 +2422,8 @@ async def cmd_admin(message: types.Message):
         "/twitter_ins_min 20000 — мин. для инсайдеров",
         "/twitter_age_ins 2 — макс. возраст инсайдера",
         "/twitter_pos_ins 3 — макс. позиций инсайдера",
-        "/twitter_interval 25 — интервал мин",
+        "/twitter_interval 25 — интервал между твитами (мин)",
+        "/twitter_delay 10 — задержка после сделки (мин)",
         "/twitter_prob 1_99 — вероятность",
         "/twitter_sell on — SELL сигналы",
         "/twitter_split on — SPLIT сигналы",
@@ -2974,7 +2873,8 @@ async def cmd_twitter(message: types.Message):
         get_twitter_interval, get_twitter_probability_range,
         is_twitter_sell_allowed, is_twitter_split_allowed,
         is_twitter_merge_allowed, is_twitter_redeem_allowed,
-        get_twitter_categories, get_tweets_in_last_24h, MAX_TWEETS_PER_24H
+        get_twitter_categories, get_tweets_in_last_24h, MAX_TWEETS_PER_24H,
+        get_twitter_delay_seconds,
     )
     
     settings = get_twitter_settings()
@@ -3007,6 +2907,8 @@ async def cmd_twitter(message: types.Message):
     
     # Filters
     interval = get_twitter_interval()
+    delay_sec = get_twitter_delay_seconds()
+    delay_min = delay_sec // 60
     p_min, p_max = get_twitter_probability_range()
     prob_filter = f"{p_min}% - {p_max}%"
     sell_allowed = "✅" if is_twitter_sell_allowed() else "❌"
@@ -3032,7 +2934,8 @@ async def cmd_twitter(message: types.Message):
 ↔️ MERGE: {merge_allowed}
 🟣 REDEEM: {redeem_allowed}
 📂 Категории: {cats_str}
-⏱ Интервал: {interval} мин
+⏱ Интервал между твитами: {interval} мин
+⏳ Задержка после сделки: {delay_min} мин
 
 Статус:
 {pause_str}
@@ -3045,6 +2948,7 @@ async def cmd_twitter(message: types.Message):
 /twitter_age_ins 2
 /twitter_pos_ins 3
 /twitter_interval 25
+/twitter_delay 10
 /twitter_prob 1 99
 /twitter_sell on
 /twitter_split on
@@ -3199,6 +3103,48 @@ async def cmd_twitter_pos_ins(message: types.Message):
         await message.answer("❌ Invalid count format (must be integer >= 0)")
     except Exception as e:
         logger.error(f"Error setting twitter insider positions: {e}")
+
+
+@dp.message(Command("twitter_delay"))
+async def cmd_twitter_delay(message: types.Message):
+    """Set delay between trade and Twitter signal (in minutes, owner only)."""
+    logger = logging.getLogger(__name__)
+    logger.info(f"twitter_delay called by chat_id={message.chat.id}, text={message.text}")
+
+    chat_id = message.chat.id
+    if chat_id != OWNER_ID:
+        logger.warning(f"twitter_delay: chat_id {chat_id} != OWNER_ID {OWNER_ID}")
+        return
+
+    from services import twitter_service
+
+    try:
+        args = message.text.split()
+        if len(args) < 2:
+            current_sec = twitter_service.get_twitter_delay_seconds()
+            current_min = current_sec // 60
+            await message.answer(
+                f"ℹ️ Текущая задержка: {current_min} мин\n"
+                f"Использование: /twitter_delay <минуты>\n"
+                f"Пример: /twitter_delay 10",
+            )
+            return
+
+        delay_min = int(args[1])
+        if delay_min < 0:
+            await message.answer("❌ Задержка не может быть отрицательной.")
+            return
+
+        twitter_service.set_twitter_delay_seconds(delay_min * 60)
+        await message.answer(f"✅ Задержка Twitter-сигналов установлена: {delay_min} мин.")
+
+    except ValueError:
+        await message.answer(
+            "❌ Укажите число, например: /twitter_delay 10",
+        )
+    except Exception as e:
+        logger.error(f"Error setting twitter delay: {e}")
+        await message.answer("❌ Ошибка при сохранении задержки Twitter.")
         await message.answer(f"❌ Error: {e}")
 
 
@@ -4454,54 +4400,12 @@ async def start_telegram():
         logger.info("Periodic cleanup task started")
         
         logger.info("Starting dp.start_polling()...")
-        
-        # Start loop lag monitor
-        asyncio.create_task(_loop_lag_monitor())
-        logger.info("Loop lag monitor started")
-        
-        # Add heartbeat task to monitor polling health with telemetry
+        # Add heartbeat task to monitor polling health
         async def polling_heartbeat():
-            """Log heartbeat every 5 minutes with telemetry metrics."""
+            """Log heartbeat every 5 minutes to confirm polling is alive."""
             while True:
                 await asyncio.sleep(300)  # 5 minutes
-                
-                # Gather telemetry data
-                async with _telemetry_lock:
-                    last_received = _last_update_received_ts
-                    last_handled = _last_update_handled_ts
-                    loop_lag_curr = _loop_lag_current
-                    loop_lag_max = _loop_lag_max_5m
-                
-                now = time.time()
-                seconds_since_last_received = None if last_received is None else (now - last_received)
-                seconds_since_last_handled = None if last_handled is None else (now - last_handled)
-                
-                # Get tasks count
-                tasks_count = len(asyncio.all_tasks())
-                
-                # Get queue size
-                queue_size = alert_queue.qsize() if alert_queue else None
-                
-                # Build heartbeat log message
-                heartbeat_parts = ["💓 Telegram polling heartbeat"]
-                if seconds_since_last_received is not None:
-                    heartbeat_parts.append(f"last_received={seconds_since_last_received:.1f}s ago")
-                else:
-                    heartbeat_parts.append("last_received=never")
-                
-                if seconds_since_last_handled is not None:
-                    heartbeat_parts.append(f"last_handled={seconds_since_last_handled:.1f}s ago")
-                else:
-                    heartbeat_parts.append("last_handled=never")
-                
-                heartbeat_parts.append(f"loop_lag_current={loop_lag_curr:.3f}s")
-                heartbeat_parts.append(f"loop_lag_max_5m={loop_lag_max:.3f}s")
-                heartbeat_parts.append(f"tasks_count={tasks_count}")
-                
-                if queue_size is not None:
-                    heartbeat_parts.append(f"queue_size={queue_size}")
-                
-                logger.info(" | ".join(heartbeat_parts))
+                logger.info("💓 Telegram polling heartbeat - still alive")
         asyncio.create_task(polling_heartbeat())
         
         await dp.start_polling(bot)
@@ -4515,36 +4419,6 @@ async def _periodic_cleanup():
     while True:
         await asyncio.sleep(3600)  # 1 hour
         cleanup_mute_state()
-
-async def _loop_lag_monitor():
-    """Monitor event loop lag every 1 second."""
-    global _loop_lag_current, _loop_lag_max_5m, _loop_lag_max_reset_time
-    loop = asyncio.get_event_loop()
-    
-    while True:
-        try:
-            # Measure loop lag by scheduling a callback and measuring delay
-            start_time = time.time()
-            await asyncio.sleep(1.0)
-            expected_time = start_time + 1.0
-            actual_time = time.time()
-            lag = actual_time - expected_time
-            
-            async with _telemetry_lock:
-                _loop_lag_current = lag
-                if lag > _loop_lag_max_5m:
-                    _loop_lag_max_5m = lag
-                
-                # Reset max every 5 minutes
-                now = time.time()
-                if now - _loop_lag_max_reset_time >= 300:
-                    _loop_lag_max_5m = lag
-                    _loop_lag_max_reset_time = now
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"Error in loop lag monitor: {e}")
-            await asyncio.sleep(1)
 
 
 def get_trade_alert_keyboard(lang: str, whale_key: str, is_saved: bool, level_icon: str = "🦐"):

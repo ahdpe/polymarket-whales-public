@@ -72,8 +72,3 @@ QUEUE_MAX_SIZE = int(os.getenv("QUEUE_MAX_SIZE", "10000"))
 WORKER_COUNT = int(os.getenv("WORKER_COUNT", "3"))
 GLOBAL_RATE = float(os.getenv("GLOBAL_RATE", "20"))  # messages per second
 PER_CHAT_RATE = float(os.getenv("PER_CHAT_RATE", "0.5"))  # messages per second (1 msg / 2 sec)
-
-# Database configuration (feature flags - disabled by default)
-DB_ASYNC_OFFLOAD = int(os.getenv("DB_ASYNC_OFFLOAD", "0"))  # 0=sync, 1=async via to_thread
-DB_TIMEOUT_SEC = float(os.getenv("DB_TIMEOUT_SEC", "5"))  # Timeout for async DB operations
-DB_LOG_SLOW_SEC = float(os.getenv("DB_LOG_SLOW_SEC", "1.0"))  # Log threshold for slow operations

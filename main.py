@@ -46,8 +46,7 @@ logging.basicConfig(
     level=logging.INFO, 
     format=log_format,
     handlers=[
-        logging.StreamHandler(),  # Keep stderr for systemd/journal
-        file_handler  # Rotating file handler
+        file_handler  # Rotating file handler only (stdout/stderr handled by nohup if needed)
     ]
 )
 logger = logging.getLogger(__name__)
@@ -479,9 +478,9 @@ async def handle_trade(trade_data):
                  )
              await enqueue_trade_alert(chat_id, msg, whale_key=whale_key, is_saved=is_saved, level_icon=level_icon)
         
-        # Post to Twitter (if enabled and trade is big enough)
+        # Post to Twitter with 10‑minute delay and position re‑check
         if twitter_wants:
-            # Prepare trade data for Twitter
+            # Prepare trade data for Twitter (same fields as before)
             twitter_data = {
                 'title': market_title,
                 'market_url': market_url,
@@ -497,7 +496,18 @@ async def handle_trade(trade_data):
                 'wallet_age_str': format_wallet_age(first_activity_ts).replace('\n🕐 Wallet Age: ', '') if first_activity_ts else '',
                 'open_positions_count': pos_data.get('open_count', 999) if pos_data else 999
             }
-            await twitter_service.post_trade_alert(twitter_data)
+
+            # Use trade timestamp if present, otherwise current time
+            trade_ts = trade_data.get('timestamp', time.time())
+            # conditionId is canonical market id for Polymarket positions
+            condition_id = trade_data.get('conditionId') or trade_data.get('market_id', '')
+
+            await twitter_service.enqueue_with_delay(
+                twitter_data,
+                condition_id=condition_id,
+                trader_address=trader_address,
+                trade_timestamp=trade_ts,
+            )
                     
     except Exception as e:
         logger.error(f"Error handling trade: {e}")
@@ -668,6 +678,14 @@ async def start_insider_collector():
     logger.info("Starting PolyWhales...")
     logger.info("Using Polymarket Data API for whale trades...")
     
+    # Wire Polymarket service into Twitter for delayed signals (10‑minute hold + position check)
+    twitter_service = get_twitter_service()
+    if twitter_service and twitter_service.is_configured:
+        try:
+            twitter_service.set_poly_service(poly_service)
+        except Exception as e:
+            logger.error(f"Failed to link TwitterService with PolymarketService: {e}")
+    
     # Run Polymarket trade polling (uses POLL_INTERVAL from polymarket.py)
     trade_polling_task = asyncio.create_task(poly_service.poll_trades(handle_trade))
     tasks.append(trade_polling_task)
@@ -676,11 +694,15 @@ async def start_insider_collector():
     activity_polling_task = asyncio.create_task(poly_service.poll_activities(handle_trade))
     tasks.append(activity_polling_task)
     
-    # Start Twitter queue processor (if Twitter is configured)
+    # Start Twitter queue processors (if Twitter is configured)
     twitter_service = get_twitter_service()
     if twitter_service and twitter_service.is_configured:
         twitter_queue_task = asyncio.create_task(twitter_service.process_queue_periodically(interval=60))
         tasks.append(twitter_queue_task)
+
+        # Delayed queue: check every 30s which trades passed 10‑minute window
+        twitter_delay_task = asyncio.create_task(twitter_service.process_delayed_queue_periodically(interval=30))
+        tasks.append(twitter_delay_task)
     
     # Start insider alerts scenario checker
     if insider_alerts_service:

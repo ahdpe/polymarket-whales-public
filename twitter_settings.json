@@ -5,11 +5,15 @@
   "max_insider_age_days": 1.0,
   "max_insider_positions": 1,
   "tweet_timestamps": [
-    1769437692.1371107
+    1769482211.6961982,
+    1769518855.8238282,
+    1769520411.299675,
+    1769564758.402969,
+    1769566301.91527
   ],
   "paused_until": 1767919753.1062808,
   "interval_minutes": 25,
-  "probability_min": 1,
+  "probability_min": 0,
   "probability_max": 90,
   "probability_filter": "5_95",
   "allow_sell": false,
@@ -20,5 +24,6 @@
     "crypto": false,
     "sports": false,
     "other": true
-  }
+  },
+  "delay_seconds": 600
 }

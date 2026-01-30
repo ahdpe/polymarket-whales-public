@@ -516,6 +516,70 @@ def was_published(
         conn.close()
 
 
+def try_mark_published_atomic(
+    scenario: str,
+    market_id: str,
+    outcome: str,
+    cooldown_hours: int = 24,
+    market_title: str = None,
+    total_volume: float = 0.0,
+    participants_count: int = 0,
+    wallet_list: List[str] = None
+) -> bool:
+    """
+    Atomically check if already published and mark as published if not.
+    This prevents race conditions when multiple threads/processes try to publish the same alert.
+    
+    Args:
+        scenario: Scenario name (CLUSTER, REPEAT, BURST)
+        market_id: Market identifier
+        outcome: YES or NO
+        cooldown_hours: How long to suppress duplicates
+        market_title: Market title for record
+        total_volume: Total volume for record
+        participants_count: Number of participants for record
+        wallet_list: List of wallets for record
+    
+    Returns:
+        True if successfully marked (was not already published), False if already published
+    """
+    import json
+    cutoff = int(time.time()) - (cooldown_hours * 3600)
+    conn = _get_connection()
+    try:
+        # First check if already published within cooldown
+        row = conn.execute("""
+            SELECT timestamp FROM alerts_published
+            WHERE scenario = ? AND market_id = ? AND outcome = ?
+              AND timestamp >= ?
+        """, (scenario, market_id, outcome, cutoff)).fetchone()
+        
+        if row is not None:
+            # Already published, return False
+            return False
+        
+        # Not published yet - mark it now atomically
+        wallet_list_json = json.dumps(wallet_list) if wallet_list else None
+        conn.execute("""
+            INSERT OR REPLACE INTO alerts_published 
+            (scenario, market_id, outcome, timestamp, market_title, total_volume, participants_count, wallet_list)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            scenario,
+            market_id,
+            outcome,
+            int(time.time()),
+            market_title,
+            total_volume,
+            participants_count,
+            wallet_list_json
+        ))
+        conn.commit()
+        return True  # Successfully marked
+    finally:
+        conn.close()
+
+
 def cleanup_old_published(days: int = 7) -> int:
     """
     Clean up old published records.

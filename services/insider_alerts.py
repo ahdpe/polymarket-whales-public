@@ -824,7 +824,25 @@ class InsiderAlertsService:
         
         # Add shared funding warning if detected
         if shared_wallets:
-            msg += "⚠️ Shared funding detected\n"
+            msg += "⚠️ Shared funding detected"
+            # Add link(s) to funding source(s) if available
+            shared_sources = alert_data.get('shared_sources', [])
+            if shared_sources:
+                source_links = []
+                for source in shared_sources:
+                    # Format address: first 10 chars + last 4 chars
+                    source_display = f"{source[:10]}...{source[-4:]}" if len(source) > 14 else source
+                    source_url = f"https://polygonscan.com/address/{source}"
+                    source_links.append(f"[{source_display}]({source_url})")
+                
+                if len(source_links) == 1:
+                    msg += f"\nSource: {source_links[0]}"
+                else:
+                    msg += f"\nSources:\n"
+                    for link in source_links:
+                        msg += f"• {link}\n"
+            else:
+                msg += "\n"
 
         if include_profiles:
             msg += "\nParticipants:\n"
@@ -957,25 +975,58 @@ class InsiderAlertsService:
                             )
                         return
                     
+                    # Extract wallet list from verified trades (needed for atomic check)
+                    wallet_list = list(set(
+                        t.get('wallet') for t in verified_data.get('trades', []) 
+                        if t.get('wallet')
+                    ))
+                    
+                    # CRITICAL: Atomically check and mark as published BEFORE sending
+                    # This prevents duplicate sends when multiple check_scenarios calls happen concurrently
+                    cooldown = int(self.settings.get('cooldown_hours', '24'))
+                    market_title = alert_data.get('trade_title') or verified_data.get('trades', [{}])[0].get('market_title', '')
+                    
+                    was_marked = alerts_storage.try_mark_published_atomic(
+                        scenario=scenario,
+                        market_id=alert_data['market_id'],
+                        outcome=alert_data.get('outcome', ''),
+                        cooldown_hours=cooldown,
+                        market_title=market_title,
+                        total_volume=alert_data.get('total_volume', 0),
+                        participants_count=len(verified_data.get('trades', [])),
+                        wallet_list=wallet_list
+                    )
+                    
+                    if not was_marked:
+                        # Another process/thread already published this alert (race condition prevented)
+                        logger.info(f"Skipping {scenario} alert: already published by another process (race condition prevented)")
+                        if buffer_dict is not None:
+                            self._set_blocked_reason(
+                                buffer_dict,
+                                market_id,
+                                code="ALREADY_PUBLISHED",
+                                reason="already published (race condition prevented)",
+                            )
+                        return
+                    
                     # Analyze shared funding sources (enrichment only, not filtering)
                     shared_wallets = set()
+                    shared_sources = []
                     try:
                         from services.shared_funding import analyze_shared_funding
-                        
-                        # Extract wallet list from trades
-                        wallet_list = list(set(
-                            t.get('wallet') for t in verified_data.get('trades', []) 
-                            if t.get('wallet')
-                        ))
                         
                         if wallet_list:
                             funding_result = await analyze_shared_funding(scenario, wallet_list)
                             shared_wallets = funding_result.get('shared_wallets', set())
+                            shared_sources = funding_result.get('shared_sources', [])
                             
                             if funding_result.get('has_shared'):
-                                logger.info(f"Shared funding detected in {scenario}: {len(shared_wallets)} wallets")
+                                logger.info(f"Shared funding detected in {scenario}: {len(shared_wallets)} wallets from {len(shared_sources)} source(s)")
                     except Exception as e:
                         logger.debug(f"Shared funding check skipped: {e}")
+                    
+                    # Add shared_sources to verified_data so _format_alert_message can access it
+                    verified_data['shared_sources'] = shared_sources
                     
                     message = self._format_alert_message(scenario, verified_data, shared_wallets=shared_wallets)
                     
@@ -984,22 +1035,6 @@ class InsiderAlertsService:
                         text=message,
                         parse_mode='Markdown',
                         disable_web_page_preview=False
-                    )
-                    
-                    # Extract wallet list from verified trades
-                    wallet_list = list(set(
-                        t.get('wallet') for t in verified_data.get('trades', []) 
-                        if t.get('wallet')
-                    ))
-                    
-                    alerts_storage.mark_published(
-                        scenario=scenario,
-                        market_id=alert_data['market_id'],
-                        outcome=alert_data.get('outcome', ''),
-                        market_title=alert_data.get('trade_title') or verified_data.get('trades', [{}])[0].get('market_title', ''),
-                        total_volume=alert_data.get('total_volume', 0),
-                        participants_count=len(verified_data.get('trades', [])),
-                        wallet_list=wallet_list
                     )
                     
                     logger.info(f"Published {scenario} alert for market {alert_data['market_id']}")

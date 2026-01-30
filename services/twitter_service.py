@@ -20,8 +20,10 @@ logger = logging.getLogger(__name__)
 
 # Twitter settings file (stores min_alert_usd, enabled status, pause info)
 TWITTER_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), '..', 'twitter_settings.json')
-# Twitter queue file (stores pending queue)
+# Twitter queue file (stores pending queue for rate limits)
 TWITTER_QUEUE_FILE = os.path.join(os.path.dirname(__file__), '..', 'twitter_queue.json')
+# Delayed queue file (stores trades waiting for 10‑minute hold + position re‑check)
+TWITTER_DELAY_QUEUE_FILE = os.path.join(os.path.dirname(__file__), '..', 'twitter_delay_queue.json')
 
 # Rate limit constants
 DEFAULT_TWEET_INTERVAL_SEC = 25 * 60  # 25 minutes default
@@ -84,7 +86,8 @@ DEFAULT_SETTINGS = {
         'crypto': True,
         'sports': True,
         'other': True
-    }
+    },
+    'delay_seconds': 600,         # Delay before tweeting after trade (10 minutes)
 }
 
 # In-memory settings (loaded on startup)
@@ -160,6 +163,19 @@ def set_twitter_min_alert(min_usd: int) -> None:
     settings['min_alert_usd'] = min_usd
     _save_settings()
     logger.info(f"Twitter min alert set to ${min_usd:,}")
+
+
+def get_twitter_delay_seconds() -> int:
+    """Get delay before tweeting after trade (in seconds)."""
+    return int(_load_settings().get('delay_seconds', 600))
+
+
+def set_twitter_delay_seconds(delay_seconds: int) -> None:
+    """Set delay before tweeting after trade (in seconds)."""
+    settings = _load_settings()
+    settings['delay_seconds'] = max(0, int(delay_seconds))
+    _save_settings()
+    logger.info(f"Twitter delay set to {settings['delay_seconds']} seconds")
 
 
 def set_twitter_enabled(enabled: bool) -> None:
@@ -458,9 +474,16 @@ class TwitterService:
         self.max_queue_size = 10  # Maximum tweets in queue
         self._queue_lock = None  # Will be initialized when needed
         
+         # Delayed queue for 10‑minute hold + position re‑check
+        self.delayed_queue = []  # List of dicts with twitter_data + metadata
+        self._delayed_lock = None  # Initialized lazily
+        self.delayed_queue_file = TWITTER_DELAY_QUEUE_FILE
+        self.poly_service = None  # Set from main.py to re-check open positions
+        
         if self.is_configured:
             self._init_client()
             self._load_queue()  # Load queue from disk
+            self._load_delayed_queue()  # Load delayed queue from disk
             logger.info(f"TwitterService initialized successfully (queue size: {len(self.pending_queue)})")
         else:
             logger.warning("TwitterService not configured - missing API keys")
@@ -1210,6 +1233,159 @@ class TwitterService:
                 # Save queue to disk
                 self._save_queue()
     
+    def _get_delayed_lock(self):
+        """Get or create lock for delayed queue operations."""
+        if self._delayed_lock is None:
+            self._delayed_lock = asyncio.Lock()
+        return self._delayed_lock
+
+    def _load_delayed_queue(self):
+        """Load delayed queue (10‑minute hold) from disk."""
+        try:
+            if os.path.exists(self.delayed_queue_file):
+                with open(self.delayed_queue_file, 'r') as f:
+                    data = json.load(f)
+                    # Basic validation: ensure it's a list of dicts
+                    if isinstance(data, list):
+                        self.delayed_queue = [item for item in data if isinstance(item, dict)]
+                    else:
+                        self.delayed_queue = []
+                if self.delayed_queue:
+                    logger.info(f"Loaded {len(self.delayed_queue)} items from Twitter delayed queue")
+        except Exception as e:
+            logger.error(f"Error loading Twitter delayed queue: {e}")
+            self.delayed_queue = []
+
+    def _save_delayed_queue(self):
+        """Persist delayed queue to disk."""
+        try:
+            with open(self.delayed_queue_file, 'w') as f:
+                json.dump(self.delayed_queue, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving Twitter delayed queue: {e}")
+
+    def set_poly_service(self, poly_service):
+        """Inject PolymarketService instance for position verification before tweeting."""
+        self.poly_service = poly_service
+        if poly_service:
+            logger.info("TwitterService linked to PolymarketService for position re-checks")
+
+    async def enqueue_with_delay(
+        self,
+        twitter_data: dict,
+        *,
+        condition_id: str,
+        trader_address: str,
+        trade_timestamp: float,
+        delay_seconds: int | None = None,
+    ) -> None:
+        """
+        Enqueue trade for delayed Twitter posting.
+        
+        Trade will be eligible for tweeting only after `delay_seconds`
+        and only if wallet still holds a position on this market.
+        """
+        if not self.is_configured:
+            logger.debug("Twitter not configured, skipping delayed enqueue")
+            return
+
+        # Resolve delay: explicit argument has priority over settings
+        if delay_seconds is None:
+            try:
+                delay_seconds = int(_load_settings().get('delay_seconds', 600))
+            except Exception:
+                delay_seconds = 600
+
+        # Normalize timestamp
+        try:
+            trade_ts = float(trade_timestamp or time.time())
+        except (TypeError, ValueError):
+            trade_ts = time.time()
+
+        ready_at = trade_ts + max(0, delay_seconds)
+
+        entry = {
+            "twitter_data": twitter_data,
+            "condition_id": condition_id or "",
+            "trader_address": trader_address or "",
+            "trade_ts": trade_ts,
+            "ready_at": ready_at,
+        }
+
+        async with self._get_delayed_lock():
+            self.delayed_queue.append(entry)
+            self._save_delayed_queue()
+            logger.info(
+                f"Twitter delayed enqueue: trader={trader_address[:10]}..., "
+                f"market={condition_id[:10]}..., ready_in={int(ready_at - time.time())}s"
+            )
+
+    async def _process_delayed_queue_once(self):
+        """
+        Process delayed queue:
+        - Only consider trades whose ready_at has passed (>= 10 minutes since trade)
+        - For each, verify wallet still holds position on this market
+        - If yes, forward to standard Twitter posting pipeline
+        - In all cases, remove processed entries from delayed queue
+        """
+        async with self._get_delayed_lock():
+            if not self.delayed_queue:
+                return
+
+            now = time.time()
+            remaining = []
+
+            for entry in self.delayed_queue:
+                ready_at = float(entry.get("ready_at", 0))
+                condition_id = entry.get("condition_id") or ""
+                trader_address = entry.get("trader_address") or ""
+                twitter_data = entry.get("twitter_data") or {}
+
+                # Not yet ready – keep in queue
+                if now < ready_at:
+                    remaining.append(entry)
+                    continue
+
+                # Must have both market and trader to verify
+                if not condition_id or not trader_address:
+                    logger.info("Dropping delayed Twitter entry: missing condition_id or trader_address")
+                    continue
+
+                if not self.poly_service:
+                    # Polymarket service not wired – safer to skip tweeting than post without check
+                    logger.warning(
+                        f"Skipping delayed Twitter entry for {trader_address[:10]}... "
+                        f"(no PolymarketService injected for position check)"
+                    )
+                    continue
+
+                try:
+                    position_value = await self.poly_service.check_wallet_has_position(trader_address, condition_id)
+                except Exception as e:
+                    logger.error(
+                        f"Error checking position before Twitter post for {trader_address[:10]}...: {e}"
+                    )
+                    # On error, act conservatively and skip this tweet
+                    continue
+
+                if position_value <= 0:
+                    logger.info(
+                        f"Skipping Twitter signal: wallet {trader_address[:10]}... "
+                        f"no longer holds market {condition_id[:10]}..."
+                    )
+                    continue
+
+                # Wallet still holds position – forward to normal Twitter pipeline
+                logger.info(
+                    f"Delayed Twitter signal ready: wallet {trader_address[:10]}..., "
+                    f"market {condition_id[:10]}..., position=${position_value:,.0f}"
+                )
+                await self.post_trade_alert(twitter_data)
+
+            # Replace queue with remaining entries and persist
+            self.delayed_queue = remaining
+            self._save_delayed_queue()
+    
     async def process_queue_periodically(self, interval=60):
         """Background task to periodically check and process pending queue."""
         logger.info("Twitter queue processor started")
@@ -1220,6 +1396,16 @@ class TwitterService:
             except Exception as e:
                 logger.error(f"Error in queue processor: {e}")
                 await asyncio.sleep(interval)
+    
+    async def process_delayed_queue_periodically(self, interval=30):
+        """Background task: periodically process delayed (10‑minute hold) queue."""
+        logger.info("Twitter delayed queue processor started")
+        while True:
+            try:
+                await self._process_delayed_queue_once()
+            except Exception as e:
+                logger.error(f"Error in delayed queue processor: {e}")
+            await asyncio.sleep(interval)
 
 
 # Global instance (lazy initialization)

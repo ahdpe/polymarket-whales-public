@@ -242,12 +242,14 @@ async def analyze_shared_funding(scenario: str, wallets: List[str]) -> Dict[str,
     Returns:
         {
             "shared_wallets": set of wallet addresses that share funding source,
-            "has_shared": bool indicating if shared funding was detected
+            "has_shared": bool indicating if shared funding was detected,
+            "shared_sources": list of source addresses (EOA) that funded multiple wallets
         }
     """
     result = {
         "shared_wallets": set(),
-        "has_shared": False
+        "has_shared": False,
+        "shared_sources": []  # List of source addresses that funded multiple wallets
     }
     
     if not wallets or len(wallets) < 2:
@@ -285,9 +287,11 @@ async def analyze_shared_funding(scenario: str, wallets: List[str]) -> Dict[str,
             
             # Find groups meeting threshold
             shared_wallets: Set[str] = set()
+            shared_sources: List[str] = []
             for source, wallets_from_source in source_to_wallets.items():
                 if len(wallets_from_source) >= threshold:
                     shared_wallets.update(wallets_from_source)
+                    shared_sources.append(source)  # Add source address
                     logger.info(
                         f"Shared funding detected: {len(wallets_from_source)} wallets "
                         f"from source {source[:10]}..."
@@ -296,6 +300,7 @@ async def analyze_shared_funding(scenario: str, wallets: List[str]) -> Dict[str,
             if shared_wallets:
                 result["shared_wallets"] = shared_wallets
                 result["has_shared"] = True
+                result["shared_sources"] = shared_sources  # Return list of source addresses
         
     except Exception as e:
         logger.error(f"Error in shared funding analysis: {e}")
