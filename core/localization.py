@@ -3,7 +3,7 @@
 TRANSLATIONS = {
     'ru': {
         # Start message
-        'welcome': "🐋 *Polymarket Whale Alerts*\n\nКрупные сделки на Polymarket — в реальном времени.\n\n*Что умеет бот:*\n• 🔔 Уведомления от $500 до $100,000+\n• 🎯 Фильтры: сумма, категории, вероятность, типы, возраст, позиции\n• 📊 Аналитика: PnL, возраст кошелька, открытые позиции\n• 🔗 Быстрые ссылки на профили\n• ⭐ Избранное — сохранённые трейдеры, заметки и уведомления об их сделках ($500+)\n\nДля настройки уведомлений нажми кнопку ⚙️ **Фильтры** в меню ниже.",
+        'welcome': "🐋 *Polymarket Whale Alerts*\n\nКрупные сделки на [Polymarket](https://polymarket.com?via=PolymarketWhaleAlerts) — в реальном времени.\n\n*Что умеет бот:*\n• 🔔 Уведомления от $500 до $100,000+\n• 🎯 Фильтры: сумма, категории, вероятность, типы, возраст, позиции\n• 📊 Аналитика: PnL, возраст кошелька, открытые позиции\n• 🔗 Быстрые ссылки на профили\n• ⭐ Избранное — сохранённые трейдеры, заметки и уведомления об их сделках ($500+)\n\nДля настройки уведомлений нажми кнопку ⚙️ **Фильтры** в меню ниже.",
         
         # Buttons
         'btn_filters': "⚙️ Фильтры",
@@ -98,7 +98,7 @@ TRANSLATIONS = {
         
         # About
         'about': """*Polymarket Whale Alerts* 🐋
-Мониторинг крупных сделок на [Polymarket](https://polymarket.com) в реальном времени.
+Мониторинг крупных сделок на [Polymarket](https://polymarket.com?via=PolymarketWhaleAlerts) в реальном времени.
 
 *Функционал:*
 • 🔔 Уведомления о сделках от $500 до $100,000+
@@ -184,7 +184,7 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
     
     'en': {
         # Start message
-        'welcome': "🐋 *Polymarket Whale Alerts*\n\nLarge trades on Polymarket — in real-time.\n\n*What the bot can do:*\n• 🔔 Alerts from $500 to $100,000+\n• 🎯 Filters: amount, categories, probability, types, age, positions\n• 📊 Analytics: PnL, wallet age, open positions\n• 🔗 Quick links to profiles\n• ⭐ Favorites — saved traders, notes and notifications about their trades ($500+)\n\nTo configure alerts, press the ⚙️ **Filters** button in the menu below.",
+        'welcome': "🐋 *Polymarket Whale Alerts*\n\nLarge trades on [Polymarket](https://polymarket.com?via=PolymarketWhaleAlerts) — in real-time.\n\n*What the bot can do:*\n• 🔔 Alerts from $500 to $100,000+\n• 🎯 Filters: amount, categories, probability, types, age, positions\n• 📊 Analytics: PnL, wallet age, open positions\n• 🔗 Quick links to profiles\n• ⭐ Favorites — saved traders, notes and notifications about their trades ($500+)\n\nTo configure alerts, press the ⚙️ **Filters** button in the menu below.",
         
         # Buttons
         'btn_filters': "⚙️ Filters",
@@ -278,7 +278,7 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
         
         # About
         'about': """*Polymarket Whale Alerts* 🐋
-Real-time monitoring of large trades on [Polymarket](https://polymarket.com).
+Real-time monitoring of large trades on [Polymarket](https://polymarket.com?via=PolymarketWhaleAlerts).
 
 *Functionality:*
 • 🔔 Trade alerts from $500 to $100,000+

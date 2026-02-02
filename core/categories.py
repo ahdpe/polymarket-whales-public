@@ -151,6 +151,14 @@ SPORTS_KEYWORDS = [
     'draw', 'tie', 'o/u', 'over/under', 'totals',
 ]
 
+# Esports keywords — checked before geopolitics so "Counter-Strike" isn't treated as "strike"
+ESPORTS_KEYWORDS = [
+    'counter-strike', 'counter strike', 'cs:go', 'cs2', 'cs go',
+    'esports', 'e-sports', 'iem ', 'iem)', 'iem:', 'bo3', 'bo5',
+    'dota', 'dota 2', 'league of legends', 'lol ', 'valorant',
+    'overwatch', 'r6', 'rainbow six', 'rocket league', 'fifa esports',
+]
+
 
 def detect_category(title: str, slug: str = "", url: str = "") -> str:
     """
@@ -159,6 +167,11 @@ def detect_category(title: str, slug: str = "", url: str = "") -> str:
     """
     # Combine title and slug for search (slug is very useful for categories like /sports/nba/...)
     text_to_search = (title + " " + slug).lower()
+    
+    # Esports first — so "Counter-Strike" etc. are sports, not geopolitics ("strike")
+    for keyword in ESPORTS_KEYWORDS:
+        if keyword in text_to_search:
+            return 'sports'
     
     # First, check for explicit non-sports categories (economics, politics, etc.)
     # These should override URL-based sports detection

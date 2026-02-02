@@ -3,6 +3,7 @@ Insider Alerts Detection Service.
 Analyzes trading patterns to detect coordinated activity by fresh wallets.
 """
 import logging
+import os
 import time
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timedelta
@@ -166,9 +167,9 @@ class InsiderAlertsService:
         return self.settings.get('enabled', 'false').lower() == 'true'
 
     def get_channel_id(self) -> Optional[str]:
-        """Get configured Telegram channel ID."""
-        channel_id = self.settings.get('channel_id', '')
-        return channel_id if channel_id else None
+        """Get configured Telegram channel ID (env INSIDER_ALERTS_CHANNEL_ID or DB)."""
+        channel_id = os.environ.get('INSIDER_ALERTS_CHANNEL_ID') or self.settings.get('channel_id', '')
+        return channel_id.strip() if channel_id else None
 
     def process_trade(self, trade_data: Dict[str, Any]) -> None:
         """
