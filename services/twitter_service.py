@@ -15,6 +15,7 @@ import asyncio
 import time
 import random
 from typing import Optional
+from services.telegram_service import add_polymarket_ref
 
 logger = logging.getLogger(__name__)
 
@@ -733,7 +734,7 @@ class TwitterService:
                  # Construct valid profile link
                  profile_link = ""
                  if trader_address and trader_address.startswith('0x'):
-                      profile_link = f"Profile: polymarket.com/profile/{trader_address}"
+                      profile_link = f"https://polymarket.com/profile/{trader_address}"
                  
                  # Build display for trader
                  # Use same logic as standard but maybe simpler or consistent
@@ -746,7 +747,7 @@ class TwitterService:
                       t_display = f"Fresh wallet: {trader_address} 🐋"
 
                  lines = [
-                    f"Market: {market_title}",
+                    market_title,
                     "",
                     insider_text,
                     "",
@@ -765,11 +766,11 @@ class TwitterService:
                  tweet = "\n".join(lines)
                  
                  # Truncation logic (same as standard)
-                 if len(tweet) > 280:
-                    max_title_len = 280 - (len(tweet) - len(market_title)) - 3
+                 if len(tweet) > 4000:
+                    max_title_len = 4000 - (len(tweet) - len(market_title)) - 3
                     if max_title_len > 20:
                         market_title = market_title[:max_title_len] + "..."
-                        lines[0] = f"Market: {market_title}"
+                        lines[0] = market_title
                         tweet = "\n".join(lines)
                  
                  return tweet
@@ -976,7 +977,7 @@ class TwitterService:
         
         # Build tweet lines (strictly multi-line with blank lines)
         lines = [
-            f"Market: {market_title}",
+            market_title,
             "",
             first_line,
             money_line,
@@ -990,16 +991,21 @@ class TwitterService:
             else:
                 lines.append(f"Wallet age: {wallet_age_str}")
         
+        # Add profile link to whale tweets
+        if trader_address and trader_address.startswith('0x'):
+            profile_link = f"https://polymarket.com/profile/{trader_address}"
+            lines.append(profile_link)
+        
         # Join with newlines
         tweet = "\n".join(lines)
         
-        # Ensure tweet is under 280 chars
-        if len(tweet) > 280:
+        # Ensure tweet is under 4000 chars
+        if len(tweet) > 4000:
             # Truncate market title
-            max_title_len = 280 - (len(tweet) - len(market_title)) - 3
+            max_title_len = 4000 - (len(tweet) - len(market_title)) - 3
             if max_title_len > 20:
                 market_title = market_title[:max_title_len] + "..."
-                lines[0] = f"Market: {market_title}"
+                lines[0] = market_title
                 tweet = "\n".join(lines)
         
         return tweet
@@ -1013,6 +1019,7 @@ class TwitterService:
         try:
             # Run in executor to avoid blocking
             loop = asyncio.get_event_loop()
+            tweet_text = add_polymarket_ref(tweet_text).replace("via=PolymarketWhaleAlerts", "via=PmWhlAlerts")
             response = await loop.run_in_executor(
                 None,
                 lambda: self.client.create_tweet(text=tweet_text)
@@ -1380,6 +1387,42 @@ class TwitterService:
                     f"Delayed Twitter signal ready: wallet {trader_address[:10]}..., "
                     f"market {condition_id[:10]}..., position=${position_value:,.0f}"
                 )
+                
+                # Re-fetch wallet age with cache bypass for accurate Twitter data
+                try:
+                    fresh_first_activity = await self.poly_service.get_trader_first_activity(
+                        trader_address, bypass_cache=True
+                    )
+                    if fresh_first_activity:
+                        # Calculate age string
+                        import time as time_module
+                        age_seconds = time_module.time() - fresh_first_activity
+                        if age_seconds >= 0:
+                            days = int(age_seconds / 86400)
+                            if days >= 365:
+                                years = days // 365
+                                months = (days % 365) // 30
+                                fresh_age_str = f"{years}y {months}mo" if months > 0 else f"{years}y"
+                            elif days >= 30:
+                                months = days // 30
+                                remaining_days = days % 30
+                                fresh_age_str = f"{months}mo {remaining_days}d" if remaining_days >= 7 else f"{months}mo"
+                            elif days >= 1:
+                                fresh_age_str = f"{days}d"
+                            else:
+                                hours = int(age_seconds / 3600)
+                                fresh_age_str = f"{hours}h" if hours > 0 else "<1h"
+                            
+                            old_age = twitter_data.get('wallet_age_str', '')
+                            if old_age != fresh_age_str:
+                                logger.info(
+                                    f"Twitter wallet age updated for {trader_address[:10]}...: "
+                                    f"'{old_age}' -> '{fresh_age_str}'"
+                                )
+                            twitter_data['wallet_age_str'] = fresh_age_str
+                except Exception as age_err:
+                    logger.warning(f"Failed to refresh wallet age for Twitter: {age_err}")
+                
                 await self.post_trade_alert(twitter_data)
 
             # Replace queue with remaining entries and persist

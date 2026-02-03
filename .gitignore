@@ -20,3 +20,10 @@ profile_data.json
 profile.html
 announcement_draft_menu.txt
 scripts/export_saved_traders.py
+nohup.out
+bot_output.log.*
+data/insider_alerts.db
+twitter_delay_queue.json
+
+*.db-wal
+*.db-shm

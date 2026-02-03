@@ -429,14 +429,15 @@ class PolymarketService:
             logger.debug(f"Error checking position: {e}")
             return 0.0
 
-    async def get_trader_first_activity(self, proxy_wallet):
+    async def get_trader_first_activity(self, proxy_wallet, bypass_cache=False):
         if not proxy_wallet:
             return None
 
         now = time.time()
-        cached = _wallet_age_cache.get(proxy_wallet)
-        if cached and (now - cached["cached_at"] < WALLET_AGE_CACHE_TTL):
-            return cached["first_ts"]
+        if not bypass_cache:
+            cached = _wallet_age_cache.get(proxy_wallet)
+            if cached and (now - cached["cached_at"] < WALLET_AGE_CACHE_TTL):
+                return cached["first_ts"]
 
         try:
             oldest_ts = None

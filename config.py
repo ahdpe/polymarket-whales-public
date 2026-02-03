@@ -69,6 +69,6 @@ HOTFIX_MUTE = int(os.getenv("HOTFIX_MUTE", "86400"))  # Mute duration for hotfix
 
 # Queue configuration
 QUEUE_MAX_SIZE = int(os.getenv("QUEUE_MAX_SIZE", "10000"))
-WORKER_COUNT = int(os.getenv("WORKER_COUNT", "3"))
-GLOBAL_RATE = float(os.getenv("GLOBAL_RATE", "20"))  # messages per second
+WORKER_COUNT = int(os.getenv("WORKER_COUNT", "5"))
+GLOBAL_RATE = float(os.getenv("GLOBAL_RATE", "25"))  # messages per second (Telegram limit ~30)
 PER_CHAT_RATE = float(os.getenv("PER_CHAT_RATE", "0.5"))  # messages per second (1 msg / 2 sec)

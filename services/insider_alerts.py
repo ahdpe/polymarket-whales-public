@@ -11,7 +11,7 @@ from collections import defaultdict
 from collections import defaultdict
 from storage import alerts_storage
 from core.categories import detect_category
-
+from services.telegram_service import add_polymarket_ref
 logger = logging.getLogger(__name__)
 
 # Default configuration
@@ -1033,7 +1033,7 @@ class InsiderAlertsService:
                     
                     await self._bot.send_message(
                         chat_id=channel_id,
-                        text=message,
+                        text=add_polymarket_ref(message),
                         parse_mode='Markdown',
                         disable_web_page_preview=False
                     )

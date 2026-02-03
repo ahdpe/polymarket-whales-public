@@ -238,15 +238,16 @@ async def handle_trade(trade_data):
         # Returns: (qualified: bool, is_bypass: bool)
         def check_user(chat_id, min_threshold):
              # Check active status FIRST (must be stopped if disabled)
+             # This check happens BEFORE bypass to ensure "Stop" truly stops everything
              from services.telegram_service import is_user_active
              if not is_user_active(chat_id):
                  return (False, False)
 
-             # Check if notifications are enabled for this trader (BYPASS ALL FILTERS)
+             # Check if notifications are enabled for this trader (BYPASS filters but NOT active status)
              trader_address = trade_data.get('proxyWallet', '') or trade_data.get('maker', '')
              if trader_address and saved_whales.is_notifications_enabled(chat_id, trader_address):
                  logger.info(f"Notification BYPASS for trader {trader_address} (chat_id: {chat_id})")
-                 return (True, True)  # Qualified via bypass
+                 return (True, True)  # Qualified via bypass (but user must be active)
 
              if value_usd < min_threshold:
                  return (False, False)

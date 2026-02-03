@@ -39,6 +39,54 @@ from services.report_service import generate_report
 # Global reference to PolymarketService instance (set during startup)
 _poly_service = None
 
+
+def add_polymarket_ref(text: str) -> str:
+    """
+    Add via=PolymarketWhaleAlerts to all polymarket.com URLs in text.
+    
+    Test cases:
+    1. "https://polymarket.com" → "https://polymarket.com?via=PolymarketWhaleAlerts"
+    2. "https://polymarket.com/event/slug" → "https://polymarket.com/event/slug?via=PolymarketWhaleAlerts"
+    3. "https://polymarket.com/profile/0x123?tab=history" → "https://polymarket.com/profile/0x123?tab=history&via=PolymarketWhaleAlerts"
+    4. "https://polymarket.com?via=PolymarketWhaleAlerts" → unchanged
+    5. "https://google.com" → unchanged
+    6. "[Market](https://polymarket.com/event/x)" → "[Market](https://polymarket.com/event/x?via=PolymarketWhaleAlerts)"
+    """
+    # Fast path: skip if no polymarket.com in text
+    if "polymarket.com" not in text:
+        return text
+    
+    try:
+        from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+        
+        REF_PARAM = "via"
+        REF_VALUE = "PolymarketWhaleAlerts"
+        
+        def transform_url(url: str) -> str:
+            parsed = urlparse(url)
+            if parsed.netloc not in ("polymarket.com", "www.polymarket.com"):
+                return url
+            
+            query_params = parse_qs(parsed.query, keep_blank_values=True)
+            if REF_PARAM in query_params:
+                return url  # Already has via parameter
+            
+            query_params[REF_PARAM] = [REF_VALUE]
+            new_query = urlencode(query_params, doseq=True)
+            new_parsed = parsed._replace(query=new_query)
+            return urlunparse(new_parsed)
+        
+        # Match URLs in text (handles markdown links and plain URLs)
+        url_pattern = r'https?://[^\s\)\]>]+'
+        
+        def replace_url(match):
+            return transform_url(match.group(0))
+        
+        return re.sub(url_pattern, replace_url, text)
+    except Exception:
+        return text  # Fail-safe: return original text
+
+
 def set_poly_service(service):
     """Store reference to PolymarketService for report generation."""
     global _poly_service
@@ -1253,7 +1301,7 @@ def get_aquarium_list(chat_id, page=0, edit_mode=False):
             
         buttons.append(nav_row)
         
-    return text, InlineKeyboardMarkup(inline_keyboard=buttons)
+    return add_polymarket_ref(text), InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 
@@ -4789,6 +4837,10 @@ async def send_trade_alert(chat_id, message_text, whale_key: str = None, is_save
     if not chat_id:
         return
     
+    # Check if user is still active (may have pressed "Stop" while message was in queue)
+    if not is_user_active(chat_id):
+        return  # User stopped bot, don't send queued messages
+    
     # A) Check if muted before any sending attempt
     is_muted, seconds_left = _is_muted(chat_id)
     if is_muted:
@@ -4806,6 +4858,7 @@ async def send_trade_alert(chat_id, message_text, whale_key: str = None, is_save
     
     for attempt in range(max_retries):
         try:
+            message_text = add_polymarket_ref(message_text)
             await bot.send_message(
                 chat_id=chat_id,
                 text=message_text,
