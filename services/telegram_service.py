@@ -14,6 +14,8 @@ import time
 import re
 from datetime import datetime
 import html
+import aiohttp
+from urllib.parse import quote
 
 # Try to import aiolimiter, fallback if not available
 _aiolimiter_available = False
@@ -34,7 +36,10 @@ from config import (
 from core.localization import get_text
 from core.utils import shorten_trader_name
 from storage import saved_whales
+from storage import saved_markets
 from services.report_service import generate_report
+
+DATA_API_URL = "https://data-api.polymarket.com"
 
 # Global reference to PolymarketService instance (set during startup)
 _poly_service = None
@@ -111,6 +116,10 @@ class NoteState(StatesGroup):
 class ManualAddState(StatesGroup):
     waiting_for_input = State()
 
+# FSM States for manual market addition
+class MarketManualAddState(StatesGroup):
+    waiting_for_input = State()
+
 # FSM States for age and positions filter input
 class AgeFilterState(StatesGroup):
     waiting_for_range = State()
@@ -181,6 +190,15 @@ def save_settings():
 # Load settings on startup
 user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types, user_wallet_ages, user_open_positions, blocked_users, bot_enabled = load_settings()
 
+# Track which menu is currently shown for each user
+user_menu_state = {}  # chat_id -> "main" | "filters"
+
+def set_menu_state(chat_id: int, state: str) -> None:
+    user_menu_state[int(chat_id)] = state
+
+def get_menu_state(chat_id: int) -> str:
+    return user_menu_state.get(int(chat_id), "main")
+
 # Auto-mute structures for problematic chat_ids
 muted_until = {}  # dict[int, float] - chat_id -> unix timestamp until muted
 fail_streak = {}  # dict[int, int] - consecutive failures per chat_id
@@ -190,43 +208,6 @@ last_mute_time = {}  # dict[int, float] - timestamp of last mute (for 24h reset 
 
 # Mute state file path
 MUTE_STATE_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'mute_state.json')
-
-def load_mute_state():
-    """Load mute state from file."""
-    try:
-        if os.path.exists(MUTE_STATE_FILE):
-            with open(MUTE_STATE_FILE, 'r') as f:
-                data = json.load(f)
-                # Convert string keys back to int
-                muted_until.update({int(k): v for k, v in data.get('muted_until', {}).items()})
-                fail_streak.update({int(k): v for k, v in data.get('fail_streak', {}).items()})
-                mute_level.update({int(k): v for k, v in data.get('mute_level', {}).items()})
-                last_mute_time.update({int(k): v for k, v in data.get('last_mute_time', {}).items()})
-                logger.info(f"Loaded mute state: {len(muted_until)} muted, {len(fail_streak)} streaks")
-    except Exception as e:
-        logger.error(f"Error loading mute state: {e}")
-
-def save_mute_state():
-    """Save mute state to file (atomic write)."""
-    try:
-        # Ensure data directory exists
-        os.makedirs(os.path.dirname(MUTE_STATE_FILE), exist_ok=True)
-        
-        # Prepare data
-        data = {
-            'muted_until': {str(k): v for k, v in muted_until.items()},
-            'fail_streak': {str(k): v for k, v in fail_streak.items()},
-            'mute_level': {str(k): v for k, v in mute_level.items()},
-            'last_mute_time': {str(k): v for k, v in last_mute_time.items()},
-        }
-        
-        # Atomic write: write to temp file, then rename
-        temp_file = MUTE_STATE_FILE + '.tmp'
-        with open(temp_file, 'w') as f:
-            json.dump(data, f)
-        os.replace(temp_file, MUTE_STATE_FILE)
-    except Exception as e:
-        logger.error(f"Error saving mute state: {e}")
 
 def load_mute_state():
     """Load mute state from file."""
@@ -299,8 +280,12 @@ queue_stats = {
     'sent_total': 0,
     'dropped_total': 0,
     'error_total': 0,
+    'skipped_prequeue_total': 0,
+    'skipped_worker_gate_total': 0,
     'sent_per_min': 0,
     'dropped_per_min': 0,
+    'skipped_prequeue_per_min': 0,
+    'skipped_worker_gate_per_min': 0,
     'retryafter_min': 0,  # Changed from retryafter_per_min to retryafter_min
 }
 _queue_stats_lock = asyncio.Lock()
@@ -408,8 +393,9 @@ def get_main_keyboard(chat_id):
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=btn_toggle),
-             KeyboardButton(text=get_text(lang, 'btn_filters')),
-             KeyboardButton(text=get_text(lang, 'btn_saved'))]
+             KeyboardButton(text=get_text(lang, 'btn_filters'))],
+            [KeyboardButton(text=get_text(lang, 'btn_saved')),
+             KeyboardButton(text=get_text(lang, 'btn_saved_markets'))]
         ],
         resize_keyboard=True
     )
@@ -417,6 +403,8 @@ def get_main_keyboard(chat_id):
 def get_filters_keyboard(chat_id):
     """Create keyboard for filters submenu."""
     lang = get_user_lang(chat_id)
+    active = is_user_active(chat_id)
+    btn_toggle = get_text(lang, 'btn_stop') if active else get_text(lang, 'btn_start')
     
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -426,7 +414,8 @@ def get_filters_keyboard(chat_id):
             [KeyboardButton(text=get_text(lang, 'btn_sides')),
              KeyboardButton(text=get_text(lang, 'btn_age')),
              KeyboardButton(text=get_text(lang, 'btn_positions'))],
-            [KeyboardButton(text=get_text(lang, 'btn_back'))]
+            [KeyboardButton(text=btn_toggle),
+             KeyboardButton(text=get_text(lang, 'btn_back'))]
         ],
         resize_keyboard=True
     )
@@ -688,6 +677,7 @@ async def cmd_start(message: types.Message):
         parse_mode="Markdown",
         reply_markup=get_main_keyboard(chat_id)
     )
+    set_menu_state(chat_id, "main")
     logger.info(f"User started bot. Chat ID: {chat_id}")
 
 @dp.message(Command("report"))
@@ -944,6 +934,7 @@ async def btn_filters(message: types.Message):
         parse_mode="Markdown",
         reply_markup=get_filters_keyboard(chat_id)
     )
+    set_menu_state(chat_id, "filters")
 
 @dp.message(Command("back"))
 @dp.message(F.text.in_(["⬅️ Назад", "⬅️ Back"]))
@@ -957,6 +948,7 @@ async def btn_back(message: types.Message):
         get_text(lang, 'menu_shown'),
         reply_markup=get_main_keyboard(chat_id)
     )
+    set_menu_state(chat_id, "main")
 
 @dp.message(F.text.in_(["▶️ Запустить", "▶️ Start", "⏸️ Остановить", "⏸️ Stop"]))
 async def btn_start_stop(message: types.Message):
@@ -972,11 +964,20 @@ async def btn_start_stop(message: types.Message):
     
     msg_key = 'bot_started' if new_state else 'bot_stopped'
     
-    await message.answer(
-        get_text(lang, msg_key),
-        parse_mode="Markdown",
-        reply_markup=get_main_keyboard(chat_id)
-    )
+    if get_menu_state(chat_id) == "filters":
+        await message.answer(
+            get_text(lang, msg_key),
+            parse_mode="Markdown",
+            reply_markup=get_filters_keyboard(chat_id)
+        )
+        set_menu_state(chat_id, "filters")
+    else:
+        await message.answer(
+            get_text(lang, msg_key),
+            parse_mode="Markdown",
+            reply_markup=get_main_keyboard(chat_id)
+        )
+        set_menu_state(chat_id, "main")
 
 @dp.message(F.text.in_(["🇬🇧 / 🇷🇺"]))
 async def btn_language(message: types.Message):
@@ -994,6 +995,7 @@ async def btn_language(message: types.Message):
         parse_mode="Markdown",
         reply_markup=get_main_keyboard(chat_id)
     )
+    set_menu_state(chat_id, "main")
 
 @dp.message(F.text.in_(["ℹ️ О боте", "ℹ️ About"]))
 async def btn_about(message: types.Message):
@@ -1028,6 +1030,7 @@ async def btn_show_menu(message: types.Message):
         get_text(lang, 'menu_shown'),
         reply_markup=get_main_keyboard(chat_id)
     )
+    set_menu_state(chat_id, "main")
 
 @dp.message(Command("menu"))
 async def cmd_menu(message: types.Message):
@@ -1039,6 +1042,7 @@ async def cmd_menu(message: types.Message):
         get_text(lang, 'menu_shown'),
         reply_markup=get_main_keyboard(chat_id)
     )
+    set_menu_state(chat_id, "main")
 
 @dp.message(Command("about"))
 async def cmd_about(message: types.Message):
@@ -1143,6 +1147,7 @@ async def cmd_filters(message: types.Message):
         parse_mode="Markdown",
         reply_markup=get_filters_keyboard(chat_id)
     )
+    set_menu_state(chat_id, "filters")
 
 @dp.message(Command("saved"))
 async def cmd_saved(message: types.Message):
@@ -1164,6 +1169,25 @@ async def cmd_saved(message: types.Message):
         await message.answer(get_text(lang, 'saved_empty'), reply_markup=keyboard)
 
 
+@dp.message(Command("markets"))
+async def cmd_markets(message: types.Message):
+    """Command to show saved markets list."""
+    chat_id = message.chat.id
+    ensure_user_exists(chat_id)
+    lang = get_user_lang(chat_id)
+
+    text, reply_markup = get_markets_list(chat_id, 0)
+
+    if text:
+        await message.answer(text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
+    else:
+        add_text = get_text(lang, 'market_manual_add_btn')
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=add_text, callback_data="market_manual_add:0:view")]
+        ])
+        await message.answer(get_text(lang, 'markets_empty'), reply_markup=keyboard)
+
+
 # ============ SAVED TRADERS HANDLERS (LIST + EDIT MODE) ============
 
 AQUARIUM_PAGE_SIZE = 10
@@ -1177,6 +1201,7 @@ def get_aquarium_list(chat_id, page=0, edit_mode=False):
     offset = page * AQUARIUM_PAGE_SIZE
     saved = saved_whales.list_saved(chat_id, offset=offset, limit=AQUARIUM_PAGE_SIZE)
     total = saved_whales.count_saved(chat_id)
+    enabled_count = saved_whales.count_notifications_enabled(chat_id)
     
     if not saved and page > 0:
         return get_aquarium_list(chat_id, page - 1, edit_mode)
@@ -1250,7 +1275,7 @@ def get_aquarium_list(chat_id, page=0, edit_mode=False):
             notif_btn_text = get_text(lang, 'notif_on' if notif_enabled else 'notif_off')
             
             btn_row = [
-                InlineKeyboardButton(text=f"✏️ {local_num} {short_name}", callback_data=f"edit:{key}:{page}:1"),
+                InlineKeyboardButton(text=f"💬 {local_num} {short_name}", callback_data=f"edit:{key}:{page}:1"),
                 InlineKeyboardButton(text=notif_btn_text, callback_data=f"toggle_notif:{key}:{page}:1"),
                 InlineKeyboardButton(text=f"❌ {local_num}", callback_data=f"delete:{key}:{page}:1")
             ]
@@ -1269,9 +1294,13 @@ def get_aquarium_list(chat_id, page=0, edit_mode=False):
         # View Mode: [ Edit List ] [ Clear All ]
         edit_text = "✏️ Редакт" if lang == 'ru' else "✏️ Edit List"
         clear_text = "🗑 Очистить" if lang == 'ru' else "🗑 Clear All"
+        all_enabled = (total > 0 and enabled_count == total)
+        all_toggle_text = get_text(lang, 'notif_all_off' if all_enabled else 'notif_all_on')
+        all_toggle_action = "off" if all_enabled else "on"
         
         action_row = [
             InlineKeyboardButton(text=edit_text, callback_data=f"aq_mode:edit:{page}"),
+            InlineKeyboardButton(text=all_toggle_text, callback_data=f"toggle_notif_all:{all_toggle_action}:{page}"),
             InlineKeyboardButton(text=clear_text, callback_data=f"clearall")
         ]
         buttons.append(action_row)
@@ -1325,6 +1354,501 @@ async def btn_saved(message: types.Message):
             [InlineKeyboardButton(text=add_text, callback_data="manual_add:0:view")]
         ])
         await message.answer(get_text(lang, 'saved_empty'), reply_markup=keyboard)
+
+
+# ============ SAVED MARKETS HANDLERS (LIST + EDIT MODE) ============
+
+MARKETS_PAGE_SIZE = 10
+
+def get_markets_list(chat_id, page=0, edit_mode=False):
+    """
+    Generate text list and keyboard for Saved Markets.
+    Supports View Mode and Edit Mode.
+    """
+    lang = get_user_lang(chat_id)
+    offset = page * MARKETS_PAGE_SIZE
+    saved = saved_markets.list_saved(chat_id, offset=offset, limit=MARKETS_PAGE_SIZE)
+    total = saved_markets.count_saved(chat_id)
+    enabled_count = saved_markets.count_notifications_enabled(chat_id)
+
+    if not saved and page > 0:
+        return get_markets_list(chat_id, page - 1, edit_mode)
+
+    if not saved:
+        return None, None
+
+    lines = []
+    for i, item in enumerate(saved):
+        idx = offset + i + 1
+        market_ref = item.get('market_ref')
+        market_key = saved_markets.get_or_create_key(
+            market_ref,
+            market_id=item.get('market_id'),
+            event_slug=item.get('event_slug'),
+            title=item.get('title')
+        )
+
+        title = item.get('title') or item.get('event_slug') or item.get('market_id') or market_ref
+        display_title = title if title else "Unknown Market"
+        if len(display_title) > 60:
+            display_title = display_title[:57] + "..."
+
+        # Escape markdown symbols in title
+        safe_title = display_title.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[")
+
+        event_slug = item.get('event_slug')
+        market_id = item.get('market_id')
+        if event_slug:
+            market_url = f"https://polymarket.com/event/{event_slug}"
+        elif market_id:
+            market_url = f"https://polymarket.com/event/{market_id}"
+        else:
+            market_url = ""
+
+        link = f"[{safe_title}]({market_url})" if market_url else safe_title
+
+        notif_status = " 🔔" if item.get('notifications_enabled') else " 🔕"
+        line = f"*{idx}.* {link}{notif_status}"
+        lines.append(line)
+
+    header = get_text(lang, 'markets_list_header')
+    text = header + "\n" + "\n".join(lines)
+
+    buttons = []
+
+    if edit_mode:
+        for i, item in enumerate(saved):
+            local_num = offset + i + 1
+            market_ref = item.get('market_ref')
+            market_key = saved_markets.get_or_create_key(
+                market_ref,
+                market_id=item.get('market_id'),
+                event_slug=item.get('event_slug'),
+                title=item.get('title')
+            )
+
+            notif_enabled = bool(item.get('notifications_enabled'))
+            notif_btn_text = get_text(lang, 'market_notif_on' if notif_enabled else 'market_notif_off')
+
+            btn_row = [
+                InlineKeyboardButton(text=f"{notif_btn_text} {local_num}", callback_data=f"mk_toggle:{market_key}:{page}:1"),
+                InlineKeyboardButton(text=f"❌ {local_num}", callback_data=f"mk_delete:{market_key}:{page}:1")
+            ]
+            buttons.append(btn_row)
+
+        add_text = get_text(lang, 'market_manual_add_btn')
+        done_text = "✅ Готово" if lang == 'ru' else "✅ Done"
+        buttons.append([
+            InlineKeyboardButton(text=add_text, callback_data=f"market_manual_add:{page}:edit"),
+            InlineKeyboardButton(text=done_text, callback_data=f"mk_mode:view:{page}")
+        ])
+    else:
+        edit_text = "✏️ Редакт" if lang == 'ru' else "✏️ Edit List"
+        clear_text = "🗑 Очистить" if lang == 'ru' else "🗑 Clear All"
+        all_enabled = (total > 0 and enabled_count == total)
+        all_toggle_text = get_text(lang, 'market_notif_all_off' if all_enabled else 'market_notif_all_on')
+        all_toggle_action = "off" if all_enabled else "on"
+        buttons.append([
+            InlineKeyboardButton(text=edit_text, callback_data=f"mk_mode:edit:{page}"),
+            InlineKeyboardButton(text=all_toggle_text, callback_data=f"mk_toggle_all:{all_toggle_action}:{page}"),
+            InlineKeyboardButton(text=clear_text, callback_data="mk_clearall")
+        ])
+
+        add_text = get_text(lang, 'market_manual_add_btn')
+        buttons.append([InlineKeyboardButton(text=add_text, callback_data=f"market_manual_add:{page}:view")])
+
+    total_pages = max(1, (total + MARKETS_PAGE_SIZE - 1) // MARKETS_PAGE_SIZE)
+    if total_pages > 1:
+        nav_row = []
+        mode_str = "edit" if edit_mode else "view"
+        if page > 0:
+            nav_row.append(InlineKeyboardButton(text="⬅️", callback_data=f"mk_page:{page-1}:{mode_str}"))
+        nav_row.append(InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data="noop"))
+        if page < total_pages - 1:
+            nav_row.append(InlineKeyboardButton(text="➡️", callback_data=f"mk_page:{page+1}:{mode_str}"))
+        buttons.append(nav_row)
+
+    return add_polymarket_ref(text), InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+@dp.message(lambda message: message.text in [get_text('ru', 'btn_saved_markets'), get_text('en', 'btn_saved_markets')])
+async def btn_saved_markets(message: types.Message):
+    """Handle Saved Markets button press - Show List View."""
+    chat_id = message.chat.id
+    lang = get_user_lang(chat_id)
+
+    text, reply_markup = get_markets_list(chat_id, 0)
+
+    if text:
+        await message.answer(text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
+    else:
+        add_text = get_text(lang, 'market_manual_add_btn')
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=add_text, callback_data="market_manual_add:0:view")]
+        ])
+        await message.answer(get_text(lang, 'markets_empty'), reply_markup=keyboard)
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('mk_mode:'))
+async def callback_markets_mode(callback_query: types.CallbackQuery):
+    """Toggle View/Edit Mode for Markets."""
+    chat_id = callback_query.message.chat.id
+    try:
+        parts = callback_query.data.split(':')
+        mode = parts[1]
+        page = int(parts[2])
+
+        is_edit = (mode == 'edit')
+        text, reply_markup = get_markets_list(chat_id, page, edit_mode=is_edit)
+
+        if text:
+            from contextlib import suppress
+            with suppress(Exception):
+                await callback_query.message.edit_text(
+                    text,
+                    reply_markup=reply_markup,
+                    parse_mode="Markdown",
+                    disable_web_page_preview=True
+                )
+    except ValueError:
+        pass
+    await callback_query.answer()
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('mk_page:'))
+async def callback_markets_page(callback_query: types.CallbackQuery):
+    """Navigate Saved Markets pages."""
+    chat_id = callback_query.message.chat.id
+    try:
+        parts = callback_query.data.split(':')
+        page = int(parts[1])
+        mode = parts[2] if len(parts) > 2 else 'view'
+
+        is_edit = (mode == 'edit')
+        text, reply_markup = get_markets_list(chat_id, page, edit_mode=is_edit)
+
+        if text:
+            from contextlib import suppress
+            with suppress(Exception):
+                await callback_query.message.edit_text(
+                    text,
+                    reply_markup=reply_markup,
+                    parse_mode="Markdown",
+                    disable_web_page_preview=True
+                )
+    except ValueError:
+        pass
+    await callback_query.answer()
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("mk_delete:"))
+async def callback_market_delete(callback: types.CallbackQuery):
+    """Handle delete from saved markets."""
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+
+    parts = callback.data.split(':')
+    key = parts[1]
+    page = int(parts[2]) if len(parts) > 2 else 0
+    edit_mode = int(parts[3]) if len(parts) > 3 else 0
+
+    market_ref = saved_markets.get_market_ref(key)
+    if not market_ref:
+        await callback.answer("Error: market not found")
+        return
+
+    saved_markets.delete(chat_id, market_ref)
+    await callback.answer(get_text(lang, 'market_deleted'))
+
+    is_edit = bool(edit_mode)
+    text, reply_markup = get_markets_list(chat_id, page, edit_mode=is_edit)
+
+    if text:
+        await callback.message.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
+    else:
+        await callback.message.edit_text(get_text(lang, 'markets_empty'))
+
+
+@dp.callback_query(lambda c: c.data == "mk_clearall")
+async def callback_markets_clear_all(callback: types.CallbackQuery):
+    """Ask for confirmation before clearing all markets."""
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+
+    confirm_text = "Внимание! Вы точно хотите удалить ВСЕ сохраненные маркеты?" if lang == 'ru' else "Warning! Are you sure you want to delete ALL saved markets?"
+
+    yes_text = "✅ Да, удалить всё" if lang == 'ru' else "✅ Yes, delete all"
+    no_text = "❌ Отмена" if lang == 'ru' else "❌ Cancel"
+
+    buttons = [
+        [InlineKeyboardButton(text=yes_text, callback_data="mk_confirm_clear")],
+        [InlineKeyboardButton(text=no_text, callback_data="mk_cancel_clear")]
+    ]
+
+    await callback.message.edit_text(confirm_text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.answer()
+
+
+@dp.callback_query(lambda c: c.data == "mk_confirm_clear")
+async def callback_markets_confirm_clear(callback: types.CallbackQuery):
+    """Execute clear all markets."""
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+
+    saved_markets.clear_all(chat_id)
+    await callback.answer(get_text(lang, 'markets_cleared'))
+    await callback.message.edit_text(get_text(lang, 'markets_empty'))
+
+
+@dp.callback_query(lambda c: c.data == "mk_cancel_clear")
+async def callback_markets_cancel_clear(callback: types.CallbackQuery):
+    """Cancel clear all markets."""
+    chat_id = callback.message.chat.id
+    text, reply_markup = get_markets_list(chat_id, 0)
+    if text:
+        await callback.message.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
+    else:
+        lang = get_user_lang(chat_id)
+        await callback.message.edit_text(get_text(lang, 'markets_empty'))
+    await callback.answer()
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("mk_toggle:"))
+async def callback_market_toggle_notif(callback: types.CallbackQuery):
+    """Toggle notifications for a saved market."""
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+
+    parts = callback.data.split(':')
+    key = parts[1]
+    page = int(parts[2]) if len(parts) > 2 else 0
+    edit_mode = int(parts[3]) if len(parts) > 3 else 0
+
+    market_ref = saved_markets.get_market_ref(key)
+    if not market_ref:
+        await callback.answer("Error: market not found")
+        return
+
+    new_state = saved_markets.toggle_notifications(chat_id, market_ref)
+    msg_key = 'market_notif_enabled' if new_state else 'market_notif_disabled'
+    await callback.answer(get_text(lang, msg_key))
+
+    is_edit = bool(edit_mode)
+    text, reply_markup = get_markets_list(chat_id, page, edit_mode=is_edit)
+    if text:
+        from contextlib import suppress
+        with suppress(Exception):
+            await callback.message.edit_text(
+                text,
+                reply_markup=reply_markup,
+                parse_mode="Markdown",
+                disable_web_page_preview=True
+            )
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("mk_toggle_all:"))
+async def callback_market_toggle_all(callback: types.CallbackQuery):
+    """Toggle notifications for all saved markets."""
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+
+    parts = callback.data.split(':')
+    action = parts[1] if len(parts) > 1 else "on"
+    page = int(parts[2]) if len(parts) > 2 else 0
+
+    enable_all = (action == "on")
+    saved_markets.set_notifications_for_user(chat_id, enable_all)
+
+    msg_key = 'market_notif_enabled' if enable_all else 'market_notif_disabled'
+    await callback.answer(get_text(lang, msg_key))
+
+    text, reply_markup = get_markets_list(chat_id, page, edit_mode=False)
+    if text:
+        from contextlib import suppress
+        with suppress(Exception):
+            await callback.message.edit_text(
+                text,
+                reply_markup=reply_markup,
+                parse_mode="Markdown",
+                disable_web_page_preview=True
+            )
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("market_manual_add:"))
+async def callback_market_manual_add(callback: types.CallbackQuery, state: FSMContext):
+    """Handle manual add button for markets."""
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+
+    parts = callback.data.split(':')
+    page = int(parts[1]) if len(parts) > 1 else 0
+    mode = parts[2] if len(parts) > 2 else 'view'
+
+    await state.set_state(MarketManualAddState.waiting_for_input)
+    await state.update_data(page=page, mode=mode)
+
+    cancel_text = get_text(lang, 'market_manual_add_cancel')
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=cancel_text, callback_data=f"cancel_market_manual_add:{page}:{mode}")]
+    ])
+
+    await callback.answer()
+    await callback.message.answer(
+        get_text(lang, 'market_manual_add_prompt'),
+        parse_mode="Markdown",
+        reply_markup=keyboard
+    )
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("cancel_market_manual_add:"))
+async def callback_cancel_market_manual_add(callback: types.CallbackQuery, state: FSMContext):
+    """Cancel manual add operation for markets."""
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+
+    await state.clear()
+
+    parts = callback.data.split(':')
+    page = int(parts[1]) if len(parts) > 1 else 0
+    mode = parts[2] if len(parts) > 2 else 'view'
+    is_edit = (mode == 'edit')
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    text, reply_markup = get_markets_list(chat_id, page, edit_mode=is_edit)
+    if text:
+        await callback.message.answer(text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
+    else:
+        add_text = get_text(lang, 'market_manual_add_btn')
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=add_text, callback_data="market_manual_add:0:view")]
+        ])
+        await callback.message.answer(get_text(lang, 'markets_empty'), reply_markup=keyboard)
+
+    await callback.answer()
+
+
+def _extract_event_slug(text: str) -> str | None:
+    if "polymarket.com/event/" not in text:
+        return None
+    parts = text.split("polymarket.com/event/")
+    if len(parts) < 2:
+        return None
+    slug = parts[1].split("?")[0].split("#")[0].split("/")[0].strip()
+    return slug or None
+
+
+async def _fetch_market_title_by_slug(slug: str) -> str | None:
+    if not slug:
+        return None
+
+    encoded = quote(slug, safe="")
+    urls = [
+        f"{DATA_API_URL}/markets?limit=1&slug={encoded}",
+        f"{DATA_API_URL}/events?limit=1&slug={encoded}",
+    ]
+
+    def extract_title(payload):
+        if isinstance(payload, dict) and "data" in payload and isinstance(payload["data"], list):
+            items = payload["data"]
+        elif isinstance(payload, list):
+            items = payload
+        elif isinstance(payload, dict):
+            items = [payload]
+        else:
+            items = []
+
+        if not items:
+            return None
+
+        item = items[0]
+        if not isinstance(item, dict):
+            return None
+
+        return (
+            item.get("title")
+            or item.get("marketTitle")
+            or item.get("eventTitle")
+            or item.get("name")
+        )
+
+    timeout = aiohttp.ClientTimeout(total=6)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        for url in urls:
+            try:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        continue
+                    data = await resp.json()
+                    title = extract_title(data)
+                    if title:
+                        return title
+            except Exception:
+                continue
+
+    return None
+
+
+@dp.message(MarketManualAddState.waiting_for_input)
+async def process_market_manual_add_input(message: types.Message, state: FSMContext):
+    """Handle manual add text input for markets."""
+    chat_id = message.chat.id
+    lang = get_user_lang(chat_id)
+
+    text = message.text.strip() if message.text else ""
+    slug = _extract_event_slug(text)
+
+    if not slug:
+        await message.answer(get_text(lang, 'market_manual_add_invalid'))
+
+        data = await state.get_data()
+        page = data.get('page', 0)
+        mode = data.get('mode', 'view')
+        is_edit = (mode == 'edit')
+        await state.clear()
+
+        text, reply_markup = get_markets_list(chat_id, page, edit_mode=is_edit)
+        if text:
+            await message.answer(text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
+        else:
+            add_text = get_text(lang, 'market_manual_add_btn')
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=add_text, callback_data="market_manual_add:0:view")]
+            ])
+            await message.answer(get_text(lang, 'markets_empty'), reply_markup=keyboard)
+        return
+
+    if saved_markets.is_saved(chat_id, None, slug):
+        await message.answer(get_text(lang, 'market_manual_add_exists'))
+        data = await state.get_data()
+        page = data.get('page', 0)
+        mode = data.get('mode', 'view')
+        is_edit = (mode == 'edit')
+        await state.clear()
+        text, reply_markup = get_markets_list(chat_id, page, edit_mode=is_edit)
+        if text:
+            await message.answer(text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
+        return
+
+    market_ref = saved_markets.make_market_ref(None, slug)
+    title = await _fetch_market_title_by_slug(slug)
+    saved_markets.get_or_create_key(market_ref, event_slug=slug, title=title)
+    saved_markets.save(chat_id, None, slug, title, notifications_enabled=0)
+
+    await message.answer(get_text(lang, 'market_manual_add_success'))
+
+    data = await state.get_data()
+    page = data.get('page', 0)
+    mode = data.get('mode', 'view')
+    is_edit = (mode == 'edit')
+    await state.clear()
+
+    text, reply_markup = get_markets_list(chat_id, page, edit_mode=is_edit)
+    if text:
+        await message.answer(text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('aq_mode:'))
@@ -1482,6 +2006,90 @@ async def callback_already_saved(callback: CallbackQuery):
             )
     except Exception:
         # Если не получилось обновить клавиатуру — просто игнорируем, логика удаления уже отработала
+        pass
+
+
+@dp.callback_query(F.data.startswith("market_save:"))
+async def callback_market_save(callback: CallbackQuery):
+    """Handle save market callback."""
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+    key = callback.data.replace("market_save:", "")
+
+    market_data = saved_markets.get_market_data(key)
+    if not market_data:
+        await callback.answer("Error: market not found")
+        return
+
+    market_id = market_data.get('market_id')
+    event_slug = market_data.get('event_slug')
+
+    if saved_markets.is_saved(chat_id, market_id, event_slug):
+        await callback.answer(get_text(lang, 'market_exists'))
+        return
+
+    saved_markets.save(chat_id, market_id, event_slug, market_data.get('title'), notifications_enabled=0)
+    await callback.answer(get_text(lang, 'market_added'))
+
+    # Update button in message to show "In list"
+    try:
+        old_keyboard = callback.message.reply_markup
+        if old_keyboard:
+            new_buttons = []
+            for row in old_keyboard.inline_keyboard:
+                new_row = []
+                for btn in row:
+                    if btn.callback_data == f"market_save:{key}":
+                        new_row.append(InlineKeyboardButton(
+                            text=get_text(lang, 'market_saved_btn'),
+                            callback_data=f"market_saved:{key}"
+                        ))
+                    else:
+                        new_row.append(btn)
+                new_buttons.append(new_row)
+            await callback.message.edit_reply_markup(
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=new_buttons)
+            )
+    except Exception:
+        pass
+
+
+@dp.callback_query(F.data.startswith("market_saved:"))
+async def callback_market_saved(callback: CallbackQuery):
+    """Handle click on already saved market button (remove)."""
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+
+    key = callback.data.replace("market_saved:", "")
+    market_ref = saved_markets.get_market_ref(key)
+    if not market_ref:
+        await callback.answer("Error: market not found")
+        return
+
+    saved_markets.delete(chat_id, market_ref)
+    await callback.answer(get_text(lang, 'market_deleted'))
+
+    # Update button in message to show "Track market"
+    try:
+        old_keyboard = callback.message.reply_markup
+        if old_keyboard:
+            new_buttons = []
+            for row in old_keyboard.inline_keyboard:
+                new_row = []
+                for btn in row:
+                    if btn.callback_data == f"market_saved:{key}":
+                        new_row.append(InlineKeyboardButton(
+                            text=get_text(lang, 'market_track_btn'),
+                            callback_data=f"market_save:{key}"
+                        ))
+                    else:
+                        new_row.append(btn)
+                new_buttons.append(new_row)
+
+            await callback.message.edit_reply_markup(
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=new_buttons)
+            )
+    except Exception:
         pass
 
 
@@ -1659,6 +2267,34 @@ async def callback_toggle_notif(callback: types.CallbackQuery):
                 text, 
                 reply_markup=reply_markup, 
                 parse_mode="Markdown", 
+                disable_web_page_preview=True
+            )
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("toggle_notif_all:"))
+async def callback_toggle_notif_all(callback: types.CallbackQuery):
+    """Toggle notifications for all saved traders."""
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+
+    parts = callback.data.split(':')
+    action = parts[1] if len(parts) > 1 else "on"
+    page = int(parts[2]) if len(parts) > 2 else 0
+
+    enable_all = (action == "on")
+    saved_whales.set_notifications_for_user(chat_id, enable_all)
+
+    msg_key = 'notif_enabled' if enable_all else 'notif_disabled'
+    await callback.answer(get_text(lang, msg_key))
+
+    text, reply_markup = get_aquarium_list(chat_id, page, edit_mode=False)
+    if text:
+        from contextlib import suppress
+        with suppress(Exception):
+            await callback.message.edit_text(
+                text,
+                reply_markup=reply_markup,
+                parse_mode="Markdown",
                 disable_web_page_preview=True
             )
 
@@ -1880,13 +2516,28 @@ async def callback_filter(callback: CallbackQuery):
     user_filters[chat_id] = min_value
     save_settings()
     
+    active_user = is_user_active(chat_id)
+    cleared_alert_tasks = 0
+    cleared_callback_tasks = 0
+    cleared_series = 0
+    
+    # Clear queued Telegram sends for this user so old-threshold alerts stop immediately
+    if active_user:
+        cleared_alert_tasks = await clear_pending_alert_queue(chat_id=chat_id)
+    
+    # IMPORTANT: do not clear shared callback/aggregator state on per-user filter change.
+    # That state is global for all users and clearing it would affect others.
+    
     # Show confirmation and refresh keyboard
-    await callback.answer(get_text(lang, 'filter_toast'))
+    await callback.answer("✅ Фильтр установлен" if lang == 'ru' else "✅ Filter set")
     await callback.message.edit_text(
         get_text(lang, 'amount_set', min=min_value),
         parse_mode="Markdown"
     )
-    logger.info(f"User {chat_id} set filter to ${min_value}")
+    logger.info(
+        f"User {chat_id} set filter to ${min_value} "
+        f"(queue cleared: alerts={cleared_alert_tasks}, callbacks={cleared_callback_tasks}, series={cleared_series})"
+    )
 
 
 @dp.callback_query(F.data == "confirm_filter_500")
@@ -1900,12 +2551,27 @@ async def callback_confirm_filter_500(callback: CallbackQuery):
     user_filters[chat_id] = 500
     save_settings()
     
-    await callback.answer(get_text(lang, 'filter_toast'))
+    active_user = is_user_active(chat_id)
+    cleared_alert_tasks = 0
+    cleared_callback_tasks = 0
+    cleared_series = 0
+    
+    # Clear queued Telegram sends for this user so old-threshold alerts stop immediately
+    if active_user:
+        cleared_alert_tasks = await clear_pending_alert_queue(chat_id=chat_id)
+    
+    # IMPORTANT: do not clear shared callback/aggregator state on per-user filter change.
+    # That state is global for all users and clearing it would affect others.
+    
+    await callback.answer("✅ Фильтр установлен" if lang == 'ru' else "✅ Filter set")
     await callback.message.edit_text(
         get_text(lang, 'amount_set', min=500),
         parse_mode="Markdown"
     )
-    logger.info(f"User {chat_id} confirmed and set filter to $500")
+    logger.info(
+        f"User {chat_id} confirmed and set filter to $500 "
+        f"(queue cleared: alerts={cleared_alert_tasks}, callbacks={cleared_callback_tasks}, series={cleared_series})"
+    )
 
 
 @dp.callback_query(F.data == "cancel_filter_500")
@@ -2764,6 +3430,10 @@ async def cmd_queue_status(message: types.Message):
         dropped_total = queue_stats['dropped_total']
         sent_total = queue_stats['sent_total']
         error_total = queue_stats['error_total']
+        skipped_prequeue_total = queue_stats.get('skipped_prequeue_total', 0)
+        skipped_worker_gate_total = queue_stats.get('skipped_worker_gate_total', 0)
+        skipped_prequeue_per_min = queue_stats.get('skipped_prequeue_per_min', 0)
+        skipped_worker_gate_per_min = queue_stats.get('skipped_worker_gate_per_min', 0)
     
     # Get age statistics
     oldest_age_sec, avg_age_sec = await _get_queue_age_stats()
@@ -2780,6 +3450,10 @@ async def cmd_queue_status(message: types.Message):
 **Dropped Total:** {dropped_total}
 **Sent Total:** {sent_total}
 **Error Total:** {error_total}
+**Skipped Prequeue Total:** {skipped_prequeue_total}
+**Skipped Worker Gate Total:** {skipped_worker_gate_total}
+**Skipped Prequeue (last min):** {skipped_prequeue_per_min}
+**Skipped Worker Gate (last min):** {skipped_worker_gate_per_min}
 **Workers:** {len(worker_tasks)}/{WORKER_COUNT}
 **Oldest Task Age:** {age_info}
 """
@@ -2796,14 +3470,7 @@ async def cmd_queue_clear(message: types.Message):
         await message.answer("❌ Queue not initialized")
         return
     
-    cleared = 0
-    while not alert_queue.empty():
-        try:
-            alert_queue.get_nowait()
-            alert_queue.task_done()
-            cleared += 1
-        except asyncio.QueueEmpty:
-            break
+    cleared = await clear_pending_alert_queue()
     
     await message.answer(f"✅ Queue cleared: {cleared} tasks removed", parse_mode="Markdown")
     logger.warning(f"🗑️ Queue cleared by admin: {cleared} tasks removed")
@@ -2892,8 +3559,22 @@ async def cmd_bot_stop(message: types.Message):
         return  # Silently ignore non-owners
     
     set_bot_enabled(False)
-    logger.info(f"Bot alerts stopped by admin (chat_id: {message.chat.id})")
-    await message.answer("⏸️ **Бот остановлен**\n\nВсе алерты временно отключены. Используйте `/bot_start` для возобновления.", parse_mode="Markdown")
+    
+    # Clear pending callback tasks and aggregation state
+    cleared_callback_tasks = 0
+    cleared_series = 0
+    if _poly_service:
+        cleared_callback_tasks = _poly_service.clear_callback_queue()
+        cleared_series = _poly_service.aggregator.reset_aggregator()
+    
+    # Clear pending Telegram sends so no stale alerts are delivered after stop
+    cleared_alert_tasks = await clear_pending_alert_queue()
+    
+    logger.info(
+        f"Bot alerts stopped by admin (chat_id: {message.chat.id}) "
+        f"(queue cleared: alerts={cleared_alert_tasks}, callbacks={cleared_callback_tasks}, series={cleared_series})"
+    )
+    await message.answer("⏸️ **Бот остановлен**\n\nВсе алерты временно отключены. Очередь сообщений очищена.\n\nИспользуйте `/bot_start` для возобновления.", parse_mode="Markdown")
 
 
 @dp.message(Command("bot_start"))
@@ -2903,8 +3584,8 @@ async def cmd_bot_start(message: types.Message):
         return  # Silently ignore non-owners
     
     set_bot_enabled(True)
-    logger.info(f"Bot alerts started by admin (chat_id: {message.chat.id})")
-    await message.answer("▶️ **Бот запущен**\n\nОтправка алертов возобновлена.", parse_mode="Markdown")
+    logger.info(f"Bot alerts started by admin (chat_id: {message.chat.id}) with clean state")
+    await message.answer("▶️ **Бот запущен**\n\nОтправка алертов возобновлена с чистой очередью.", parse_mode="Markdown")
 
 
 # ============ TWITTER ADMIN COMMANDS ============
@@ -4469,22 +5150,49 @@ async def _periodic_cleanup():
         cleanup_mute_state()
 
 
-def get_trade_alert_keyboard(lang: str, whale_key: str, is_saved: bool, level_icon: str = "🦐"):
+def get_trade_alert_keyboard(
+    lang: str,
+    whale_key: str,
+    is_saved: bool,
+    level_icon: str = "🦐",
+    market_key: str | None = None,
+    is_market_saved: bool = False,
+):
     """Create inline keyboard for trade alerts."""
-    if is_saved:
-        save_text = get_text(lang, 'saved_btn')
-        save_callback = f"saved:{whale_key}"
-    else:
-        # Use dynamic level icon + "To Aquarium" text
-        save_text = f"{level_icon} {get_text(lang, 'save_btn')}"
-        save_callback = f"save:{whale_key}"
-    
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text=save_text, callback_data=save_callback),
-            InlineKeyboardButton(text=get_text(lang, 'note_btn'), callback_data=f"note:{whale_key}"),
-        ]
-    ])
+    buttons = []
+
+    if whale_key:
+        if is_saved:
+            save_text = get_text(lang, 'saved_btn')
+            save_callback = f"saved:{whale_key}"
+        else:
+            # Use dynamic level icon + "To Aquarium" text
+            save_text = f"{level_icon} {get_text(lang, 'save_btn')}"
+            save_callback = f"save:{whale_key}"
+
+        row = [InlineKeyboardButton(text=save_text, callback_data=save_callback)]
+
+        if market_key:
+            if is_market_saved:
+                market_text = get_text(lang, 'market_saved_btn')
+                market_callback = f"market_saved:{market_key}"
+            else:
+                market_text = get_text(lang, 'market_track_btn')
+                market_callback = f"market_save:{market_key}"
+            row.append(InlineKeyboardButton(text=market_text, callback_data=market_callback))
+
+        buttons.append(row)
+        buttons.append([InlineKeyboardButton(text=get_text(lang, 'note_btn'), callback_data=f"note:{whale_key}")])
+    elif market_key:
+        if is_market_saved:
+            market_text = get_text(lang, 'market_saved_btn')
+            market_callback = f"market_saved:{market_key}"
+        else:
+            market_text = get_text(lang, 'market_track_btn')
+            market_callback = f"market_save:{market_key}"
+        buttons.append([InlineKeyboardButton(text=market_text, callback_data=market_callback)])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def _get_mute_duration(chat_id: int) -> int:
@@ -4518,6 +5226,14 @@ def _apply_mute(chat_id: int, reason: str, mute_seconds: int = None):
     
     # Save state after applying mute
     save_mute_state()
+
+    # Best-effort cleanup: purge queued alerts for muted chat to protect shared workers.
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_clear_muted_chat_queue(chat_id))
+    except RuntimeError:
+        # No running loop (e.g., sync context) - skip queue cleanup.
+        pass
     
     return mute_seconds
 
@@ -4535,6 +5251,35 @@ def _is_muted(chat_id: int) -> tuple[bool, float]:
         # Mute expired, clean up
         muted_until.pop(chat_id, None)
         return False, 0.0
+
+async def _clear_muted_chat_queue(chat_id: int):
+    """Background helper: clear queued alerts for newly muted chat."""
+    try:
+        await clear_pending_alert_queue(chat_id=chat_id)
+    except Exception:
+        logger.exception("Failed to clear queued alerts for muted chat_id=%s", chat_id)
+
+def _can_enqueue_or_send(chat_id: int, value_usd: float | None = None, bypass_filters: bool = False) -> bool:
+    """Fast eligibility gate used before queueing and before worker rate-limit wait."""
+    if not chat_id:
+        return False
+
+    if not is_bot_enabled():
+        return False
+
+    if not is_user_active(chat_id):
+        return False
+
+    if value_usd is not None and not bypass_filters:
+        min_threshold = get_user_min_threshold(chat_id)
+        if float(value_usd) < float(min_threshold):
+            return False
+
+    is_muted, _ = _is_muted(chat_id)
+    if is_muted:
+        return False
+
+    return True
 
 async def _log_mute_stats():
     """Log mute statistics (called periodically)."""
@@ -4569,18 +5314,87 @@ async def _log_mute_stats():
         
         _stats_reset_time = now
 
-async def enqueue_trade_alert(chat_id, message_text, whale_key: str = None, is_saved: bool = False, level_icon: str = "🦐"):
+async def clear_pending_alert_queue(chat_id: int | None = None) -> int:
+    """
+    Remove pending Telegram alert tasks from queue.
+    If chat_id is provided, only tasks for that user are removed.
+    """
+    global _queue_oldest_enqueued
+    
+    if not alert_queue:
+        return 0
+    
+    cleared = 0
+    kept_tasks = []
+    
+    while True:
+        try:
+            task = alert_queue.get_nowait()
+            alert_queue.task_done()
+        except asyncio.QueueEmpty:
+            break
+        
+        if chat_id is None or task.get('chat_id') == chat_id:
+            cleared += 1
+        else:
+            kept_tasks.append(task)
+    
+    for task in kept_tasks:
+        try:
+            alert_queue.put_nowait(task)
+        except asyncio.QueueFull:
+            logger.warning("Queue overflow while restoring retained tasks during queue clear")
+            break
+    
+    async with _queue_oldest_lock:
+        if kept_tasks:
+            _queue_oldest_enqueued = min(t.get('enqueued_at', time.time()) for t in kept_tasks)
+        else:
+            _queue_oldest_enqueued = None
+    
+    if cleared > 0:
+        if chat_id is None:
+            logger.info(f"Cleared {cleared} pending alert queue tasks")
+        else:
+            logger.info(f"Cleared {cleared} pending alert queue tasks for chat_id={chat_id}")
+    
+    return cleared
+
+async def enqueue_trade_alert(
+    chat_id,
+    message_text,
+    whale_key: str = None,
+    is_saved: bool = False,
+    level_icon: str = "🦐",
+    market_key: str | None = None,
+    is_market_saved: bool = False,
+    value_usd: float | None = None,
+    bypass_filters: bool = False,
+):
     """
     Add trade alert to queue for sending.
     Returns immediately (fire-and-forget).
     Falls back to direct send if queue is disabled.
     """
-    if not chat_id:
+    if not _can_enqueue_or_send(chat_id, value_usd=value_usd, bypass_filters=bypass_filters):
+        async with _queue_stats_lock:
+            queue_stats['skipped_prequeue_total'] = queue_stats.get('skipped_prequeue_total', 0) + 1
+            queue_stats['skipped_prequeue_per_min'] = queue_stats.get('skipped_prequeue_per_min', 0) + 1
         return
     
     # Fallback to direct send if queue is disabled
     if not _queue_enabled or alert_queue is None:
-        await send_trade_alert(chat_id, message_text, whale_key, is_saved, level_icon)
+        await send_trade_alert(
+            chat_id,
+            message_text,
+            whale_key,
+            is_saved,
+            level_icon,
+            market_key,
+            is_market_saved,
+            value_usd=value_usd,
+            bypass_filters=bypass_filters,
+        )
         return
     
     enqueued_at = time.time()
@@ -4590,6 +5404,10 @@ async def enqueue_trade_alert(chat_id, message_text, whale_key: str = None, is_s
         'whale_key': whale_key,
         'is_saved': is_saved,
         'level_icon': level_icon,
+        'market_key': market_key,
+        'is_market_saved': is_market_saved,
+        'value_usd': value_usd,
+        'bypass_filters': bypass_filters,
         'enqueued_at': enqueued_at,
     }
     
@@ -4635,6 +5453,10 @@ async def _queue_worker(worker_id: int):
             whale_key = task.get('whale_key')
             is_saved = task.get('is_saved', False)
             level_icon = task.get('level_icon', '🦐')
+            market_key = task.get('market_key')
+            is_market_saved = task.get('is_market_saved', False)
+            value_usd = task.get('value_usd')
+            bypass_filters = task.get('bypass_filters', False)
             enqueued_at = task.get('enqueued_at', time.time())
             
             # Update oldest task tracking (this task is being processed)
@@ -4647,6 +5469,15 @@ async def _queue_worker(worker_id: int):
                     _queue_oldest_enqueued = None
                     # If queue is not empty, we can't know the new oldest without peeking
                     # So we'll wait for next enqueue to set it, or it will be None until then
+
+            # Re-check eligibility before rate limit wait so muted/inactive chats
+            # don't consume shared worker throughput.
+            if not _can_enqueue_or_send(chat_id, value_usd=value_usd, bypass_filters=bypass_filters):
+                async with _queue_stats_lock:
+                    queue_stats['skipped_worker_gate_total'] = queue_stats.get('skipped_worker_gate_total', 0) + 1
+                    queue_stats['skipped_worker_gate_per_min'] = queue_stats.get('skipped_worker_gate_per_min', 0) + 1
+                alert_queue.task_done()
+                continue
             
             # Apply rate limiters
             if global_rate_limiter:
@@ -4655,7 +5486,17 @@ async def _queue_worker(worker_id: int):
             
             # Send the alert
             try:
-                await send_trade_alert(chat_id, message_text, whale_key, is_saved, level_icon)
+                await send_trade_alert(
+                    chat_id,
+                    message_text,
+                    whale_key,
+                    is_saved,
+                    level_icon,
+                    market_key,
+                    is_market_saved,
+                    value_usd=value_usd,
+                    bypass_filters=bypass_filters,
+                )
                 
                 # Update stats on success
                 async with _queue_stats_lock:
@@ -4742,11 +5583,15 @@ async def _log_queue_stats():
                     warn_info = f", warnings=[{', '.join(warnings)}]"
                 
                 retryafter_count = queue_stats.get('retryafter_min', 0)
+                skipped_prequeue_per_min = queue_stats.get('skipped_prequeue_per_min', 0)
+                skipped_worker_gate_per_min = queue_stats.get('skipped_worker_gate_per_min', 0)
                 
                 logger.info(
                     f"📊 Queue stats: queue_size={queue_size}{age_info}, "
                     f"sent_per_min={queue_stats.get('sent_per_min', 0)}, "
                     f"dropped_per_min={queue_stats.get('dropped_per_min', 0)}, "
+                    f"skipped_prequeue_per_min={skipped_prequeue_per_min}, "
+                    f"skipped_worker_gate_per_min={skipped_worker_gate_per_min}, "
                     f"retryafter_per_min={retryafter_count}, "
                     f"worker_count={len(worker_tasks)}{warn_info}"
                 )
@@ -4754,6 +5599,8 @@ async def _log_queue_stats():
                 # Reset per-minute counters
                 queue_stats['sent_per_min'] = 0
                 queue_stats['dropped_per_min'] = 0
+                queue_stats['skipped_prequeue_per_min'] = 0
+                queue_stats['skipped_worker_gate_per_min'] = 0
                 queue_stats['retryafter_min'] = 0
                 _queue_stats_reset_time = time.time()
         except Exception as e:
@@ -4830,16 +5677,36 @@ async def stop_queue_workers():
     worker_tasks = []
     logger.info("📤 Queue workers stopped")
 
-async def send_trade_alert(chat_id, message_text, whale_key: str = None, is_saved: bool = False, level_icon: str = "🦐"):
+async def send_trade_alert(
+    chat_id,
+    message_text,
+    whale_key: str = None,
+    is_saved: bool = False,
+    level_icon: str = "🦐",
+    market_key: str | None = None,
+    is_market_saved: bool = False,
+    value_usd: float | None = None,
+    bypass_filters: bool = False,
+):
     """
     Send trade alert with robust error handling (RetryAfter) and auto-mute for problematic users.
     """
     if not chat_id:
         return
     
+    # Global admin stop: don't send already queued alerts while bot is stopped
+    if not is_bot_enabled():
+        return
+    
     # Check if user is still active (may have pressed "Stop" while message was in queue)
     if not is_user_active(chat_id):
         return  # User stopped bot, don't send queued messages
+    
+    # Re-check amount threshold at send time to avoid stale messages after filter changes.
+    if value_usd is not None and not bypass_filters:
+        min_threshold = get_user_min_threshold(chat_id)
+        if float(value_usd) < float(min_threshold):
+            return
     
     # A) Check if muted before any sending attempt
     is_muted, seconds_left = _is_muted(chat_id)
@@ -4851,8 +5718,8 @@ async def send_trade_alert(chat_id, message_text, whale_key: str = None, is_save
         
     lang = get_user_lang(chat_id)
     reply_markup = None
-    if whale_key:
-        reply_markup = get_trade_alert_keyboard(lang, whale_key, is_saved, level_icon)
+    if whale_key or market_key:
+        reply_markup = get_trade_alert_keyboard(lang, whale_key, is_saved, level_icon, market_key, is_market_saved)
 
     max_retries = 3
     
@@ -4942,4 +5809,3 @@ async def send_trade_alert(chat_id, message_text, whale_key: str = None, is_save
             # Continue retrying if streak < 3
             if attempt < max_retries - 1:
                 await asyncio.sleep(1)  # Brief delay before retry
-

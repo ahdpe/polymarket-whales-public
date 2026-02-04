@@ -20,7 +20,8 @@ Telegram-бот для отслеживания крупных сделок ("к
 - 🌐 **Двуязычный интерфейс** — Русский / English
 - 🔗 **Ссылки на профиль трейдера** и рынок
 - 📈 **Расширенная аналитика:** Open PnL, активные позиции, возраст кошелька
-- ⭐ **Избранное:** Сохранение интересных трейдеров с их текущим "уровнем" (🦐-🔥) + **🔔 Уведомления** (персональная подписка на трейдера)
+- ⭐ **Трейдеры:** Сохранение трейдеров с их текущим "уровнем" (🦐-🔥) + **🔔 Уведомления** (персональная подписка на трейдера)
+- ⭐ **Маркеты:** Сохранение маркетов + **🔔 Уведомления** по маркету (все сделки $500+, с учётом фильтра типов событий)
 - 🐦 **Twitter интеграция** — автоматическая публикация крупных сделок в Twitter/X
 
 ### Обратная связь и поддержка
@@ -29,8 +30,6 @@ Telegram-бот для отслеживания крупных сделок ("к
 
 💝 **Поддержать проект:**  
 ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
-
-📊 **Торгуй на Bybit** — [Регистрация](https://partner.bybit.com/b/polywhales)
 
 ### Классификация объёмов
 
@@ -106,7 +105,8 @@ Polymarket API часто обрезает историю сделок для а
     - Для **вероятности**, **возраста** и **позиций** доступен ввод произвольного диапазона нажатием "📝 Настроить интервал".
     - Формат: `мин-макс` (например: `7-365`), `мин-` (от минимума), `-макс` (до максимума), или `0` (сбросить)
   - `▶️ Запустить / ⏸️ Остановить` — переключатель уведомлений
-  - `⭐ Избранное` — список сохранённых трейдеров
+  - `⭐ Трейдеры` — список сохранённых трейдеров
+  - `⭐ Маркеты` — список сохранённых маркетов
 - **Уведомления:** Присылает сообщение с:
   - Эмодзи категории (💰, ⚽, 📌) и названием рынка
   - Типом сделки (BUY/SELL/SPLIT/MERGE/REDEEM) с цветовыми индикаторами:
@@ -121,7 +121,8 @@ Polymarket API часто обрезает историю сделок для а
 - `/start` — Запуск бота
 - `/stop` — Вкл/Выкл уведомления (аналог кнопки ▶️/⏸️)
 - `/filters` — Меню настроек фильтров
-- `/saved` — Список избранных китов
+- `/saved` — Список сохранённых трейдеров
+- `/markets` — Список сохранённых маркетов
 - `/about` — Информация о боте
 - `/lang` — Переключение языка (🇬🇧 / 🇷🇺)
 - `/hide` — Скрыть клавиатуру меню
@@ -167,14 +168,14 @@ Polymarket API часто обрезает историю сделок для а
 - `/admin` — памятка со всеми административными командами
 - `/tlgrm_prob` — фильтр вероятности для админа (диапазон)
 
-#### 9. Статус-дашборд
+#### 8. Статус-дашборд
 Веб-интерфейс для мониторинга состояния бота в реальном времени.
 - **Доступ:** `http://<ip-сервера>:5000`
 - **Метрики:** Uptime, загрузка памяти, статистика пользователей, активность Twitter и Polymarket.
 - **Настройка:** В `.env` через `STATUS_PORT` и `STATUS_ENABLED`.
 
-#### 8. Архитектура "Избранного" (Saved Traders)
-Реализация списка избранных трейдеров оптимизирована для работы с ограничениями Telegram API:
+#### 9. Архитектура "Трейдеров" (Saved Traders)
+Реализация списка сохранённых трейдеров оптимизирована для работы с ограничениями Telegram API:
 1. **Компактные ключи (Callback Data):**
    - Telegram ограничивает `callback_data` до 64 байт.
    - Полные адреса кошельков (42 символа) + префикс команды часто превышают лимит.
@@ -188,6 +189,15 @@ Polymarket API часто обрезает историю сделок для а
 4. **Персональные уведомления (Bell Feature):**
    - Возможность включить уведомления (🔔) для конкретного трейдера.
    - Такие уведомления **игнорируют общие фильтры** (сумма, категория, вероятность) и приходят всегда.
+
+#### 10. Архитектура "Маркетов" (Saved Markets)
+Реализация списка сохранённых маркетов:
+1. **Компактные ключи (Callback Data):**
+   - Используется таблица `market_keys`, где `SHA1(market_ref)[:10]` мапится на market_id/slug.
+2. **Хранение данных (SQLite):**
+   - `saved_markets`: Связь `user_id` <-> `market_ref` + флаг уведомлений.
+3. **Персональные уведомления по рынку:**
+   - При включении (🔔) приходят **все сделки $500+** на этом рынке, с учётом фильтра типов событий пользователя.
 
 ### Установка
 
@@ -234,7 +244,8 @@ Telegram bot for real-time tracking of large trades ("whales") on [Polymarket](h
 - 🌐 **Bilingual interface** — Russian / English
 - 🔗 **Links to trader profile** and market
 - 📈 **Advanced Analytics:** Open PnL, Active Positions, Wallet Age
-- ⭐ **Favorites:** Save interesting traders with their current "level" (🦐-🔥) + **🔔 Notifications** (subscribe to specific trader)
+- ⭐ **Traders:** Save traders with their current "level" (🦐-🔥) + **🔔 Notifications** (subscribe to specific trader)
+- ⭐ **Markets:** Save markets + **🔔 Notifications** per market (all trades $500+, event types filter applied)
 - 🐦 **Twitter integration** — automatic posting of large trades to Twitter/X
 
 ### Feedback and Support
@@ -243,8 +254,6 @@ Telegram bot for real-time tracking of large trades ("whales") on [Polymarket](h
 
 💝 **Support the project:**  
 ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
-
-📊 **Trade on Bybit** — [Sign up](https://partner.bybit.com/b/polywhales)
 
 ### Volume Classification
 
@@ -302,6 +311,7 @@ A single large trade is often split into multiple fills. To avoid spam, the bot 
   - **Row 1:** Amount, Categories, Probability
   - **Row 2:** Event Types, Wallet Age, Open Positions
   - **Row 3:** Back
+  - **Buttons:** Start/Stop, ⭐ Traders, ⭐ Markets
 - **Filter Details:**
   - **Wallet Age:** Filter by trader wallet age in days (min-max range, default: unlimited). ⚠️ Beta mode - may have inaccuracies.
     - Format: `min-max` (e.g., `7-365`), `min-` (from minimum), `-max` (up to maximum), or `0` (reset)
@@ -316,7 +326,8 @@ A single large trade is often split into multiple fills. To avoid spam, the bot 
 - `/start` — Start bot
 - `/stop` — Toggle alerts ON/OFF (same as ▶️/⏸️ button)
 - `/filters` — Filter settings menu
-- `/saved` — Saved whales list
+- `/saved` — Saved traders list
+- `/markets` — Saved markets list
 - `/about` — About bot info
 - `/lang` — Switch language (🇬🇧 / 🇷🇺)
 - `/hide` — Hide menu keyboard
@@ -362,13 +373,13 @@ The bot can automatically post large trades to Twitter/X:
 - `/admin` — admin commands cheatsheet
 - `/tlgrm_prob` — probability filter for admin (range)
 
-#### 9. Status Dashboard
+#### 8. Status Dashboard
 Web interface for real-time bot monitoring.
 - **Access:** `http://<server-ip>:5000`
 - **Metrics:** Uptime, memory usage, user stats, Twitter and Polymarket activity.
 - **Config:** Via `.env` using `STATUS_PORT` and `STATUS_ENABLED`.
 
-#### 8. Favorites Architecture (Saved Traders)
+#### 9. Traders Architecture (Saved Traders)
 The saved traders implementation is optimized for Telegram API constraints:
 1. **Compact Keys (Callback Data):**
    - Telegram limits `callback_data` to 64 bytes.
@@ -383,6 +394,15 @@ The saved traders implementation is optimized for Telegram API constraints:
 4. **Direct Notifications (Bell Feature):**
    - Toggle notifications (🔔) for specific saved traders.
    - These alerts **bypass general filters** (amount, category, probability) and are always delivered.
+
+#### 10. Markets Architecture (Saved Markets)
+Saved markets implementation:
+1. **Compact Keys (Callback Data):**
+   - Uses `market_keys` table mapping `SHA1(market_ref)[:10]` to market_id/slug.
+2. **Data Storage (SQLite):**
+   - `saved_markets`: Maps `user_id` <-> `market_ref` + notifications flag.
+3. **Market Notifications:**
+   - When enabled (🔔), all trades **$500+** on that market are delivered, with user event-type filter applied.
 
 ### Installation
 

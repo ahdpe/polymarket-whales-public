@@ -6,6 +6,7 @@ import os
 import time
 import json
 import sqlite3
+import threading
 import psutil
 import logging
 from datetime import datetime
@@ -21,6 +22,15 @@ _poly_service = None
 
 # Reference to InsiderAlertsService (set by main.py)
 _insider_service = None
+
+# Small in-memory cache to reduce expensive status recomputation under concurrent dashboard opens.
+try:
+    STATUS_CACHE_TTL_SEC = max(0.0, float(os.getenv("STATUS_CACHE_TTL_SEC", "2.0")))
+except (TypeError, ValueError):
+    STATUS_CACHE_TTL_SEC = 2.0
+_status_cache_lock = threading.Lock()
+_status_cache_payload = None
+_status_cache_ts = 0.0
 
 
 def set_start_time(start_time: float):
@@ -216,7 +226,7 @@ def get_twitter_stats() -> dict:
             "max_insider_age_days": settings.get("max_insider_age_days", 7),
             "max_insider_positions": settings.get("max_insider_positions", 5),
             "interval_minutes": settings.get("interval_minutes", 25),
-            "probability_filter": f"{settings.get('probability_min', 1)}_{settings.get('probability_max', 99)}" if settings.get("probability_min") and settings.get("probability_max") else settings.get("probability_filter", "any"),
+            "probability_filter": f"{settings.get('probability_min', 1)}_{settings.get('probability_max', 99)}" if settings.get("probability_min") is not None and settings.get("probability_max") is not None else settings.get("probability_filter", "any"),
             "allow_sell": settings.get("allow_sell", True),
             "allow_split": settings.get("allow_split", True),
             "allow_merge": settings.get("allow_merge", True),
@@ -336,7 +346,11 @@ def get_polymarket_stats() -> dict:
         # Calculate time since last update
         last_ts = stats.get("last_timestamp", 0)
         if last_ts:
-            seconds_ago = int(time.time() - last_ts / 1000)  # timestamp is in ms
+            # Support both seconds and legacy milliseconds timestamps.
+            last_ts_sec = float(last_ts)
+            if last_ts_sec > 1e10:
+                last_ts_sec /= 1000.0
+            seconds_ago = int(time.time() - last_ts_sec)
             if seconds_ago < 0:
                 seconds_ago = 0
         else:
@@ -370,16 +384,31 @@ def get_insider_stats() -> dict:
 
 def get_full_status() -> dict:
     """Get complete bot status with all metrics."""
-    return {
+    global _status_cache_payload, _status_cache_ts
+
+    now = time.time()
+    with _status_cache_lock:
+        if (
+            _status_cache_payload is not None
+            and STATUS_CACHE_TTL_SEC > 0
+            and (now - _status_cache_ts) < STATUS_CACHE_TTL_SEC
+        ):
+            return _status_cache_payload
+
+    payload = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "timestamp_unix": int(time.time()),
+        "timestamp_unix": int(now),
         "system": get_system_stats(),
         "users": get_user_stats(),
         "twitter": get_twitter_stats(),
         "databases": get_database_stats(),
         "files": get_file_stats(),
-        "databases": get_database_stats(),
-        "files": get_file_stats(),
         "polymarket": get_polymarket_stats(),
         "insider": get_insider_stats(),
     }
+
+    with _status_cache_lock:
+        _status_cache_payload = payload
+        _status_cache_ts = now
+
+    return payload

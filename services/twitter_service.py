@@ -74,7 +74,6 @@ DEFAULT_SETTINGS = {
     'max_insider_positions': 3,    # Default: 3 positions max for Insider
     'tweet_timestamps': [],        # List of timestamps of successful tweets (for 24h rolling window)
     'paused_until': 0,            # Timestamp until which posting is paused (403 protection)
-    'interval_minutes': 25,       # Minutes between tweets (minimum interval, but 24h limit takes priority)
     'interval_minutes': 25,       # Minutes between tweets
     'probability_min': 1,         # Min probability (inclusive)
     'probability_max': 99,        # Max probability (inclusive)
@@ -573,7 +572,7 @@ class TwitterService:
             return False, f"category_{category}_disabled"
         
         # Check minimum amount
-        value_usd = price * float(trade_data.get('size', 0))
+        value_usd = self._get_trade_value_usd(trade_data)
         
         # Check if this qualifies as an "Insider Candidate"
         # (Conditions must match logic in format_tweet)
@@ -671,8 +670,7 @@ class TwitterService:
         side = trade_data.get('side', 'UNKNOWN')
         outcome = trade_data.get('outcome', '')
         price = float(trade_data.get('price', 0))
-        size = float(trade_data.get('size', 0))
-        value_usd = price * size
+        value_usd = self._get_trade_value_usd(trade_data)
         
         side_upper = side.upper()
         is_buy = side_upper == 'BUY'
@@ -1308,6 +1306,9 @@ class TwitterService:
             trade_ts = float(trade_timestamp or time.time())
         except (TypeError, ValueError):
             trade_ts = time.time()
+        # Accept both seconds and milliseconds timestamps.
+        if trade_ts > 1e10:
+            trade_ts /= 1000.0
 
         ready_at = trade_ts + max(0, delay_seconds)
 
@@ -1344,6 +1345,9 @@ class TwitterService:
 
             for entry in self.delayed_queue:
                 ready_at = float(entry.get("ready_at", 0))
+                # Backward compatibility: old queue files may store ms timestamps.
+                if ready_at > 1e10:
+                    ready_at /= 1000.0
                 condition_id = entry.get("condition_id") or ""
                 trader_address = entry.get("trader_address") or ""
                 twitter_data = entry.get("twitter_data") or {}

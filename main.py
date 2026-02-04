@@ -6,8 +6,6 @@ import fcntl
 import time
 import psutil
 from datetime import datetime, time as dt_time, timedelta
-import sqlite3
-import json
 from services.polymarket import PolymarketService
 from services.telegram_service import (
     start_telegram, enqueue_trade_alert, user_filters, 
@@ -20,12 +18,12 @@ from services.telegram_service import (
 from services.report_service import generate_report
 from core.filters import get_alert_level
 from core.categories import detect_category, should_show_trade
-from core.localization import get_text, get_trade_level_name, get_trade_level_emoji, get_trade_level_icon
+from core.localization import get_trade_level_emoji, get_trade_level_icon
 from core.utils import shorten_trader_name
-from config import FILTERS
 from storage import saved_whales
+from storage import saved_markets
 from services.twitter_service import get_twitter_service
-from services.insider_alerts import InsiderAlertsService, get_insider_alerts_service, set_insider_alerts_service as set_global_insider_alerts_service
+from services.insider_alerts import InsiderAlertsService, set_insider_alerts_service as set_global_insider_alerts_service
 from services.status_service import set_start_time as set_status_start_time, set_poly_service as set_status_poly_service, set_insider_service as set_status_insider_service
 from services.status_server import start_status_server
 
@@ -50,9 +48,6 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-
-# Default chat ID from env (if set)
-DEFAULT_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # Module-level service reference (set in main())
 poly_service = None
@@ -184,7 +179,8 @@ async def handle_trade(trade_data):
         # Detect category - use both slug and eventSlug for better detection
         market_title = trade_data.get('title', 'Unknown Market')
         slug = trade_data.get('slug', '')
-        event_slug = trade_data.get('eventSlug', '')
+        event_slug = trade_data.get('eventSlug') or trade_data.get('slug') or ''
+        market_id = trade_data.get('conditionId') or trade_data.get('market_id', '')
         
         # Build market URL early (needed for category detection)
         market_url = f"https://polymarket.com/event/{event_slug}" if event_slug else ""
@@ -248,6 +244,17 @@ async def handle_trade(trade_data):
              if trader_address and saved_whales.is_notifications_enabled(chat_id, trader_address):
                  logger.info(f"Notification BYPASS for trader {trader_address} (chat_id: {chat_id})")
                  return (True, True)  # Qualified via bypass (but user must be active)
+
+             # Check if notifications are enabled for this market (BYPASS filters except event types, $500+)
+             if market_id or event_slug:
+                 if saved_markets.is_notifications_enabled(chat_id, market_id, event_slug):
+                     side_types_prefs = get_user_side_types(chat_id)
+                     if value_usd >= 500 and should_show_side_type(side, trade_data, side_types_prefs):
+                         logger.info(
+                             f"Market BYPASS for {event_slug or market_id} (chat_id: {chat_id}, value=${value_usd:,.0f})"
+                         )
+                         return (True, True)
+                     return (False, False)
 
              if value_usd < min_threshold:
                  return (False, False)
@@ -447,6 +454,26 @@ async def handle_trade(trade_data):
              
              # Check if trader is saved by this user
              is_saved = saved_whales.is_saved(chat_id, trader_address) if trader_address else False
+
+             # Check if market is saved by this user (for button state)
+             saved_market = saved_markets.get_saved_market(chat_id, market_id, event_slug)
+             is_market_saved = bool(saved_market)
+             if saved_market:
+                 market_ref_for_key = saved_market.get('market_ref')
+                 if (not saved_market.get('title')) and market_title and market_title != 'Unknown Market':
+                     saved_markets.update_title(chat_id, market_ref_for_key, market_title)
+             else:
+                 market_ref_for_key = saved_markets.make_market_ref(market_id, event_slug)
+             market_key = (
+                 saved_markets.get_or_create_key(
+                     market_ref_for_key,
+                     market_id=market_id,
+                     event_slug=event_slug,
+                     title=market_title,
+                 )
+                 if market_ref_for_key
+                 else None
+             )
              
              # Shorten trader name/address for display
              display_trader = shorten_trader_name(trader)
@@ -461,13 +488,17 @@ async def handle_trade(trade_data):
                  side_line = f"{side_display} @ {price_pct:.1f}%\n"
              
              # Add bypass indicator (is_bypass already defined at start of loop)
-             bypass_indicator = " 🔔" if is_bypass else ""
+             trader_bell = " 🔔" if (trader_address and saved_whales.is_notifications_enabled(chat_id, trader_address)) else ""
+             if saved_market:
+                 market_bell = " 🔔" if saved_market.get('notifications_enabled') else " 🔕"
+             else:
+                 market_bell = ""
              
              msg = (
-                f"{cat_emoji} [{market_title[:80]}]({market_url})\n"
+                f"{cat_emoji} [{market_title[:80]}]({market_url}){market_bell}\n"
                 f"{side_line}"
                 f"💵 {money_text}\n"
-                f"{level_emoji} {trader_text}{bypass_indicator}{position_stats_line}{wallet_age_line}\n"
+                f"{level_emoji} {trader_text}{trader_bell}{position_stats_line}{wallet_age_line}\n"
             )
              # Get level icon for button
              level_icon = get_trade_level_icon(alert_config['min'])
@@ -477,7 +508,17 @@ async def handle_trade(trade_data):
                      f"trader={trader_address[:10]}... value=${value_usd:,.0f} "
                      f"market={market_title[:50]}"
                  )
-             await enqueue_trade_alert(chat_id, msg, whale_key=whale_key, is_saved=is_saved, level_icon=level_icon)
+             await enqueue_trade_alert(
+                 chat_id,
+                 msg,
+                 whale_key=whale_key,
+                 is_saved=is_saved,
+                 level_icon=level_icon,
+                 market_key=market_key,
+                 is_market_saved=is_market_saved,
+                 value_usd=value_usd,
+                 bypass_filters=is_bypass,
+             )
         
         # Post to Twitter with 10‑minute delay and position re‑check
         if twitter_wants:
@@ -732,6 +773,7 @@ async def main():
     
     # Initialize saved whales DB
     saved_whales.init_db()
+    saved_markets.init_db()
     
     # Start status dashboard server
     status_port = int(os.getenv("STATUS_PORT", "5000"))

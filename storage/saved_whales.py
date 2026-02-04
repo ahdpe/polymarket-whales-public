@@ -12,6 +12,21 @@ logger = logging.getLogger(__name__)
 
 DB_PATH = "data/saved_whales.db"
 MAX_COMMENT_LEN = 240
+SQLITE_BUSY_TIMEOUT_MS = 5000
+
+# In-memory cache: user_id (int) -> set of whale_ids with notifications enabled
+_notifications_cache: dict[int, set[str]] = {}
+_cache_loaded = False
+
+def _update_notification_cache(user_id: str | int, whale_id: str, enabled: bool) -> None:
+    """Keep in-memory notifications cache in sync with DB."""
+    uid = int(user_id)
+    if uid not in _notifications_cache:
+        _notifications_cache[uid] = set()
+    if enabled:
+        _notifications_cache[uid].add(whale_id)
+    else:
+        _notifications_cache[uid].discard(whale_id)
 
 
 def _get_connection():
@@ -20,6 +35,7 @@ def _get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS};")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -91,8 +107,34 @@ def init_db():
         
         conn.commit()
         logger.info("Saved whales DB initialized")
+        _load_notifications_cache(conn)
     finally:
         conn.close()
+
+
+def _load_notifications_cache(conn=None):
+    """Load notifications cache from DB into memory."""
+    global _notifications_cache, _cache_loaded
+    close_conn = False
+    if conn is None:
+        conn = _get_connection()
+        close_conn = True
+    try:
+        rows = conn.execute(
+            "SELECT user_id, whale_id FROM saved_whales WHERE notifications_enabled = 1"
+        ).fetchall()
+        _notifications_cache.clear()
+        for row in rows:
+            uid = int(row["user_id"])
+            wid = row["whale_id"]
+            if uid not in _notifications_cache:
+                _notifications_cache[uid] = set()
+            _notifications_cache[uid].add(wid)
+        _cache_loaded = True
+        logger.info(f"Notifications cache loaded: {sum(len(v) for v in _notifications_cache.values())} entries for {len(_notifications_cache)} users")
+    finally:
+        if close_conn:
+            conn.close()
 
 
 def get_or_create_key(whale_id: str, name: str = None, level_icon: str = None) -> str:
@@ -232,7 +274,11 @@ def is_saved(user_id: str | int, whale_id: str) -> bool:
 
 
 def is_notifications_enabled(user_id: str | int, whale_id: str) -> bool:
-    """Check if notifications are enabled for this trader for this user."""
+    """Check if notifications are enabled for this trader for this user (uses cache)."""
+    uid = int(user_id)
+    if _cache_loaded:
+        return whale_id in _notifications_cache.get(uid, set())
+    # Fallback to DB if cache not loaded
     conn = _get_connection()
     try:
         row = conn.execute(
@@ -259,6 +305,7 @@ def toggle_notifications(user_id: str | int, whale_id: str) -> bool:
             (1 if new_state else 0, now, str(user_id), whale_id)
         )
         conn.commit()
+        _update_notification_cache(user_id, whale_id, new_state)
         return new_state
     finally:
         conn.close()
@@ -284,24 +331,28 @@ def save(user_id: str | int, whale_id: str, name: str = None, level_icon: str = 
                VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
                ON CONFLICT(user_id, whale_id) DO UPDATE SET """
         
-        # Default to current if not provided and exists, or 0
-        if notifications_enabled is None:
-            notifications_enabled = 0 # Default for new
-            
-        params = [str(user_id), whale_id, name, level_icon, notifications_enabled, now, now]
+        notifications_was_explicit = notifications_enabled is not None
+        insert_notifications = 1 if notifications_enabled else 0
+
+        params = [str(user_id), whale_id, name, level_icon, insert_notifications, now, now]
         
         updates = ["updated_at = excluded.updated_at"]
         if name:
             updates.append("name = excluded.name")
-        # Note: we explicitly DO NOT update notifications_enabled if already exists, 
-        # unless specifically passed as an argument (preserve user's toggle)
-        if notifications_enabled is not None:
-             pass 
+        # Update notifications only when explicitly provided by caller.
+        if notifications_was_explicit:
+            updates.append("notifications_enabled = excluded.notifications_enabled")
             
         query += ", ".join(updates)
         
         conn.execute(query, params)
+        row = conn.execute(
+            "SELECT notifications_enabled FROM saved_whales WHERE user_id = ? AND whale_id = ?",
+            (str(user_id), whale_id),
+        ).fetchone()
         conn.commit()
+        if row is not None:
+            _update_notification_cache(user_id, whale_id, bool(row["notifications_enabled"]))
     finally:
         conn.close()
 
@@ -342,7 +393,7 @@ def list_saved(user_id: str | int, offset: int = 0, limit: int = 10) -> list[dic
             """SELECT whale_id, name, level_icon, notifications_enabled, comment, created_at, updated_at 
                FROM saved_whales 
                WHERE user_id = ?
-               ORDER BY updated_at DESC
+               ORDER BY created_at DESC, rowid DESC
                LIMIT ? OFFSET ?""",
             (str(user_id), limit, offset)
         ).fetchall()
@@ -365,6 +416,47 @@ def count_saved(user_id: str | int) -> int:
         conn.close()
 
 
+def count_notifications_enabled(user_id: str | int) -> int:
+    """Count saved whales with notifications enabled for user."""
+    conn = _get_connection()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM saved_whales WHERE user_id = ? AND notifications_enabled = 1",
+            (str(user_id),)
+        ).fetchone()
+        return row["cnt"] if row else 0
+    finally:
+        conn.close()
+
+
+def set_notifications_for_user(user_id: str | int, enabled: bool) -> None:
+    """Set notifications_enabled for all saved whales for a user."""
+    now = int(time.time())
+    conn = _get_connection()
+    try:
+        conn.execute(
+            """
+            UPDATE saved_whales
+               SET notifications_enabled = ?, updated_at = ?
+             WHERE user_id = ?
+            """,
+            (1 if enabled else 0, now, str(user_id))
+        )
+        conn.commit()
+        # Update cache
+        uid = int(user_id)
+        if enabled:
+            # Load all whale_ids for this user into cache
+            rows = conn.execute(
+                "SELECT whale_id FROM saved_whales WHERE user_id = ?", (str(user_id),)
+            ).fetchall()
+            _notifications_cache[uid] = {row["whale_id"] for row in rows}
+        else:
+            _notifications_cache[uid] = set()
+    finally:
+        conn.close()
+
+
 def delete(user_id: str | int, whale_id: str) -> None:
     """Delete whale from user's saved list."""
     conn = _get_connection()
@@ -374,6 +466,10 @@ def delete(user_id: str | int, whale_id: str) -> None:
             (str(user_id), whale_id)
         )
         conn.commit()
+        # Update cache
+        uid = int(user_id)
+        if uid in _notifications_cache:
+            _notifications_cache[uid].discard(whale_id)
     finally:
         conn.close()
 
@@ -395,6 +491,9 @@ def clear_all(user_id: str | int) -> int:
             (str(user_id),)
         )
         conn.commit()
+        # Update cache
+        uid = int(user_id)
+        _notifications_cache.pop(uid, None)
         return count
     finally:
         conn.close()

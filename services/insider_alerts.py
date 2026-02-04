@@ -2,12 +2,12 @@
 Insider Alerts Detection Service.
 Analyzes trading patterns to detect coordinated activity by fresh wallets.
 """
+import asyncio
 import logging
 import os
 import time
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timedelta
-from collections import defaultdict
 from collections import defaultdict
 from storage import alerts_storage
 from core.categories import detect_category
@@ -38,7 +38,6 @@ DEFAULT_SETTINGS = {
     'cluster_min_total_usd': '10000',
     'cluster_min_wallets': '4',
     'cluster_min_direction_pct': '75',
-    'cluster_side': 'both',
     'cluster_side': 'both',
     'cluster_include_profiles': 'true',
     'cluster_max_positions': '3',
@@ -97,6 +96,9 @@ class InsiderAlertsService:
         self._active_clusters = {}      # market_id -> data
         self._active_accumulations = {} # market_id -> data
         self._active_bursts = {}        # market_id -> data
+        self._scenario_debounce_sec = max(0.1, float(os.getenv("INSIDER_SCENARIO_DEBOUNCE_SEC", "1.5")))
+        self._pending_scenario_checks: Dict[str, Dict[str, Any]] = {}
+        self._scenario_tasks: Dict[str, asyncio.Task] = {}
 
         logger.info("InsiderAlertsService v2 (Bold Formatting) initialized")
 
@@ -149,6 +151,48 @@ class InsiderAlertsService:
     def set_poly_service(self, poly_service):
         """Set PolymarketService instance for position verification."""
         self._poly_service = poly_service
+
+    async def _run_debounced_scenario_check(self, market_id: str) -> None:
+        """Run scenario checks once per market after short quiet period."""
+        try:
+            await asyncio.sleep(self._scenario_debounce_sec)
+            payload = self._pending_scenario_checks.pop(market_id, None)
+            if not payload:
+                return
+            category = payload.get("category", "other")
+            await self.check_scenarios(market_id, category)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Error in debounced scenario check for {market_id}: {e}", exc_info=True)
+
+    def _schedule_scenario_check_debounced(self, market_id: str, category: str) -> None:
+        """
+        Debounce scenario checks by market_id to reduce repeated heavy checks
+        during short trade bursts.
+        """
+        if not market_id:
+            return
+
+        self._pending_scenario_checks[market_id] = {
+            "category": category,
+            "updated_at": time.time(),
+        }
+
+        existing_task = self._scenario_tasks.get(market_id)
+        if existing_task and not existing_task.done():
+            existing_task.cancel()
+
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(self._run_debounced_scenario_check(market_id))
+        self._scenario_tasks[market_id] = task
+
+        def _cleanup(done_task: asyncio.Task) -> None:
+            current = self._scenario_tasks.get(market_id)
+            if current is done_task:
+                self._scenario_tasks.pop(market_id, None)
+
+        task.add_done_callback(_cleanup)
 
     def _load_settings(self):
         """Load settings from database or use defaults."""
@@ -207,7 +251,6 @@ class InsiderAlertsService:
             # Check category filter - skip if category is disabled
             cat_key = f"cat_{category}_enabled"
             if self.settings.get(cat_key, 'true').lower() != 'true':
-                logger.debug(f"Skipping trade: category '{category}' is disabled")
                 logger.debug(f"Skipping trade: category '{category}' is disabled")
                 return
 
@@ -291,8 +334,6 @@ class InsiderAlertsService:
                 'market_title': trade_data.get('title', ''),
                 'event_slug': trade_data.get('eventSlug', ''),
                 'category': category,
-                'event_slug': trade_data.get('eventSlug', ''),
-                'category': category,
                 'open_positions': trade_data.get('open_positions', 0),
                 'price': price
             })
@@ -302,12 +343,11 @@ class InsiderAlertsService:
 
             # Only check scenarios if enabled
             if self.is_enabled():
-                # Schedule async check (fire and forget)
-                import asyncio
+                # Schedule debounced async check to avoid repeated checks during bursts.
                 try:
                     loop = asyncio.get_event_loop()
                     if loop.is_running():
-                        asyncio.create_task(self.check_scenarios(market_id, category))
+                        self._schedule_scenario_check_debounced(market_id, category)
                     else:
                         loop.run_until_complete(self.check_scenarios(market_id, category))
                 except RuntimeError:
@@ -523,6 +563,7 @@ class InsiderAlertsService:
     def _check_accumulation(self, market_id: str) -> Optional[Dict[str, Any]]:
         """Check for slow multi-wallet accumulation pattern."""
         try:
+            interval_days = float(self.settings.get('accumulation_interval_days', '14'))
             min_usd = float(self.settings.get('accumulation_min_usd', '10000'))
             min_total = float(self.settings.get('accumulation_min_total_usd', '50000'))
             min_wallets = int(self.settings.get('accumulation_min_wallets', '3'))
@@ -530,8 +571,8 @@ class InsiderAlertsService:
             min_dir = float(self.settings.get('accumulation_min_direction_pct', '70'))
             max_pos = int(self.settings.get('accumulation_max_positions', '3'))
 
-            # Logic: Use get_trades_window with a large window (14 days) + max_age
-            window_hours = 14 * 24
+            # Use configurable accumulation interval.
+            window_hours = max(1.0, interval_days) * 24
             trades = alerts_storage.get_trades_window(market_id, window_hours, max_age)
 
             if not trades:
@@ -1360,7 +1401,13 @@ class InsiderAlertsService:
             # Get all active markets
             markets = alerts_storage.get_all_active_markets(hours_back=24)
             
-            for market_id in markets:
+            for market_data in markets:
+                if isinstance(market_data, dict):
+                    market_id = market_data.get('market_id')
+                else:
+                    market_id = str(market_data) if market_data is not None else None
+                if not market_id:
+                    continue
                 # Check CLUSTER pending
                 cluster_pending = self._get_cluster_pending(market_id)
                 if cluster_pending:

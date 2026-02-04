@@ -547,6 +547,9 @@ def try_mark_published_atomic(
     cutoff = int(time.time()) - (cooldown_hours * 3600)
     conn = _get_connection()
     try:
+        # Explicit write transaction to avoid race between SELECT and INSERT.
+        conn.execute("BEGIN IMMEDIATE")
+
         # First check if already published within cooldown
         row = conn.execute("""
             SELECT timestamp FROM alerts_published
@@ -556,6 +559,7 @@ def try_mark_published_atomic(
         
         if row is not None:
             # Already published, return False
+            conn.commit()
             return False
         
         # Not published yet - mark it now atomically
@@ -576,6 +580,9 @@ def try_mark_published_atomic(
         ))
         conn.commit()
         return True  # Successfully marked
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 

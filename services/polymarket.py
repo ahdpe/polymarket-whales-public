@@ -18,9 +18,15 @@ POLL_INTERVAL = 3
 MAX_LRU_SIZE = 10000
 DB_PATH = "data/trades.db"
 TTL_HOURS = 72
+SQLITE_BUSY_TIMEOUT_MS = 5000
 
 RECENT_WALLETS_WINDOW = 48 * 3600  # 48 hours
 WALLET_ACTIVITY_CHECK_COOLDOWN = 300  # 5 minutes
+MAX_CONCURRENT_CALLBACKS = 50
+MAX_PENDING_CALLBACK_TASKS = 5000
+CALLBACK_QUEUE_INFO_THRESHOLD = 200
+CALLBACK_QUEUE_WARN_THRESHOLD = 1000
+CALLBACK_HEALTH_LOG_INTERVAL = 30
 
 POSITIONS_CACHE_TTL = 60
 _positions_cache = {}  # {proxy_wallet: {"data": {...}, "ts": timestamp}}
@@ -58,6 +64,7 @@ class TradePersistence:
         self.conn.execute("PRAGMA journal_mode=WAL;")
         self.conn.execute("PRAGMA synchronous=NORMAL;")
         self.conn.execute("PRAGMA temp_store=MEMORY;")
+        self.conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS};")
 
         self.conn.execute(
             """
@@ -245,6 +252,14 @@ class TradeAggregator:
 
         self.last_cleanup = now
 
+    def reset_aggregator(self) -> int:
+        """Clear all aggregation state. Call when filters change significantly or bot stops."""
+        cleared = len(self.series)
+        self.series.clear()
+        if cleared > 0:
+            logger.info(f"Reset aggregator (cleared {cleared} active series)")
+        return cleared
+
 
 class PolymarketService:
     def __init__(self):
@@ -261,8 +276,73 @@ class PolymarketService:
         self.seen_activities = OrderedDict()  # {activity_id: ts}
         self.seen_activities_max = 10000
         self.last_activity_poll = 0
+        self._callback_semaphore = asyncio.Semaphore(MAX_CONCURRENT_CALLBACKS)
+        self._callback_tasks: set[asyncio.Task] = set()
+        self._dropped_callbacks = 0
+        self._last_callback_health_log = 0.0
 
         logger.info("PolymarketService initialized - Data API + SQLite + aggregation")
+
+    async def _run_callback(self, callback, trade_data: dict):
+        """Run callback with bounded concurrency to prevent event-loop overload."""
+        async with self._callback_semaphore:
+            try:
+                await callback(trade_data)
+            except Exception:
+                logger.exception("Error in trade callback")
+
+    def _schedule_callback(self, callback, trade_data: dict):
+        """Schedule callback task with a hard cap on pending tasks."""
+        if len(self._callback_tasks) >= MAX_PENDING_CALLBACK_TASKS:
+            self._dropped_callbacks += 1
+            if self._dropped_callbacks % 100 == 1:
+                logger.warning(
+                    "Dropping trade callbacks due to overload "
+                    "(pending=%s, dropped=%s)",
+                    len(self._callback_tasks),
+                    self._dropped_callbacks,
+                )
+            return
+
+        task = asyncio.create_task(self._run_callback(callback, trade_data))
+        self._callback_tasks.add(task)
+        task.add_done_callback(self._callback_tasks.discard)
+
+    def _log_callback_queue_health(self):
+        """Periodic health log for callback queue to aid production monitoring."""
+        pending = len(self._callback_tasks)
+        if pending < CALLBACK_QUEUE_INFO_THRESHOLD:
+            return
+
+        now = time.time()
+        if now - self._last_callback_health_log < CALLBACK_HEALTH_LOG_INTERVAL:
+            return
+        self._last_callback_health_log = now
+
+        if pending >= CALLBACK_QUEUE_WARN_THRESHOLD:
+            logger.warning(
+                "Callback queue pressure: pending=%s dropped=%s",
+                pending,
+                self._dropped_callbacks,
+            )
+        else:
+            logger.info(
+                "Callback queue backlog: pending=%s dropped=%s",
+                pending,
+                self._dropped_callbacks,
+            )
+
+    def clear_callback_queue(self) -> int:
+        """Cancel all pending callback tasks. Call when bot is stopped."""
+        cancelled_count = 0
+        for task in list(self._callback_tasks):
+            if not task.done():
+                task.cancel()
+                cancelled_count += 1
+        self._callback_tasks.clear()
+        if cancelled_count > 0:
+            logger.info(f"Cleared {cancelled_count} pending callback tasks")
+        return cancelled_count
 
     async def _fetch_recent_activities(self, session, user_address, activity_type, limit=50, offset=0):
         url = f"{DATA_API_URL}/activity?user={user_address}&type={activity_type}&limit={limit}&offset={offset}"
@@ -557,7 +637,7 @@ class PolymarketService:
 
                             agg_trade = self.aggregator.process_trade(trade)
                             if agg_trade:
-                                await callback(agg_trade)
+                                self._schedule_callback(callback, agg_trade)
 
                         # keep last_timestamp clean (seconds)
                         self.last_timestamp = max(norm_ts(self.last_timestamp), newest_trade_ts)
@@ -577,6 +657,7 @@ class PolymarketService:
 
                     self.aggregator.cleanup()
                     self.persistence.cleanup()
+                    self._log_callback_queue_health()
 
                     if self.consecutive_errors >= 3:
                         logger.warning(f"Data API experiencing issues ({self.consecutive_errors} consecutive errors)")
@@ -700,7 +781,7 @@ class PolymarketService:
                                         f"${trade_data.get('value_usd', 0):,.0f} by {wallet_address[:10]}... "
                                         f"in {trade_data.get('title', 'Unknown Market')[:50]}"
                                     )
-                                    await callback(trade_data)
+                                    self._schedule_callback(callback, trade_data)
 
                             await asyncio.sleep(0.2)
 
@@ -714,6 +795,7 @@ class PolymarketService:
                                 self.wallet_last_activity_check.pop(w, None)
 
                     self.last_activity_poll = now
+                    self._log_callback_queue_health()
 
                 except Exception as e:
                     logger.error(f"Activity polling error: {e}")
