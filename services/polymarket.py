@@ -139,20 +139,22 @@ class TradePersistence:
             return
 
         cutoff_ms = int((time.time() - (TTL_HOURS * 3600)) * 1000)
+        deleted = 0
         with self.conn:
             cursor = self.conn.execute("DELETE FROM seen_trades WHERE seen_at < ?", (cutoff_ms,))
             deleted = cursor.rowcount
-            
-            # Run VACUUM periodically to reclaim space (every 24 hours or if deleted > 100k)
-            should_vacuum = (time.time() - getattr(self, '_last_vacuum', 0) > 86400) or deleted > 100000
-            if should_vacuum:
-                try:
-                    logger.info(f"Running VACUUM on trades.db (deleted {deleted} old records)")
-                    self.conn.execute("VACUUM")
-                    self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-                    self._last_vacuum = time.time()
-                except Exception as e:
-                    logger.error(f"Error during VACUUM: {e}")
+
+        # Run VACUUM periodically to reclaim space (every 24 hours or if deleted > 100k)
+        # Must be outside a transaction or SQLite will reject it.
+        should_vacuum = (time.time() - getattr(self, "_last_vacuum", 0) > 86400) or deleted > 100000
+        if should_vacuum:
+            try:
+                logger.info(f"Running VACUUM on trades.db (deleted {deleted} old records)")
+                self.conn.execute("VACUUM")
+                self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                self._last_vacuum = time.time()
+            except Exception as e:
+                logger.error(f"Error during VACUUM: {e}")
         
         self.last_cleanup = time.time()
 
@@ -592,8 +594,10 @@ class PolymarketService:
 
     async def poll_trades(self, callback, interval=POLL_INTERVAL):
         logger.info(f"Starting trade polling (every {interval}s)...")
-        limit = 10000
         last_prune = 0.0
+        
+        # API has a hard limit of offset 3000 and max items per response of 1000
+        MAX_OFFSET = 3000
 
         async with aiohttp.ClientSession() as session:
             while True:
@@ -611,7 +615,11 @@ class PolymarketService:
                     baseline_last_ts = norm_ts(self.last_timestamp)
 
                     for _ in range(max_pages):
-                        trades = await self._fetch_recent_trades(session, limit=limit, offset=offset)
+                        # Ensure we don't exceed the max historical offset
+                        if offset > MAX_OFFSET:
+                            break
+                            
+                        trades = await self._fetch_recent_trades(session, limit=1000, offset=offset)
                         if not trades:
                             break
 
@@ -645,9 +653,9 @@ class PolymarketService:
                         if baseline_last_ts > 0 and oldest_trade_ts > baseline_last_ts:
                             logger.info(
                                 f"Paging deeper: page oldest {oldest_trade_ts} > baseline {baseline_last_ts} "
-                                f"(next offset {offset + limit})"
+                                f"(next offset {offset + 1000})"
                             )
-                            offset += limit
+                            offset += 1000
                         else:
                             break
 
