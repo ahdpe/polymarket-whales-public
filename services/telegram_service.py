@@ -286,7 +286,9 @@ queue_stats = {
     'dropped_per_min': 0,
     'skipped_prequeue_per_min': 0,
     'skipped_worker_gate_per_min': 0,
-    'retryafter_min': 0,  # Changed from retryafter_per_min to retryafter_min
+    'retryafter_min': 0,
+    'requeued_total': 0,
+    'requeued_per_min': 0,
 }
 _queue_stats_lock = asyncio.Lock()
 _queue_stats_reset_time = time.time()
@@ -5360,6 +5362,49 @@ async def clear_pending_alert_queue(chat_id: int | None = None) -> int:
     
     return cleared
 
+def _get_per_chat_delay(chat_id: int) -> float:
+    """
+    Check how long to wait for per-chat rate limit WITHOUT updating state.
+    Returns seconds to wait (0 if ready).
+    """
+    # Current time
+    now = time.time()
+    
+    # Check next allowed send time (without lock first for speed, then lock if needed? 
+    # No, simple lock is safer)
+    # Actually, we need to be careful not to introduce race conditions.
+    # But for a "check", we can just read.
+    # However, strictly speaking, we need the lock to read _per_chat_next_send safely if strictly consistent.
+    # But for a heuristic, it's probably fine? No, stick to lock.
+    # BUT, we can't use async lock in sync function? 
+    # No, we can make this async or just use the dict if we assume GIL / atomic dict ops?
+    # Python dicts are thread-safe for single ops, but here we are in asyncio. 
+    # In asyncio, we don't have threads race, but we have tasks. 
+    # Task switch happens at await.
+    # So valid to read dict directly without lock if no await in between.
+    
+    next_send = _per_chat_next_send.get(chat_id, 0)
+    delay = max(0, next_send - now)
+    return delay
+
+async def _reserve_per_chat_slot(chat_id: int, delay_threshold: float = 0.5) -> float:
+    """
+    Reserve a slot for sending. 
+    If delay > delay_threshold, DO NOT reserve and return delay (so caller can requeue).
+    If delay <= delay_threshold, reserve and return delay (caller must wait).
+    """
+    async with _per_chat_lock:
+        now = time.time()
+        next_send = _per_chat_next_send.get(chat_id, 0)
+        delay = max(0, next_send - now)
+        
+        if delay > delay_threshold:
+            return delay
+            
+        # Reserve the slot
+        _per_chat_next_send[chat_id] = now + delay + (1.0 / PER_CHAT_RATE)
+        return delay
+
 async def enqueue_trade_alert(
     chat_id,
     message_text,
@@ -5479,10 +5524,52 @@ async def _queue_worker(worker_id: int):
                 alert_queue.task_done()
                 continue
             
-            # Apply rate limiters
+            # CHECK Rate Limits via Reservation
+            # If delay is too long, re-queue task to avoid blocking this worker
+            # Threshold: 0.1s (if we have to wait more than 100ms, let someone else use the worker)
+            delay = await _reserve_per_chat_slot(chat_id, delay_threshold=0.1)
+            
+            if delay > 0.1:
+                # Too long wait, re-queue
+                # We put it back in queue. To avoid busy loop if queue is empty, we sleep a tiny bit?
+                # But if queue is full of this user's tasks, we might just loop.
+                # However, other workers might pick up other tasks.
+                
+                # Log occasionally?
+                # logger.debug(f"Re-queuing task for {chat_id}, delay={delay:.2f}s")
+                
+                async with _queue_stats_lock:
+                    queue_stats['requeued_total'] = queue_stats.get('requeued_total', 0) + 1
+                    queue_stats['requeued_per_min'] = queue_stats.get('requeued_per_min', 0) + 1
+                
+                # Re-queue
+                # We need to preserve 'enqueued_at' to track age correctly, 
+                # but technically it IS still enqueued.
+                try:
+                    alert_queue.put_nowait(task)
+                except asyncio.QueueFull:
+                    # Should not happen as we just popped one, unless another thread pushed?
+                    # But queue max size is large. If full, we might drop.
+                    # But since we just got 1, there is at least 1 slot (unless strict race)
+                    # Use put (async) to be safe? No, put_nowait inside try is fine.
+                    # If full, we might have to drop or wait. 
+                    # Let's use await put() to ensure we don't drop, but that might block if REALLY full.
+                    await alert_queue.put(task)
+                
+                alert_queue.task_done()
+                
+                # Yield to let other tasks process
+                await asyncio.sleep(0.1) 
+                continue
+            
+            # If we are here, we Reserved the slot and delay <= 0.1
+            # Wait for the reserved delay
+            if delay > 0:
+                await asyncio.sleep(delay)
+
+            # Apply global rate limiter (after per-chat check, as global is shared)
             if global_rate_limiter:
                 await global_rate_limiter.acquire()
-            await _per_chat_rate_limiter_wait(chat_id)
             
             # Send the alert
             try:
@@ -5585,11 +5672,13 @@ async def _log_queue_stats():
                 retryafter_count = queue_stats.get('retryafter_min', 0)
                 skipped_prequeue_per_min = queue_stats.get('skipped_prequeue_per_min', 0)
                 skipped_worker_gate_per_min = queue_stats.get('skipped_worker_gate_per_min', 0)
+                requeued_per_min = queue_stats.get('requeued_per_min', 0)
                 
                 logger.info(
                     f"📊 Queue stats: queue_size={queue_size}{age_info}, "
                     f"sent_per_min={queue_stats.get('sent_per_min', 0)}, "
                     f"dropped_per_min={queue_stats.get('dropped_per_min', 0)}, "
+                    f"requeued_per_min={requeued_per_min}, "
                     f"skipped_prequeue_per_min={skipped_prequeue_per_min}, "
                     f"skipped_worker_gate_per_min={skipped_worker_gate_per_min}, "
                     f"retryafter_per_min={retryafter_count}, "
@@ -5599,6 +5688,7 @@ async def _log_queue_stats():
                 # Reset per-minute counters
                 queue_stats['sent_per_min'] = 0
                 queue_stats['dropped_per_min'] = 0
+                queue_stats['requeued_per_min'] = 0
                 queue_stats['skipped_prequeue_per_min'] = 0
                 queue_stats['skipped_worker_gate_per_min'] = 0
                 queue_stats['retryafter_min'] = 0
@@ -5744,8 +5834,13 @@ async def send_trade_alert(
                 save_mute_state()  # Save state after reset
             
             # Optional: log success (can be less frequent)
-            if attempt > 0:
-                logger.info(f"✅ SEND_OK chat_id={chat_id} after_retry={attempt}")
+            # Optional: log success (can be less frequent)
+            # if attempt > 0:
+            #     logger.info(f"✅ SEND_OK chat_id={chat_id} after_retry={attempt}")
+            
+            # Log successful sends to identify heavy users
+            logger.info(f"✅ SENT alert to chat_id={chat_id}")
+            
             return  # Success, exit function
             
         except TelegramRetryAfter as e:
