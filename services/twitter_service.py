@@ -41,6 +41,8 @@ PROBABILITY_OPTIONS = {
 # Twitter API limits
 MAX_TWEETS_PER_24H = 17  # Maximum tweets per 24-hour rolling window
 TWEET_WINDOW_SEC = 24 * 60 * 60  # 24 hours in seconds
+MAX_TWEET_TEXT_LEN = 4000
+AUTOPOST_FOOTER = "Auto-posted by bot."
 
 # Insider Tweet Templates (Safe versions)
 INSIDER_TEMPLATES = [
@@ -92,6 +94,41 @@ DEFAULT_SETTINGS = {
 
 # In-memory settings (loaded on startup)
 _twitter_settings = None
+
+
+def _trim_tweet_body_to_limit(body_text: str, max_body_len: int) -> str:
+    """Trim tweet body by dropping trailing lines before hard cutting."""
+    if len(body_text) <= max_body_len:
+        return body_text
+
+    lines = body_text.split("\n")
+    while lines:
+        candidate = "\n".join(lines).rstrip()
+        if len(candidate) <= max_body_len:
+            return candidate
+        lines.pop()
+
+    return body_text[:max_body_len].rstrip()
+
+
+def _finalize_tweet_text(tweet_text: str) -> str:
+    """Finalize outgoing tweet: add ref params, append footer, enforce max length."""
+    body = (tweet_text or "").rstrip()
+    if body.endswith(AUTOPOST_FOOTER):
+        body = body[:-len(AUTOPOST_FOOTER)].rstrip()
+
+    body = add_polymarket_ref(body).replace("via=PolymarketWhaleAlerts", "via=PmWhlAlerts")
+
+    footer_block = f"\n\n{AUTOPOST_FOOTER}"
+    max_body_len = MAX_TWEET_TEXT_LEN - len(footer_block)
+    if max_body_len <= 0:
+        return AUTOPOST_FOOTER[:MAX_TWEET_TEXT_LEN]
+
+    trimmed_body = _trim_tweet_body_to_limit(body, max_body_len)
+    if not trimmed_body:
+        return AUTOPOST_FOOTER
+
+    return f"{trimmed_body}{footer_block}"
 
 
 def _load_settings() -> dict:
@@ -764,8 +801,8 @@ class TwitterService:
                  tweet = "\n".join(lines)
                  
                  # Truncation logic (same as standard)
-                 if len(tweet) > 4000:
-                    max_title_len = 4000 - (len(tweet) - len(market_title)) - 3
+                 if len(tweet) > MAX_TWEET_TEXT_LEN:
+                    max_title_len = MAX_TWEET_TEXT_LEN - (len(tweet) - len(market_title)) - 3
                     if max_title_len > 20:
                         market_title = market_title[:max_title_len] + "..."
                         lines[0] = market_title
@@ -998,9 +1035,9 @@ class TwitterService:
         tweet = "\n".join(lines)
         
         # Ensure tweet is under 4000 chars
-        if len(tweet) > 4000:
+        if len(tweet) > MAX_TWEET_TEXT_LEN:
             # Truncate market title
-            max_title_len = 4000 - (len(tweet) - len(market_title)) - 3
+            max_title_len = MAX_TWEET_TEXT_LEN - (len(tweet) - len(market_title)) - 3
             if max_title_len > 20:
                 market_title = market_title[:max_title_len] + "..."
                 lines[0] = market_title
@@ -1017,7 +1054,7 @@ class TwitterService:
         try:
             # Run in executor to avoid blocking
             loop = asyncio.get_event_loop()
-            tweet_text = add_polymarket_ref(tweet_text).replace("via=PolymarketWhaleAlerts", "via=PmWhlAlerts")
+            tweet_text = _finalize_tweet_text(tweet_text)
             response = await loop.run_in_executor(
                 None,
                 lambda: self.client.create_tweet(text=tweet_text)

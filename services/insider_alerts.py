@@ -532,6 +532,21 @@ class InsiderAlertsService:
                 )
                 return None
 
+            # Filter trades to only dominant outcome direction
+            dominant_trades = [t for t in trades if (t.get('outcome', '').upper()) == dominant_outcome.upper()]
+            dominant_wallets = set(t['wallet'] for t in dominant_trades)
+            dominant_volume = sum(t['trade_size_usd'] for t in dominant_trades)
+
+            # Check min_wallets on dominant-direction wallets only
+            if len(dominant_wallets) < min_wallets:
+                self._set_blocked_reason(
+                    self._active_clusters,
+                    market_id,
+                    code="MIN_WALLETS_DOMINANT",
+                    reason=f"dominant wallets {len(dominant_wallets)}/{min_wallets}",
+                )
+                return None
+
             # Check if already published recently
             cooldown = int(self.settings.get('cooldown_hours', '24'))
             if alerts_storage.was_published('CLUSTER', market_id, dominant_outcome, cooldown):
@@ -548,10 +563,10 @@ class InsiderAlertsService:
                 'market_id': market_id,
                 'outcome': dominant_outcome,
                 'window_hours': interval,
-                'wallet_count': len(unique_wallets),
-                'total_volume': total_volume,
+                'wallet_count': len(dominant_wallets),
+                'total_volume': dominant_volume,
                 'directionality': directionality,
-                'trades': trades,
+                'trades': dominant_trades,
                 'max_wallet_age_hours': max_age,
                 'include_profiles': self.settings.get('cluster_include_profiles', 'true')
             }
@@ -653,6 +668,27 @@ class InsiderAlertsService:
                 )
                 return None
 
+            # Filter trades to only dominant outcome direction
+            dominant_trades = [t for t in large_trades if (t.get('outcome', '').upper()) == dominant_outcome.upper()]
+            dominant_wallets = set(t['wallet'] for t in dominant_trades)
+            dominant_volume = sum(t['trade_size_usd'] for t in dominant_trades)
+
+            # Recalculate days with activity for dominant trades only
+            dominant_days = set()
+            for trade in dominant_trades:
+                trade_date = datetime.fromtimestamp(trade['timestamp']).date()
+                dominant_days.add(trade_date)
+
+            # Check min_wallets on dominant-direction wallets only
+            if len(dominant_wallets) < min_wallets:
+                self._set_blocked_reason(
+                    self._active_accumulations,
+                    market_id,
+                    code="MIN_WALLETS_DOMINANT",
+                    reason=f"dominant wallets {len(dominant_wallets)}/{min_wallets}",
+                )
+                return None
+
             cooldown = int(self.settings.get('cooldown_hours', '24'))
             if alerts_storage.was_published('ACCUMULATION', market_id, dominant_outcome, cooldown):
                 self._set_blocked_reason(
@@ -667,12 +703,12 @@ class InsiderAlertsService:
             return {
                 'market_id': market_id,
                 'outcome': dominant_outcome,
-                'days_count': len(days_with_activity),
-                'wallet_count': len(unique_wallets),
-                'total_volume': total_volume,
+                'days_count': len(dominant_days),
+                'wallet_count': len(dominant_wallets),
+                'total_volume': dominant_volume,
                 'directionality': directionality,
-                'trades': large_trades,
-                'trade_count': len(large_trades),
+                'trades': dominant_trades,
+                'trade_count': len(dominant_trades),
                 'include_profiles': self.settings.get('accumulation_include_profiles', 'true')
             }
 
@@ -767,6 +803,21 @@ class InsiderAlertsService:
                 )
                 return None
 
+            # Filter trades to only dominant outcome direction
+            dominant_trades = [t for t in qualifying_trades if (t.get('outcome', '').upper()) == dominant_outcome.upper()]
+            dominant_wallets = set(t['wallet'] for t in dominant_trades)
+            dominant_volume = sum(t['trade_size_usd'] for t in dominant_trades)
+
+            # Check min_wallets on dominant-direction wallets only
+            if len(dominant_wallets) < min_wallets:
+                self._set_blocked_reason(
+                    self._active_bursts,
+                    market_id,
+                    code="MIN_WALLETS_DOMINANT",
+                    reason=f"dominant wallets {len(dominant_wallets)}/{min_wallets}",
+                )
+                return None
+
             cooldown = int(self.settings.get('cooldown_hours', '24'))
             if alerts_storage.was_published('BURST', market_id, dominant_outcome, cooldown):
                 self._set_blocked_reason(
@@ -782,10 +833,10 @@ class InsiderAlertsService:
                 'market_id': market_id,
                 'outcome': dominant_outcome,
                 'window_hours': interval,
-                'wallet_count': len(unique_wallets),
-                'total_volume': total_volume,
+                'wallet_count': len(dominant_wallets),
+                'total_volume': dominant_volume,
                 'directionality': directionality,
-                'trades': qualifying_trades,
+                'trades': dominant_trades,
                 'include_profiles': self.settings.get('burst_include_profiles', 'true')
             }
 
