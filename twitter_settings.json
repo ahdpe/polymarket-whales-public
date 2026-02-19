@@ -5,7 +5,8 @@
   "max_insider_age_days": 1.0,
   "max_insider_positions": 1,
   "tweet_timestamps": [
-    1770553053.393515
+    1771433827.092555,
+    1771450314.8064618
   ],
   "paused_until": 1770017490.1706045,
   "interval_minutes": 25,

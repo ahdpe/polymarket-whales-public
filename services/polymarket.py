@@ -32,7 +32,8 @@ POSITIONS_CACHE_TTL = 60
 _positions_cache = {}  # {proxy_wallet: {"data": {...}, "ts": timestamp}}
 
 WALLET_AGE_CACHE_TTL = 7 * 24 * 60 * 60
-_wallet_age_cache = {}  # {proxy_wallet: {"first_ts": timestamp, "cached_at": timestamp}}
+WALLET_AGE_FALLBACK_TTL = 600  # 10 min for fallback (non-Etherscan) values
+_wallet_age_cache = {}  # {proxy_wallet: {"first_ts": timestamp, "cached_at": timestamp, "source": str}}
 
 
 def norm_ts(x, default=0.0) -> float:
@@ -518,8 +519,10 @@ class PolymarketService:
         now = time.time()
         if not bypass_cache:
             cached = _wallet_age_cache.get(proxy_wallet)
-            if cached and (now - cached["cached_at"] < WALLET_AGE_CACHE_TTL):
-                return cached["first_ts"]
+            if cached:
+                ttl = WALLET_AGE_CACHE_TTL if cached.get("source") == "etherscan" else WALLET_AGE_FALLBACK_TTL
+                if now - cached["cached_at"] < ttl:
+                    return cached["first_ts"]
 
         try:
             oldest_ts = None
@@ -543,7 +546,7 @@ class PolymarketService:
 
                     if len(data) < 100:
                         if oldest_ts:
-                            _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now}
+                            _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now, "source": "etherscan"}
                             return oldest_ts
 
                 poly_api_key = POLYGONSCAN_API_KEY
@@ -573,7 +576,7 @@ class PolymarketService:
 
                         if min_ts:
                             oldest_ts = float(min_ts)
-                            _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now}
+                            _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now, "source": "etherscan"}
                             return oldest_ts
                     except Exception as e:
                         logger.error(f"Error checking PolygonScan for {proxy_wallet}: {e}")
@@ -583,7 +586,7 @@ class PolymarketService:
                 # Note: This may underestimate wallet age for very active wallets, but is better than None
                 if oldest_ts:
                     logger.debug(f"PolygonScan unavailable, using Polymarket Data API fallback for {proxy_wallet[:10]}...")
-                    _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now}
+                    _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now, "source": "fallback"}
                     return oldest_ts
 
             return None

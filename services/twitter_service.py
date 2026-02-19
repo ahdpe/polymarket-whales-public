@@ -11,6 +11,7 @@ Anti-spam & rate-limit protection:
 import logging
 import json
 import os
+import tempfile
 import asyncio
 import time
 import random
@@ -1124,26 +1125,47 @@ class TwitterService:
         return self._queue_lock
     
     def _load_queue(self):
-        """Load queue from disk."""
-        try:
-            if os.path.exists(TWITTER_QUEUE_FILE):
-                with open(TWITTER_QUEUE_FILE, 'r') as f:
-                    data = json.load(f)
-                    # Convert back to list of tuples
+        """Load queue from disk. Falls back to .bak if main file is corrupt."""
+        for path in [TWITTER_QUEUE_FILE, TWITTER_QUEUE_FILE + '.bak']:
+            try:
+                if os.path.exists(path):
+                    with open(path, 'r') as f:
+                        data = json.load(f)
                     self.pending_queue = [(item['trade_data'], item['queued_at']) for item in data]
-                    logger.info(f"Loaded {len(self.pending_queue)} items from Twitter queue")
-        except Exception as e:
-            logger.error(f"Error loading Twitter queue: {e}")
-            self.pending_queue = []
+                    if path.endswith('.bak'):
+                        logger.warning(f"Loaded {len(self.pending_queue)} items from Twitter queue BACKUP")
+                    else:
+                        logger.info(f"Loaded {len(self.pending_queue)} items from Twitter queue")
+                    return
+            except Exception as e:
+                logger.error(f"Error loading Twitter queue from {path}: {e}")
+        self.pending_queue = []
     
     def _save_queue(self):
-        """Save queue to disk."""
+        """Save queue to disk atomically (tmp -> fsync -> replace)."""
         try:
-            # Convert to JSON-serializable format
             data = [{'trade_data': trade_data, 'queued_at': queued_at} 
                    for trade_data, queued_at in self.pending_queue]
-            with open(TWITTER_QUEUE_FILE, 'w') as f:
-                json.dump(data, f, indent=2)
+            # Backup current file before overwrite
+            if os.path.exists(TWITTER_QUEUE_FILE):
+                try:
+                    os.replace(TWITTER_QUEUE_FILE, TWITTER_QUEUE_FILE + '.bak')
+                except OSError:
+                    pass
+            dir_name = os.path.dirname(TWITTER_QUEUE_FILE) or '.'
+            fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix='.tmp')
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    json.dump(data, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, TWITTER_QUEUE_FILE)
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
         except Exception as e:
             logger.error(f"Error saving Twitter queue: {e}")
     
@@ -1282,27 +1304,48 @@ class TwitterService:
         return self._delayed_lock
 
     def _load_delayed_queue(self):
-        """Load delayed queue (10‑minute hold) from disk."""
-        try:
-            if os.path.exists(self.delayed_queue_file):
-                with open(self.delayed_queue_file, 'r') as f:
-                    data = json.load(f)
-                    # Basic validation: ensure it's a list of dicts
+        """Load delayed queue (10‑minute hold) from disk. Falls back to .bak if corrupt."""
+        for path in [self.delayed_queue_file, self.delayed_queue_file + '.bak']:
+            try:
+                if os.path.exists(path):
+                    with open(path, 'r') as f:
+                        data = json.load(f)
                     if isinstance(data, list):
                         self.delayed_queue = [item for item in data if isinstance(item, dict)]
                     else:
                         self.delayed_queue = []
-                if self.delayed_queue:
-                    logger.info(f"Loaded {len(self.delayed_queue)} items from Twitter delayed queue")
-        except Exception as e:
-            logger.error(f"Error loading Twitter delayed queue: {e}")
-            self.delayed_queue = []
+                    if path.endswith('.bak'):
+                        logger.warning(f"Loaded {len(self.delayed_queue)} items from Twitter delayed queue BACKUP")
+                    elif self.delayed_queue:
+                        logger.info(f"Loaded {len(self.delayed_queue)} items from Twitter delayed queue")
+                    return
+            except Exception as e:
+                logger.error(f"Error loading Twitter delayed queue from {path}: {e}")
+        self.delayed_queue = []
 
     def _save_delayed_queue(self):
-        """Persist delayed queue to disk."""
+        """Persist delayed queue to disk atomically (tmp -> fsync -> replace)."""
         try:
-            with open(self.delayed_queue_file, 'w') as f:
-                json.dump(self.delayed_queue, f, indent=2)
+            # Backup current file before overwrite
+            if os.path.exists(self.delayed_queue_file):
+                try:
+                    os.replace(self.delayed_queue_file, self.delayed_queue_file + '.bak')
+                except OSError:
+                    pass
+            dir_name = os.path.dirname(self.delayed_queue_file) or '.'
+            fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix='.tmp')
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    json.dump(self.delayed_queue, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, self.delayed_queue_file)
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
         except Exception as e:
             logger.error(f"Error saving Twitter delayed queue: {e}")
 
