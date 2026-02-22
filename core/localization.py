@@ -3,7 +3,7 @@
 TRANSLATIONS = {
     'ru': {
         # Start message
-        'welcome': "🐋 *Polymarket Whale Alerts*\n\nКрупные сделки на [Polymarket](https://polymarket.com?via=PolymarketWhaleAlerts) — в реальном времени.\n\n*Что умеет бот:*\n• 🔔 Уведомления от $500 до $100,000+\n• 🎯 Фильтры: сумма, категории, вероятность, типы, возраст, позиции\n• 📊 Аналитика: PnL, возраст кошелька, открытые позиции\n• 🔗 Быстрые ссылки на профили\n• ⭐ Трейдеры — сохранённые трейдеры, заметки и уведомления об их сделках ($500+)\n• ⭐ Маркеты — сохранённые маркеты с отдельными уведомлениями ($500+)\n\nДля настройки уведомлений нажми кнопку ⚙️ **Фильтры** в меню ниже.",
+        'welcome': "🐋 *Polymarket Whale Alerts*\n\nКрупные сделки на [Polymarket](https://polymarket.com?via=PolymarketWhaleAlerts) — в реальном времени.\n\n*Что умеет бот:*\n• 🔔 Уведомления от $500 до $100,000+\n• 🎯 Фильтры: сумма, категории, вероятность, типы, возраст, позиции\n• 📊 Аналитика: PnL, возраст кошелька, открытые позиции\n• 🔗 Быстрые ссылки на профили\n• ⭐ Трейдеры — сохранённые трейдеры, заметки и уведомления об их сделках ($500+)\n• ⭐ Маркеты — сохранённые маркеты с отдельными уведомлениями ($500+)\n• 🚫 Игнор — скрытие сигналов от выбранных трейдеров или маркетов\n\nДля настройки уведомлений нажми кнопку ⚙️ **Фильтры** в меню ниже.",
         
         # Buttons
         'btn_filters': "⚙️ Фильтры",
@@ -110,8 +110,8 @@ TRANSLATIONS = {
 • 🔄 Фильтр типов событий (BUY, SELL, SPLIT, MERGE, REDEEM)
 • 🕐 Фильтр возраста кошелька (по дням, мин-макс)
 • 💼 Фильтр количества позиций (мин-макс)
-• ⭐ Трейдеры (Сохранение трейдеров + персональные уведомления)
-• ⭐ Маркеты (Сохранение маркетов + персональные уведомления)
+• ⭐ Трейдеры (сохранять, уведомлять, игнорировать)
+• ⭐ Маркеты (сохранять, уведомлять, игнорировать)
 
 *Классификация объемов:*
 🔥 МЕГА КИТ — >$100,000
@@ -156,13 +156,13 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
         # Saved Traders
         'save_btn': "Сохранить трейдера",
         'saved_btn': "✅ Сохранено",
-        'note_btn': "💬 Коммент к трейдеру",
+        'note_btn': "💬 Коммент",
         'saved_list_title': "⭐ **Трейдеры**\n\n",
-        'saved_list_header': "⭐ Трейдеры\n🔔 - уведомления включены (все сделки $500+)\n🔕 - только по общим фильтрам\n",
+        'saved_list_header': "⭐ Трейдеры\n🔔 - уведомления включены (все сделки $500+)\n🔕 - только по общим фильтрам\n🚫 - скрыт из алертов\n",
         'saved_empty': "Список пуст. Сохраняй трейдеров из алертов!",
         'saved_deleted': "🗑 Трейдер удалён",
         'saved_added': "⭐ Трейдер сохранён!",
-        'note_prompt': "💬 Введи комментарий (макс. 240 символов):\n\nОтправь \"–\" чтобы удалить комментарий.",
+        'note_prompt': "💬 Введи комментарий к трейдеру (макс. 240 символов):\n\nОтправь \"–\" чтобы удалить комментарий.",
         'note_saved': "✅ Комментарий сохранён",
         'note_too_long': "❌ Слишком длинный! Макс. 240 символов. Попробуй ещё раз:",
         'note_removed': "✅ Комментарий удалён",
@@ -174,11 +174,19 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
         'notif_enabled': "🔔 Уведомления включены (без фильтров)",
         'notif_disabled': "🔕 Уведомления выключены (по общим фильтрам)",
         'saved_cleared': "🗑 Все трейдеры удалены",
+        
+        # Ignore
+        'ignore_trader_btn': "🚫 Трейдер",
+        'ignore_market_btn': "🚫 Маркет",
+        'ignored_trader_added': "🛑 Трейдер в игноре",
+        'ignored_market_added': "🛑 Маркет в игноре",
+        'state_ignore': "🛑 Игнор",
+        'state_notify': "🔔 Активен",
 
         # Saved Markets
         'market_track_btn': "💾 Сохранить маркет",
         'market_saved_btn': "✅ В списке",
-        'markets_list_header': "⭐ Маркеты\n🔔 - уведомления включены (все сделки $500+, фильтр типов событий)\n🔕 - только по общим фильтрам\n",
+        'markets_list_header': "⭐ Маркеты\n🔔 - уведомления включены (все сделки $500+, фильтр типов событий)\n🔕 - только по общим фильтрам\n🚫 - скрыт из алертов\n",
         'markets_empty': "Список пуст. Добавляй маркеты из алертов или вручную!",
         'market_added': "✅ Маркет добавлен!",
         'market_deleted': "🗑 Маркет удалён",
@@ -209,7 +217,7 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
     
     'en': {
         # Start message
-        'welcome': "🐋 *Polymarket Whale Alerts*\n\nLarge trades on [Polymarket](https://polymarket.com?via=PolymarketWhaleAlerts) — in real-time.\n\n*What the bot can do:*\n• 🔔 Alerts from $500 to $100,000+\n• 🎯 Filters: amount, categories, probability, types, age, positions\n• 📊 Analytics: PnL, wallet age, open positions\n• 🔗 Quick links to profiles\n• ⭐ Traders — saved traders, notes and notifications about their trades ($500+)\n• ⭐ Markets — saved markets with personal notifications ($500+)\n\nTo configure alerts, press the ⚙️ **Filters** button in the menu below.",
+        'welcome': "🐋 *Polymarket Whale Alerts*\n\nLarge trades on [Polymarket](https://polymarket.com?via=PolymarketWhaleAlerts) — in real-time.\n\n*What the bot can do:*\n• 🔔 Alerts from $500 to $100,000+\n• 🎯 Filters: amount, categories, probability, types, age, positions\n• 📊 Analytics: PnL, wallet age, open positions\n• 🔗 Quick links to profiles\n• ⭐ Traders — saved traders, notes and notifications about their trades ($500+)\n• ⭐ Markets — saved markets with personal notifications ($500+)\n• 🚫 Ignore traders/markets — hide signals from selected traders or markets\n\nTo configure alerts, press the ⚙️ **Filters** button in the menu below.",
         
         # Buttons
         'btn_filters': "⚙️ Filters",
@@ -316,8 +324,8 @@ Real-time monitoring of large trades on [Polymarket](https://polymarket.com?via=
 • 🔄 Event type filter (BUY, SELL, SPLIT, MERGE, REDEEM)
 • 🕐 Wallet age filter (in days, min-max range)
 • 💼 Open positions filter (min-max range)
-• ⭐ Traders (Save traders + direct notifications)
-• ⭐ Markets (Save markets + direct notifications)
+• ⭐ Traders (Save traders, notify, ignore)
+• ⭐ Markets (Save markets, notify, ignore)
 
 *Volume classification:*
 🔥 MEGA WHALE — >$100,000
@@ -362,13 +370,13 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
         # Saved Traders
         'save_btn': "Save Trader",
         'saved_btn': "✅ Saved",
-        'note_btn': "💬 Note trader",
+        'note_btn': "💬 Note",
         'saved_list_title': "⭐ **Traders**\n\n",
-        'saved_list_header': "⭐ Traders\n🔔 - notifications enabled (all trades $500+)\n🔕 - general filters only\n",
+        'saved_list_header': "⭐ Traders\n🔔 - notifications enabled (all trades $500+)\n🔕 - general filters only\n🚫 - hidden from alerts\n",
         'saved_empty': "Empty list. Save traders from alerts!",
         'saved_deleted': "🗑 Trader removed",
         'saved_added': "⭐ Trader saved!",
-        'note_prompt': "💬 Enter note (max 240 chars):\n\nSend \"–\" to remove note.",
+        'note_prompt': "💬 Enter note for trader (max 240 chars):\n\nSend \"–\" to remove note.",
         'note_saved': "✅ Note saved",
         'note_too_long': "❌ Too long! Max 240 characters. Try again:",
         'note_removed': "✅ Note removed",
@@ -380,11 +388,19 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
         'notif_enabled': "🔔 Notifications enabled (bypassing filters)",
         'notif_disabled': "🔕 Notifications disabled (using general filters)",
         'saved_cleared': "🗑 All traders removed",
+        
+        # Ignore
+        'ignore_trader_btn': "🚫 Trader",
+        'ignore_market_btn': "🚫 Market",
+        'ignored_trader_added': "🛑 Trader ignored",
+        'ignored_market_added': "🛑 Market ignored",
+        'state_ignore': "🛑 Ignored",
+        'state_notify': "🔔 Active",
 
         # Saved Markets
         'market_track_btn': "💾 Save Market",
         'market_saved_btn': "✅ Tracking",
-        'markets_list_header': "⭐ Markets\n🔔 - notifications enabled (all trades $500+, event types filter)\n🔕 - general filters only\n",
+        'markets_list_header': "⭐ Markets\n🔔 - notifications enabled (all trades $500+, event types filter)\n🔕 - general filters only\n🚫 - hidden from alerts\n",
         'markets_empty': "Empty list. Track markets from alerts or add manually!",
         'market_added': "✅ Market added!",
         'market_deleted': "🗑 Market removed",

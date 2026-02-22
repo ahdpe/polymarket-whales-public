@@ -239,8 +239,20 @@ async def handle_trade(trade_data):
              if not is_user_active(chat_id):
                  return (False, False)
 
-             # Check if notifications are enabled for this trader (BYPASS filters but NOT active status)
+             # Check if trader is IGNORED by this user (skip signal entirely)
              trader_address = trade_data.get('proxyWallet', '') or trade_data.get('maker', '')
+             signal_id = trade_data.get('id', 'unknown_id')
+             if trader_address and saved_whales.is_ignored(chat_id, trader_address):
+                 logger.info(f"IGNORED_TRADER user_id={chat_id} trader_id={trader_address} signal_id={signal_id}")
+                 return (False, False)
+
+             # Check if market is IGNORED by this user (skip signal entirely)
+             if (market_id or event_slug) and saved_markets.is_ignored(chat_id, market_id, event_slug):
+                 market_ref_log = event_slug or market_id
+                 logger.info(f"IGNORED_MARKET user_id={chat_id} market_slug={market_ref_log} signal_id={signal_id}")
+                 return (False, False)
+
+             # Check if notifications are enabled for this trader (BYPASS filters but NOT active status)
              if trader_address and saved_whales.is_notifications_enabled(chat_id, trader_address):
                  logger.info(f"Notification BYPASS for trader {trader_address} (chat_id: {chat_id})")
                  return (True, True)  # Qualified via bypass (but user must be active)

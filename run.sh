@@ -60,13 +60,13 @@ if [ -d "venv" ]; then
 fi
 
 # Check if bot is already running
-EXISTING_PIDS=$(pgrep -f "python.*main\.py")
+EXISTING_PIDS=$(pgrep -f "python.*main\.py" || true)
 if [ -n "$EXISTING_PIDS" ]; then
     echo "⚠️  Bot already running (PIDs: $EXISTING_PIDS). Stopping all..."
     pkill -9 -f "python.*main\.py" 2>/dev/null || true
     sleep 3
     # Verify all stopped
-    REMAINING=$(pgrep -f "python.*main\.py")
+    REMAINING=$(pgrep -f "python.*main\.py" || true)
     if [ -n "$REMAINING" ]; then
         echo "❌ Failed to stop all processes. Remaining: $REMAINING"
         exit 1

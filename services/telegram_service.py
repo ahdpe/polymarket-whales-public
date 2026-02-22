@@ -1244,7 +1244,7 @@ def get_aquarium_list(chat_id, page=0, edit_mode=False):
         else:
             comment_part = ""
         
-        notif_status = " 🔔" if item.get('notifications_enabled') else " 🔕"
+        notif_status = " 🚫" if item.get('state') == 'ignore' else (" 🔔" if item.get('notifications_enabled') else " 🔕")
         line = f"*{idx}.* {icon} {link}{notif_status}{comment_part}"
         lines.append(line)
         
@@ -1256,7 +1256,7 @@ def get_aquarium_list(chat_id, page=0, edit_mode=False):
     buttons = []
     
     if edit_mode:
-        # Edit Mode: Rows of [ ✏️ N name ] [ ❌ N name ]
+        # Edit Mode: Rows of [ ✏️ N name ] [ 🚫/🔔 ] [ ❌ N name ]
         for i, item in enumerate(saved):
             local_num = offset + i + 1
             whale_id = item['whale_id']
@@ -1273,12 +1273,16 @@ def get_aquarium_list(chat_id, page=0, edit_mode=False):
             # Truncate name for button (max ~10 chars)
             short_name = name[:10] if len(name) > 10 else name
             
-            notif_enabled = bool(item.get('notifications_enabled'))
-            notif_btn_text = get_text(lang, 'notif_on' if notif_enabled else 'notif_off')
+            item_state = item.get('state', 'notify')
+            if item_state == 'ignore':
+                state_btn_text = get_text(lang, 'state_ignore')
+            else:
+                notif_enabled = bool(item.get('notifications_enabled'))
+                state_btn_text = get_text(lang, 'notif_on' if notif_enabled else 'notif_off')
             
             btn_row = [
                 InlineKeyboardButton(text=f"💬 {local_num} {short_name}", callback_data=f"edit:{key}:{page}:1"),
-                InlineKeyboardButton(text=notif_btn_text, callback_data=f"toggle_notif:{key}:{page}:1"),
+                InlineKeyboardButton(text=state_btn_text, callback_data=f"toggle_notif:{key}:{page}:1"),
                 InlineKeyboardButton(text=f"❌ {local_num}", callback_data=f"delete:{key}:{page}:1")
             ]
             buttons.append(btn_row)
@@ -1409,7 +1413,7 @@ def get_markets_list(chat_id, page=0, edit_mode=False):
 
         link = f"[{safe_title}]({market_url})" if market_url else safe_title
 
-        notif_status = " 🔔" if item.get('notifications_enabled') else " 🔕"
+        notif_status = " 🚫" if item.get('state') == 'ignore' else (" 🔔" if item.get('notifications_enabled') else " 🔕")
         line = f"*{idx}.* {link}{notif_status}"
         lines.append(line)
 
@@ -1429,11 +1433,15 @@ def get_markets_list(chat_id, page=0, edit_mode=False):
                 title=item.get('title')
             )
 
-            notif_enabled = bool(item.get('notifications_enabled'))
-            notif_btn_text = get_text(lang, 'market_notif_on' if notif_enabled else 'market_notif_off')
+            item_state = item.get('state', 'notify')
+            if item_state == 'ignore':
+                state_btn_text = get_text(lang, 'state_ignore')
+            else:
+                notif_enabled = bool(item.get('notifications_enabled'))
+                state_btn_text = get_text(lang, 'market_notif_on' if notif_enabled else 'market_notif_off')
 
             btn_row = [
-                InlineKeyboardButton(text=f"{notif_btn_text} {local_num}", callback_data=f"mk_toggle:{market_key}:{page}:1"),
+                InlineKeyboardButton(text=f"{state_btn_text} {local_num}", callback_data=f"mk_toggle:{market_key}:{page}:1"),
                 InlineKeyboardButton(text=f"❌ {local_num}", callback_data=f"mk_delete:{market_key}:{page}:1")
             ]
             buttons.append(btn_row)
@@ -1617,7 +1625,10 @@ async def callback_markets_cancel_clear(callback: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("mk_toggle:"))
 async def callback_market_toggle_notif(callback: types.CallbackQuery):
-    """Toggle notifications for a saved market."""
+    """Toggle notifications/state for a saved market.
+    
+    Cycle: 🔕 off → 🔔 on → 🚫 ignore → 🔕 off (back to start)
+    """
     chat_id = callback.message.chat.id
     lang = get_user_lang(chat_id)
 
@@ -1631,8 +1642,20 @@ async def callback_market_toggle_notif(callback: types.CallbackQuery):
         await callback.answer("Error: market not found")
         return
 
-    new_state = saved_markets.toggle_notifications(chat_id, market_ref)
-    msg_key = 'market_notif_enabled' if new_state else 'market_notif_disabled'
+    # Determine current state and cycle atomically
+    new_state_info = saved_markets.cycle_state(chat_id, market_ref)
+    if not new_state_info:
+        await callback.answer("Error: unable to update state")
+        return
+
+    # Determine message based on new state
+    if new_state_info['state'] == 'ignore':
+        msg_key = 'state_ignore'
+    elif new_state_info['notifications_enabled']:
+        msg_key = 'market_notif_enabled'
+    else:
+        msg_key = 'market_notif_disabled'
+
     await callback.answer(get_text(lang, msg_key))
 
     is_edit = bool(edit_mode)
@@ -1926,12 +1949,12 @@ async def callback_save(callback: CallbackQuery):
         await callback.answer(get_text(lang, 'saved_btn'))
         return
     
-    # Get name and icon from whale_keys and save
+    # Get name and icon from whale_keys and save, ensuring state is reset to notify (removes ignore)
     whale_data = saved_whales.get_whale_data(key)
     name = whale_data['name'] if whale_data else None
     level_icon = whale_data.get('level_icon') if whale_data else None
     
-    saved_whales.save(chat_id, whale_id, name=name, level_icon=level_icon)
+    saved_whales.save(chat_id, whale_id, name=name, level_icon=level_icon, state='notify')
     await callback.answer(get_text(lang, 'saved_added'))
     
     # Update button in message to show "Saved"
@@ -1939,6 +1962,7 @@ async def callback_save(callback: CallbackQuery):
         old_keyboard = callback.message.reply_markup
         if old_keyboard:
             new_buttons = []
+            # Update save button to "Saved" and ignore button to regular "Trader"
             for row in old_keyboard.inline_keyboard:
                 new_row = []
                 for btn in row:
@@ -1946,6 +1970,12 @@ async def callback_save(callback: CallbackQuery):
                         new_row.append(InlineKeyboardButton(
                             text=get_text(lang, 'saved_btn'),
                             callback_data=f"saved:{key}"
+                        ))
+                    elif btn.callback_data == f"ign_trader:{key}":
+                        # Make sure ignore button is NOT in ignored state
+                        new_row.append(InlineKeyboardButton(
+                            text=get_text(lang, 'ignore_trader_btn'),
+                            callback_data=f"ign_trader:{key}"
                         ))
                     else:
                         new_row.append(btn)
@@ -2030,7 +2060,8 @@ async def callback_market_save(callback: CallbackQuery):
         await callback.answer(get_text(lang, 'market_exists'))
         return
 
-    saved_markets.save(chat_id, market_id, event_slug, market_data.get('title'), notifications_enabled=0)
+    # Save market, ensuring state is reset to notify (removes ignore)
+    saved_markets.save(chat_id, market_id, event_slug, market_data.get('title'), notifications_enabled=0, state='notify')
     await callback.answer(get_text(lang, 'market_added'))
 
     # Update button in message to show "In list"
@@ -2038,6 +2069,7 @@ async def callback_market_save(callback: CallbackQuery):
         old_keyboard = callback.message.reply_markup
         if old_keyboard:
             new_buttons = []
+            # Update market save button to "Saved" and ignore button to regular "Market"
             for row in old_keyboard.inline_keyboard:
                 new_row = []
                 for btn in row:
@@ -2045,6 +2077,12 @@ async def callback_market_save(callback: CallbackQuery):
                         new_row.append(InlineKeyboardButton(
                             text=get_text(lang, 'market_saved_btn'),
                             callback_data=f"market_saved:{key}"
+                        ))
+                    elif btn.callback_data == f"ign_market:{key}":
+                        # Make sure ignore button is NOT in ignored state
+                        new_row.append(InlineKeyboardButton(
+                            text=get_text(lang, 'ignore_market_btn'),
+                            callback_data=f"ign_market:{key}"
                         ))
                     else:
                         new_row.append(btn)
@@ -2088,6 +2126,135 @@ async def callback_market_saved(callback: CallbackQuery):
                         new_row.append(btn)
                 new_buttons.append(new_row)
 
+            await callback.message.edit_reply_markup(
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=new_buttons)
+            )
+    except Exception:
+        pass
+
+
+# ============ IGNORE HANDLERS ============
+
+@dp.callback_query(F.data.startswith("ign_trader:"))
+async def callback_ignore_trader(callback: CallbackQuery):
+    """Handle ignore trader callback - upsert with state='ignore'."""
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+    key = callback.data.replace("ign_trader:", "")
+    whale_id = saved_whales.get_whale_id(key)
+
+    if not whale_id:
+        await callback.answer("Error: trader not found")
+        return
+
+    # Toggle logic: if already ignored, un-ignore (delete or set to 'notify')
+    is_currently_ignored = saved_whales.is_ignored(chat_id, whale_id)
+    if is_currently_ignored:
+        # If the user only ignored it, delete it. If they had it saved, we assume they didn't because saving removes ignore.
+        # But to be safe, we just delete it because they 'unchecked' ignore.
+        saved_whales.delete(chat_id, whale_id)
+        await callback.answer("🚫 Игнор снят" if lang == 'ru' else "🚫 Ignore removed")
+    else:
+        # Upsert trader with state='ignore'
+        whale_data = saved_whales.get_whale_data(key)
+        name = whale_data['name'] if whale_data else None
+        level_icon = whale_data.get('level_icon') if whale_data else None
+        saved_whales.save(chat_id, whale_id, name=name, level_icon=level_icon, state='ignore')
+        await callback.answer(get_text(lang, 'ignored_trader_added'))
+
+    # Update button text to show correct state
+    try:
+        old_keyboard = callback.message.reply_markup
+        if old_keyboard:
+            new_buttons = []
+            # Update ignore button and revert save button
+            for row in old_keyboard.inline_keyboard:
+                new_row = []
+                for btn in row:
+                    if btn.callback_data == f"ign_trader:{key}":
+                        new_text = get_text(lang, 'ignore_trader_btn') if is_currently_ignored else get_text(lang, 'state_ignore')
+                        new_row.append(InlineKeyboardButton(
+                            text=new_text,
+                            callback_data=f"ign_trader:{key}"
+                        ))
+                    elif btn.callback_data in [f"save:{key}", f"saved:{key}"]:
+                        whale_data = saved_whales.get_whale_data(key) or saved_whales.get_whale_data_by_id(whale_id)
+                        level_icon = whale_data.get('level_icon') if whale_data and whale_data.get('level_icon') else "🦐"
+                        
+                        if is_currently_ignored:
+                            new_text = f"{level_icon} {get_text(lang, 'save_btn')}"
+                        else:
+                            new_text = f"🛑 {get_text(lang, 'save_btn')}"
+                            
+                        new_row.append(InlineKeyboardButton(
+                            text=new_text,
+                            callback_data=f"save:{key}"
+                        ))
+                    else:
+                        new_row.append(btn)
+                new_buttons.append(new_row)
+            await callback.message.edit_reply_markup(
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=new_buttons)
+            )
+    except Exception:
+        pass
+
+
+@dp.callback_query(F.data.startswith("ign_market:"))
+async def callback_ignore_market(callback: CallbackQuery):
+    """Handle ignore market callback - upsert with state='ignore'."""
+    chat_id = callback.message.chat.id
+    lang = get_user_lang(chat_id)
+    key = callback.data.replace("ign_market:", "")
+
+    market_data = saved_markets.get_market_data(key)
+    if not market_data:
+        await callback.answer("Error: market not found")
+        return
+
+    market_id = market_data.get('market_id')
+    event_slug = market_data.get('event_slug')
+
+    # Toggle logic: if already ignored, un-ignore
+    is_currently_ignored = saved_markets.is_ignored(chat_id, market_id, event_slug)
+    if is_currently_ignored:
+        # Delete from saved markets (since pressing ignore again means "don't ignore")
+        market_ref = saved_markets.get_market_ref(key)
+        if market_ref:
+            saved_markets.delete(chat_id, market_ref)
+        await callback.answer("🚫 Игнор снят" if lang == 'ru' else "🚫 Ignore removed")
+    else:
+        saved_markets.save(chat_id, market_id, event_slug, market_data.get('title'), state='ignore')
+        await callback.answer(get_text(lang, 'ignored_market_added'))
+
+    # Update button text
+    try:
+        old_keyboard = callback.message.reply_markup
+        if old_keyboard:
+            new_buttons = []
+            # Update ignore button and revert save button
+            for row in old_keyboard.inline_keyboard:
+                new_row = []
+                for btn in row:
+                    if btn.callback_data == f"ign_market:{key}":
+                        new_text = get_text(lang, 'ignore_market_btn') if is_currently_ignored else get_text(lang, 'state_ignore')
+                        new_row.append(InlineKeyboardButton(
+                            text=new_text,
+                            callback_data=f"ign_market:{key}"
+                        ))
+                    elif btn.callback_data in [f"market_save:{key}", f"market_saved:{key}"]:
+                        if is_currently_ignored:
+                            new_text = get_text(lang, 'market_track_btn')
+                        else:
+                            new_text = f"🛑 {get_text(lang, 'market_track_btn')}"
+                            
+                        new_row.append(InlineKeyboardButton(
+                            text=new_text,
+                            callback_data=f"market_save:{key}"
+                        ))
+                    else:
+                        new_row.append(btn)
+                new_buttons.append(new_row)
             await callback.message.edit_reply_markup(
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=new_buttons)
             )
@@ -2239,7 +2406,10 @@ async def callback_cancel_clear(callback: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("toggle_notif:"))
 async def callback_toggle_notif(callback: types.CallbackQuery):
-    """Toggle notifications for a saved trader."""
+    """Toggle notifications/state for a saved trader.
+    
+    Cycle: 🔕 off → 🔔 on → 🚫 ignore → 🔕 off (back to start)
+    """
     chat_id = callback.message.chat.id
     lang = get_user_lang(chat_id)
     
@@ -2253,9 +2423,20 @@ async def callback_toggle_notif(callback: types.CallbackQuery):
         await callback.answer("Error: trader not found")
         return
     
-    new_state = saved_whales.toggle_notifications(chat_id, whale_id)
+    # Determine current state and cycle atomically
+    new_state_info = saved_whales.cycle_state(chat_id, whale_id)
+    if not new_state_info:
+        await callback.answer("Error: unable to update state")
+        return
+
+    # Determine message based on new state
+    if new_state_info['state'] == 'ignore':
+        msg_key = 'state_ignore'
+    elif new_state_info['notifications_enabled']:
+        msg_key = 'notif_enabled'
+    else:
+        msg_key = 'notif_disabled'
     
-    msg_key = 'notif_enabled' if new_state else 'notif_disabled'
     await callback.answer(get_text(lang, msg_key))
     
     # Refresh View
@@ -5159,6 +5340,8 @@ def get_trade_alert_keyboard(
     level_icon: str = "🦐",
     market_key: str | None = None,
     is_market_saved: bool = False,
+    is_trader_ignored: bool = False,
+    is_market_ignored: bool = False,
 ):
     """Create inline keyboard for trade alerts."""
     buttons = []
@@ -5167,6 +5350,9 @@ def get_trade_alert_keyboard(
         if is_saved:
             save_text = get_text(lang, 'saved_btn')
             save_callback = f"saved:{whale_key}"
+        elif is_trader_ignored:
+            save_text = f"🛑 {get_text(lang, 'save_btn')}"
+            save_callback = f"save:{whale_key}"
         else:
             # Use dynamic level icon + "To Aquarium" text
             save_text = f"{level_icon} {get_text(lang, 'save_btn')}"
@@ -5178,21 +5364,43 @@ def get_trade_alert_keyboard(
             if is_market_saved:
                 market_text = get_text(lang, 'market_saved_btn')
                 market_callback = f"market_saved:{market_key}"
+            elif is_market_ignored:
+                market_text = f"🛑 {get_text(lang, 'market_track_btn')}"
+                market_callback = f"market_save:{market_key}"
             else:
                 market_text = get_text(lang, 'market_track_btn')
                 market_callback = f"market_save:{market_key}"
             row.append(InlineKeyboardButton(text=market_text, callback_data=market_callback))
 
         buttons.append(row)
-        buttons.append([InlineKeyboardButton(text=get_text(lang, 'note_btn'), callback_data=f"note:{whale_key}")])
+
+        # Second row: Note, Ignore Trader, and maybe Ignore Market
+        ignore_trader_text = get_text(lang, 'state_ignore') if is_trader_ignored else get_text(lang, 'ignore_trader_btn')
+        second_row = [
+            InlineKeyboardButton(text=get_text(lang, 'note_btn'), callback_data=f"note:{whale_key}"),
+            InlineKeyboardButton(text=ignore_trader_text, callback_data=f"ign_trader:{whale_key}")
+        ]
+        if market_key:
+            ignore_market_text = get_text(lang, 'state_ignore') if is_market_ignored else get_text(lang, 'ignore_market_btn')
+            second_row.append(InlineKeyboardButton(text=ignore_market_text, callback_data=f"ign_market:{market_key}"))
+        buttons.append(second_row)
     elif market_key:
         if is_market_saved:
             market_text = get_text(lang, 'market_saved_btn')
             market_callback = f"market_saved:{market_key}"
+        elif is_market_ignored:
+            market_text = f"🛑 {get_text(lang, 'market_track_btn')}"
+            market_callback = f"market_save:{market_key}"
         else:
             market_text = get_text(lang, 'market_track_btn')
             market_callback = f"market_save:{market_key}"
         buttons.append([InlineKeyboardButton(text=market_text, callback_data=market_callback)])
+        # Ignore market button
+        ignore_market_text = get_text(lang, 'state_ignore') if is_market_ignored else get_text(lang, 'ignore_market_btn')
+        buttons.append([InlineKeyboardButton(
+            text=ignore_market_text,
+            callback_data=f"ign_market:{market_key}"
+        )])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -5809,7 +6017,23 @@ async def send_trade_alert(
     lang = get_user_lang(chat_id)
     reply_markup = None
     if whale_key or market_key:
-        reply_markup = get_trade_alert_keyboard(lang, whale_key, is_saved, level_icon, market_key, is_market_saved)
+        is_trader_ignored = False
+        is_market_ignored = False
+        if whale_key:
+            whale_id = saved_whales.get_whale_id(whale_key)
+            if whale_id:
+                is_trader_ignored = saved_whales.is_ignored(chat_id, whale_id)
+        if market_key:
+            market_data = saved_markets.get_market_data(market_key)
+            if market_data:
+                market_id = market_data.get('market_id')
+                event_slug = market_data.get('event_slug')
+                is_market_ignored = saved_markets.is_ignored(chat_id, market_id, event_slug)
+                
+        reply_markup = get_trade_alert_keyboard(
+            lang, whale_key, is_saved, level_icon, market_key, is_market_saved,
+            is_trader_ignored=is_trader_ignored, is_market_ignored=is_market_ignored
+        )
 
     max_retries = 3
     

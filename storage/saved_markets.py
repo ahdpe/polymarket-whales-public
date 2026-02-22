@@ -16,6 +16,8 @@ SQLITE_BUSY_TIMEOUT_MS = 5000
 
 # In-memory cache: user_id (int) -> set of market_refs with notifications enabled
 _notifications_cache: dict[int, set[str]] = {}
+# In-memory cache: user_id (int) -> set of market_refs with state='ignore'
+_ignore_cache: dict[int, set[str]] = {}
 _cache_loaded = False
 
 def _update_notification_cache(user_id: str | int, market_ref: str, enabled: bool) -> None:
@@ -27,6 +29,17 @@ def _update_notification_cache(user_id: str | int, market_ref: str, enabled: boo
         _notifications_cache[uid].add(market_ref)
     else:
         _notifications_cache[uid].discard(market_ref)
+
+
+def _update_ignore_cache(user_id: str | int, market_ref: str, ignored: bool) -> None:
+    """Keep in-memory ignore cache in sync with DB."""
+    uid = int(user_id)
+    if uid not in _ignore_cache:
+        _ignore_cache[uid] = set()
+    if ignored:
+        _ignore_cache[uid].add(market_ref)
+    else:
+        _ignore_cache[uid].discard(market_ref)
 
 
 def _get_connection():
@@ -102,6 +115,7 @@ def init_db():
             ("title", "ALTER TABLE saved_markets ADD COLUMN title TEXT;"),
             ("min_usd", "ALTER TABLE saved_markets ADD COLUMN min_usd INTEGER NOT NULL DEFAULT 500;"),
             ("notifications_enabled", "ALTER TABLE saved_markets ADD COLUMN notifications_enabled INTEGER DEFAULT 0;"),
+            ("state", "ALTER TABLE saved_markets ADD COLUMN state TEXT DEFAULT 'notify';"),
         ):
             try:
                 conn.execute(ddl)
@@ -131,8 +145,8 @@ def init_db():
 
 
 def _load_notifications_cache(conn=None):
-    """Load notifications cache from DB into memory."""
-    global _notifications_cache, _cache_loaded
+    """Load notifications and ignore caches from DB into memory."""
+    global _notifications_cache, _ignore_cache, _cache_loaded
     close_conn = False
     if conn is None:
         conn = _get_connection()
@@ -148,8 +162,22 @@ def _load_notifications_cache(conn=None):
             if uid not in _notifications_cache:
                 _notifications_cache[uid] = set()
             _notifications_cache[uid].add(mref)
+        
+        # Load ignore cache
+        ignore_rows = conn.execute(
+            "SELECT user_id, market_ref FROM saved_markets WHERE state = 'ignore'"
+        ).fetchall()
+        _ignore_cache.clear()
+        for row in ignore_rows:
+            uid = int(row["user_id"])
+            mref = row["market_ref"]
+            if uid not in _ignore_cache:
+                _ignore_cache[uid] = set()
+            _ignore_cache[uid].add(mref)
+        
         _cache_loaded = True
         logger.info(f"Market notifications cache loaded: {sum(len(v) for v in _notifications_cache.values())} entries for {len(_notifications_cache)} users")
+        logger.info(f"Market ignore cache loaded: {sum(len(v) for v in _ignore_cache.values())} entries for {len(_ignore_cache)} users")
     finally:
         if close_conn:
             conn.close()
@@ -273,7 +301,7 @@ def get_saved_market(user_id: str | int, market_id: str | None, event_slug: str 
         row = conn.execute(
             f"""
             SELECT user_id, market_ref, market_id, event_slug, title, min_usd,
-                   notifications_enabled, created_at, updated_at
+                   notifications_enabled, COALESCE(state, 'notify') as state, created_at, updated_at
             FROM saved_markets
             WHERE user_id = ? AND market_ref IN ({placeholders})
             LIMIT 1
@@ -286,7 +314,8 @@ def get_saved_market(user_id: str | int, market_id: str | None, event_slug: str 
 
 
 def is_saved(user_id: str | int, market_id: str | None, event_slug: str | None) -> bool:
-    return get_saved_market(user_id, market_id, event_slug) is not None
+    row = get_saved_market(user_id, market_id, event_slug)
+    return row is not None and row.get('state') != 'ignore'
 
 
 def is_notifications_enabled(user_id: str | int, market_id: str | None, event_slug: str | None) -> bool:
@@ -299,6 +328,93 @@ def is_notifications_enabled(user_id: str | int, market_id: str | None, event_sl
     # Fallback to DB
     row = get_saved_market(user_id, market_id, event_slug)
     return bool(row["notifications_enabled"]) if row else False
+
+
+def is_ignored(user_id: str | int, market_id: str | None, event_slug: str | None) -> bool:
+    """Check if this market is ignored by this user (uses cache)."""
+    uid = int(user_id)
+    if _cache_loaded:
+        refs = _get_market_refs(market_id, event_slug)
+        user_set = _ignore_cache.get(uid, set())
+        return any(r in user_set for r in refs)
+    # Fallback to DB
+    row = get_saved_market(user_id, market_id, event_slug)
+    return row["state"] == 'ignore' if row and row.get("state") else False
+
+
+def set_state(user_id: str | int, market_ref: str, state: str) -> None:
+    """Set state ('notify' or 'ignore') for a saved market."""
+    if state not in ('notify', 'ignore'):
+        raise ValueError(f"Invalid state: {state}")
+    now = int(time.time())
+    conn = _get_connection()
+    try:
+        if state == 'ignore':
+            conn.execute(
+                """
+                UPDATE saved_markets
+                   SET state = ?, notifications_enabled = 0, updated_at = ?
+                 WHERE user_id = ? AND market_ref = ?
+                """,
+                (state, now, str(user_id), market_ref),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE saved_markets
+                   SET state = ?, updated_at = ?
+                 WHERE user_id = ? AND market_ref = ?
+                """,
+                (state, now, str(user_id), market_ref),
+            )
+        conn.commit()
+        _update_ignore_cache(user_id, market_ref, state == 'ignore')
+        # If switching to ignore, also disable notifications
+        if state == 'ignore':
+            _update_notification_cache(user_id, market_ref, False)
+    finally:
+        conn.close()
+
+def cycle_state(user_id: str | int, market_ref: str) -> dict:
+    """
+    Atomically cycle the notification state:
+    🔕 off (notify, 0) -> 🔔 on (notify, 1) -> 🚫 ignore (ignore, 0) -> 🔕 off (notify, 0)
+    Returns dict: {'state': str, 'notifications_enabled': int}
+    """
+    now = int(time.time())
+    conn = _get_connection()
+    try:
+        conn.execute(
+            """
+            UPDATE saved_markets
+               SET state = CASE 
+                     WHEN state = 'ignore' THEN 'notify'
+                     WHEN notifications_enabled = 1 THEN 'ignore'
+                     ELSE 'notify'
+                   END,
+                   notifications_enabled = CASE
+                     WHEN state = 'ignore' THEN 0
+                     WHEN notifications_enabled = 1 THEN 0
+                     ELSE 1
+                   END,
+                   updated_at = ?
+             WHERE user_id = ? AND market_ref = ?
+            """,
+            (now, str(user_id), market_ref),
+        )
+        row = conn.execute(
+            "SELECT notifications_enabled, COALESCE(state, 'notify') as state FROM saved_markets WHERE user_id = ? AND market_ref = ?",
+            (str(user_id), market_ref)
+        ).fetchone()
+        conn.commit()
+        if row:
+            res = dict(row)
+            _update_notification_cache(user_id, market_ref, bool(res["notifications_enabled"]))
+            _update_ignore_cache(user_id, market_ref, res["state"] == 'ignore')
+            return res
+        return None
+    finally:
+        conn.close()
 
 
 def toggle_notifications(user_id: str | int, market_ref: str) -> bool:
@@ -333,20 +449,22 @@ def save(
     event_slug: str | None,
     title: str | None,
     notifications_enabled: int | None = None,
+    state: str | None = None,
 ) -> str | None:
-    """Save market for user with optional notification settings."""
+    """Save market for user with optional notification settings and state."""
     market_ref = make_market_ref(market_id, event_slug)
     if not market_ref:
         return None
 
+    insert_state = state or 'notify'
     now = int(time.time())
     conn = _get_connection()
     try:
         conn.execute(
             """
             INSERT OR IGNORE INTO saved_markets
-            (user_id, market_ref, market_id, event_slug, title, min_usd, notifications_enabled, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (user_id, market_ref, market_id, event_slug, title, min_usd, notifications_enabled, state, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 str(user_id),
@@ -356,6 +474,7 @@ def save(
                 title,
                 DEFAULT_MARKET_MIN_USD,
                 1 if notifications_enabled else 0,
+                insert_state,
                 now,
                 now,
             ),
@@ -376,6 +495,9 @@ def save(
         if notifications_enabled is not None:
             updates.append("notifications_enabled = ?")
             params.append(1 if notifications_enabled else 0)
+        if state is not None:
+            updates.append("state = ?")
+            params.append(state)
         if updates:
             updates.append("updated_at = ?")
             params.append(now)
@@ -385,7 +507,7 @@ def save(
 
         row = conn.execute(
             """
-            SELECT notifications_enabled
+            SELECT notifications_enabled, COALESCE(state, 'notify') as state
             FROM saved_markets
             WHERE user_id = ? AND market_ref = ?
             """,
@@ -394,6 +516,7 @@ def save(
         conn.commit()
         if row is not None:
             _update_notification_cache(user_id, market_ref, bool(row["notifications_enabled"]))
+            _update_ignore_cache(user_id, market_ref, row["state"] == 'ignore')
         return market_ref
     finally:
         conn.close()
@@ -401,13 +524,13 @@ def save(
 def list_saved(user_id: str | int, offset: int = 0, limit: int = 10) -> list[dict]:
     """
     List saved markets for user with pagination.
-    Returns list of dicts: {market_ref, market_id, event_slug, title, min_usd, notifications_enabled, created_at, updated_at}
+    Returns list of dicts: {market_ref, market_id, event_slug, title, min_usd, notifications_enabled, state, created_at, updated_at}
     """
     conn = _get_connection()
     try:
         rows = conn.execute(
             """
-            SELECT market_ref, market_id, event_slug, title, min_usd, notifications_enabled, created_at, updated_at
+            SELECT market_ref, market_id, event_slug, title, min_usd, notifications_enabled, COALESCE(state, 'notify') as state, created_at, updated_at
             FROM saved_markets
             WHERE user_id = ?
             ORDER BY created_at DESC, rowid DESC
@@ -500,10 +623,12 @@ def delete(user_id: str | int, market_ref: str) -> None:
             (str(user_id), market_ref),
         )
         conn.commit()
-        # Update cache
+        # Update caches
         uid = int(user_id)
         if uid in _notifications_cache:
             _notifications_cache[uid].discard(market_ref)
+        if uid in _ignore_cache:
+            _ignore_cache[uid].discard(market_ref)
     finally:
         conn.close()
 
@@ -522,9 +647,10 @@ def clear_all(user_id: str | int) -> int:
             (str(user_id),),
         )
         conn.commit()
-        # Update cache
+        # Update caches
         uid = int(user_id)
         _notifications_cache.pop(uid, None)
+        _ignore_cache.pop(uid, None)
         return count
     finally:
         conn.close()

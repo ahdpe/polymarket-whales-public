@@ -413,8 +413,8 @@ class PolymarketService:
                 break
             self.recent_wallets.popitem(last=False)
 
-    async def get_trader_positions(self, proxy_wallet):
-        if not proxy_wallet:
+    async def get_trader_positions(self, proxy_wallet, retries=3):
+        if not proxy_wallet or not str(proxy_wallet).startswith("0x"):
             return None
 
         now = time.time()
@@ -422,50 +422,91 @@ class PolymarketService:
         if cached and (now - cached["ts"] < POSITIONS_CACHE_TTL):
             return cached["data"]
 
-        try:
-            async with aiohttp.ClientSession() as session:
-                all_positions = []
-                offset = 0
-                limit = 1000
+        # Limit concurrent API requests to avoid Cloudflare bans
+        if not hasattr(self, '_api_semaphore'):
+            self._api_semaphore = asyncio.Semaphore(3)
 
-                while True:
-                    url_open = f"{DATA_API_URL}/positions?user={proxy_wallet}&limit={limit}&offset={offset}"
-                    async with session.get(url_open, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                        if resp.status != 200:
-                            break
-                        batch = await resp.json()
-                        if not batch or not isinstance(batch, list):
-                            break
+        async with self._api_semaphore:
+            for attempt in range(1, retries + 1):
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        all_positions = []
+                        offset = 0
+                        limit = 1000
 
-                        all_positions.extend(batch)
-                        if len(batch) < 500:
-                            break
+                        while True:
+                            url_open = f"{DATA_API_URL}/positions?user={proxy_wallet}&limit={limit}&offset={offset}"
+                            async with session.get(url_open, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                                if resp.status == 429 or resp.status >= 500:
+                                    if attempt < retries:
+                                        logger.debug(f"Rate limited or server error ({resp.status}) fetching positions for {proxy_wallet[:10]}, retrying in {attempt * 2}s (attempt {attempt}/{retries})...")
+                                        await asyncio.sleep(attempt * 2)
+                                        # Force a retry of the whole fetch process for this user
+                                        raise aiohttp.ClientError("Retry triggered by status code")
+                                    else:
+                                        if offset == 0:
+                                            return None
+                                        break
+                                
+                                if resp.status != 200:
+                                    if offset == 0:
+                                        return None
+                                    break
+                                
+                                batch = await resp.json()
+                                if not batch or not isinstance(batch, list):
+                                    if offset == 0:
+                                        return None
+                                    break
 
-                        offset += len(batch)
-                        if offset >= 5000:
-                            break
+                                all_positions.extend(batch)
+                                if len(batch) < 500:
+                                    break
 
-                total_value = sum(float(p.get("currentValue", 0) or 0) for p in all_positions) if all_positions else 0.0
-                initial_value = sum(float(p.get("initialValue", 0) or 0) for p in all_positions) if all_positions else 0.0
-                open_pnl = total_value - initial_value
-                open_count = len(all_positions)
+                                offset += len(batch)
+                                if offset >= 5000:
+                                    break
 
-                pnl_percent = (open_pnl / initial_value) * 100 if initial_value > 0 else 0.0
+                        active_positions = [
+                            p for p in all_positions 
+                            if float(p.get("currentValue", 0) or 0) > 0
+                        ] if all_positions else []
 
-                result = {
-                    "pnl_usd": open_pnl,
-                    "pnl_percent": pnl_percent,
-                    "open_count": open_count,
-                    "total_value": total_value,
-                }
-                _positions_cache[proxy_wallet] = {"data": result, "ts": now}
-                return result
+                        total_value = sum(float(p.get("currentValue", 0) or 0) for p in active_positions)
+                        initial_value = sum(float(p.get("initialValue", 0) or 0) for p in active_positions)
+                        open_pnl = total_value - initial_value
+                        open_count = len(active_positions)
 
-        except asyncio.TimeoutError:
-            logger.debug(f"Timeout fetching positions for {proxy_wallet[:10]}...")
-            return None
-        except Exception as e:
-            logger.debug(f"Error fetching positions: {e}")
+                        pnl_percent = (open_pnl / initial_value) * 100 if initial_value > 0 else 0.0
+
+                        result = {
+                            "pnl_usd": open_pnl,
+                            "pnl_percent": pnl_percent,
+                            "open_count": open_count,
+                            "total_value": total_value,
+                        }
+                        _positions_cache[proxy_wallet] = {"data": result, "ts": now}
+                        return result
+
+                except asyncio.TimeoutError:
+                    if attempt < retries:
+                        logger.debug(f"Timeout fetching positions for {proxy_wallet[:10]}, retrying in {attempt * 2}s (attempt {attempt}/{retries})...")
+                        await asyncio.sleep(attempt * 2)
+                    else:
+                        logger.debug(f"Timeout fading out after {retries} attempts for {proxy_wallet[:10]}...")
+                        return None
+                except aiohttp.ClientError as e:
+                    if str(e) == "Retry triggered by status code":
+                        continue # inner exception was thrown to restart the attempt loop
+                    if attempt < retries:
+                        logger.debug(f"Network error fetching positions for {proxy_wallet[:10]}, retrying in {attempt * 2}s (attempt {attempt}/{retries})...")
+                        await asyncio.sleep(attempt * 2)
+                    else:
+                        logger.debug(f"Network error fetching positions: {e}")
+                        return None
+                except Exception as e:
+                    logger.debug(f"Error fetching positions: {e}")
+                    return None
             return None
 
     async def check_wallet_has_position(self, proxy_wallet: str, condition_id: str) -> float:
@@ -513,7 +554,7 @@ class PolymarketService:
             return 0.0
 
     async def get_trader_first_activity(self, proxy_wallet, bypass_cache=False):
-        if not proxy_wallet:
+        if not proxy_wallet or not str(proxy_wallet).startswith("0x"):
             return None
 
         now = time.time()
