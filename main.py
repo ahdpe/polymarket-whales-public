@@ -60,10 +60,13 @@ MEMORY_CHECK_INTERVAL = 300  # 5 minutes
 _last_memory_warning_time = {}  # Track last warning time per threshold level
 
 
-def format_position_stats(pos_data):
+def format_position_stats(pos_data, side=None):
     """Format position stats line for whale message."""
-    if not pos_data:
-        return ""
+    # Check for API replication lag: 
+    # If a user just bought, they MUST have at least 1 open position.
+    # If the API says 0, it means it hasn't indexed the trade yet.
+    if not pos_data or (side == 'BUY' and pos_data.get("open_count", 0) == 0):
+        return "\n📊 Open PnL: n/a\n💼 Open Positions: n/a"
     
     pnl_usd = pos_data.get("pnl_usd", 0)
     pnl_pct = pos_data.get("pnl_percent", 0)
@@ -390,7 +393,7 @@ async def handle_trade(trade_data):
                 # Debug: log why re-check still failed
                 logger.info(f"Twitter re-check still rejected: {new_reason} (wallet_age_str={trade_data.get('wallet_age_str')}, pos_count={trade_data.get('open_positions_count')})")
 
-        position_stats_line = format_position_stats(pos_data)
+        position_stats_line = format_position_stats(pos_data, side=side)
         wallet_age_line = format_wallet_age(first_activity_ts)
         
         # Money display logic

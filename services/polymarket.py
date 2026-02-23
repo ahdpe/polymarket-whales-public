@@ -413,7 +413,7 @@ class PolymarketService:
                 break
             self.recent_wallets.popitem(last=False)
 
-    async def get_trader_positions(self, proxy_wallet, retries=3):
+    async def get_trader_positions(self, proxy_wallet, retries=3, use_stale_cache=False):
         if not proxy_wallet or not str(proxy_wallet).startswith("0x"):
             return None
 
@@ -440,27 +440,29 @@ class PolymarketService:
                                 if resp.status == 429 or resp.status >= 500:
                                     if attempt < retries:
                                         logger.debug(f"Rate limited or server error ({resp.status}) fetching positions for {proxy_wallet[:10]}, retrying in {attempt * 2}s (attempt {attempt}/{retries})...")
-                                        await asyncio.sleep(attempt * 2)
+                                        await asyncio.sleep(attempt * 2 + random.uniform(0, 0.5))
                                         # Force a retry of the whole fetch process for this user
                                         raise aiohttp.ClientError("Retry triggered by status code")
                                     else:
                                         if offset == 0:
-                                            return None
+                                            logger.warning(f"API Failed ({resp.status}) fetching positions for {proxy_wallet[:10]} after {retries} attempts.")
+                                            return cached["data"] if (use_stale_cache and cached) else None
                                         break
                                 
                                 if resp.status != 200:
                                     if offset == 0:
-                                        return None
+                                        logger.warning(f"API Failed ({resp.status}) fetching positions for {proxy_wallet[:10]}.")
+                                        return cached["data"] if (use_stale_cache and cached) else None
                                     break
                                 
                                 batch = await resp.json()
                                 if not batch or not isinstance(batch, list):
                                     if offset == 0:
-                                        return None
+                                        return cached["data"] if (use_stale_cache and cached) else None
                                     break
 
                                 all_positions.extend(batch)
-                                if len(batch) < 500:
+                                if len(batch) < limit:
                                     break
 
                                 offset += len(batch)
@@ -491,23 +493,23 @@ class PolymarketService:
                 except asyncio.TimeoutError:
                     if attempt < retries:
                         logger.debug(f"Timeout fetching positions for {proxy_wallet[:10]}, retrying in {attempt * 2}s (attempt {attempt}/{retries})...")
-                        await asyncio.sleep(attempt * 2)
+                        await asyncio.sleep(attempt * 2 + random.uniform(0, 0.5))
                     else:
-                        logger.debug(f"Timeout fading out after {retries} attempts for {proxy_wallet[:10]}...")
-                        return None
+                        logger.warning(f"Timeout fading out after {retries} attempts for {proxy_wallet[:10]}...")
+                        return cached["data"] if (use_stale_cache and cached) else None
                 except aiohttp.ClientError as e:
                     if str(e) == "Retry triggered by status code":
                         continue # inner exception was thrown to restart the attempt loop
                     if attempt < retries:
                         logger.debug(f"Network error fetching positions for {proxy_wallet[:10]}, retrying in {attempt * 2}s (attempt {attempt}/{retries})...")
-                        await asyncio.sleep(attempt * 2)
+                        await asyncio.sleep(attempt * 2 + random.uniform(0, 0.5))
                     else:
-                        logger.debug(f"Network error fetching positions: {e}")
-                        return None
+                        logger.warning(f"Network error fetching positions for {proxy_wallet[:10]} after {retries} attempts: {e}")
+                        return cached["data"] if (use_stale_cache and cached) else None
                 except Exception as e:
-                    logger.debug(f"Error fetching positions: {e}")
-                    return None
-            return None
+                    logger.error(f"Error fetching positions for {proxy_wallet[:10]}: {e}")
+                    return cached["data"] if (use_stale_cache and cached) else None
+            return cached["data"] if (use_stale_cache and cached) else None
 
     async def check_wallet_has_position(self, proxy_wallet: str, condition_id: str) -> float:
         """

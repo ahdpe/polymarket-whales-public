@@ -20,8 +20,8 @@ Telegram-бот для отслеживания крупных сделок ("к
 - 🌐 **Двуязычный интерфейс** — Русский / English
 - 🔗 **Ссылки на профиль трейдера** и рынок
 - 📈 **Расширенная аналитика:** Open PnL, активные позиции, возраст кошелька
-- ⭐ **Трейдеры:** Сохранение трейдеров с их текущим "уровнем" (🦐-🔥) + **🔔 Уведомления** (персональная подписка на трейдера)
-- ⭐ **Маркеты:** Сохранение маркетов + **🔔 Уведомления** по маркету (все сделки $500+, с учётом фильтра типов событий)
+- ⭐ **Трейдеры:** Сохранение трейдеров с их текущим "уровнем" (🦐-🔥) + **🔔 Уведомления** и **🚫 Игнор** (персональная подписка или скрытие сигналов)
+- ⭐ **Маркеты:** Сохранение маркетов + **🔔 Уведомления** и **🚫 Игнор** по маркету (все сделки $500+, с учётом фильтра типов событий)
 - 🐦 **Twitter интеграция** — автоматическая публикация крупных сделок в Twitter/X
 
 ### Обратная связь и поддержка
@@ -244,8 +244,8 @@ Telegram bot for real-time tracking of large trades ("whales") on [Polymarket](h
 - 🌐 **Bilingual interface** — Russian / English
 - 🔗 **Links to trader profile** and market
 - 📈 **Advanced Analytics:** Open PnL, Active Positions, Wallet Age
-- ⭐ **Traders:** Save traders with their current "level" (🦐-🔥) + **🔔 Notifications** (subscribe to specific trader)
-- ⭐ **Markets:** Save markets + **🔔 Notifications** per market (all trades $500+, event types filter applied)
+- ⭐ **Traders:** Save traders with their current "level" (🦐-🔥) + **🔔 Notifications** and **🚫 Ignore** (subscribe to or hide signals)
+- ⭐ **Markets:** Save markets + **🔔 Notifications** and **🚫 Ignore** per market (all trades $500+, event types filter applied)
 - 🐦 **Twitter integration** — automatic posting of large trades to Twitter/X
 
 ### Feedback and Support
