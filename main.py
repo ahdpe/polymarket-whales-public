@@ -24,7 +24,7 @@ from storage import saved_whales
 from storage import saved_markets
 from services.twitter_service import get_twitter_service
 from services.insider_alerts import InsiderAlertsService, set_insider_alerts_service as set_global_insider_alerts_service
-from services.status_service import set_start_time as set_status_start_time, set_poly_service as set_status_poly_service, set_insider_service as set_status_insider_service
+from services.status_service import set_start_time as set_status_start_time, set_poly_service as set_status_poly_service, set_insider_service as set_status_insider_service, add_whale_trade
 from services.status_server import start_status_server
 
 # Configure logging
@@ -395,6 +395,31 @@ async def handle_trade(trade_data):
 
         position_stats_line = format_position_stats(pos_data, side=side)
         wallet_age_line = format_wallet_age(first_activity_ts)
+
+        # ── Push BUY trades >= $10K to whale‐trades page buffer ──
+        if side == 'BUY' and value_usd >= 10_000:
+            try:
+                wt_age_hours = None
+                if first_activity_ts:
+                    wt_age_hours = round((time.time() - first_activity_ts) / 3600, 1)
+                add_whale_trade({
+                    'market_title': market_title,
+                    'event_slug': event_slug,
+                    'trader_name': shorten_trader_name(trader),
+                    'trader_address': trader_address,
+                    'amount': round(value_usd),
+                    'outcome': outcome,
+                    'price': round(price * 100, 1),
+                    'open_pnl': round(pos_data.get('pnl_usd', 0)) if pos_data else None,
+                    'open_pnl_pct': round(pos_data.get('pnl_percent', 0), 1) if pos_data else None,
+                    'open_positions': pos_data.get('open_count', 0) if pos_data else None,
+                    'positions_value': round(pos_data.get('total_value', 0)) if pos_data else None,
+                    'wallet_age_hours': wt_age_hours,
+                    'category': category,
+                    'timestamp': trade_data.get('timestamp', time.time()),
+                })
+            except Exception as wt_err:
+                logger.error(f"Error adding whale trade to buffer: {wt_err}")
         
         # Money display logic
         if is_split:

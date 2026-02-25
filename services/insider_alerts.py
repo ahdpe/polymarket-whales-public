@@ -488,11 +488,14 @@ class InsiderAlertsService:
 
             unique_wallets = set(t['wallet'] for t in trades)
             total_volume = sum(t['trade_size_usd'] for t in trades)
+            dominant_outcome, directionality = self._calculate_directionality(trades)
 
             # Store as pending/active pattern - any wallet passing basic filters goes to buffer
             # Buffer accumulates wallets over time
             if trades:
                 self._active_clusters[market_id] = {
+                    'market_id': market_id,
+                    'event_slug': trades[0].get('event_slug', ''),
                     'wallets': len(unique_wallets),
                     'wallet_list': list(unique_wallets),
                     'volume': total_volume,
@@ -500,6 +503,8 @@ class InsiderAlertsService:
                     'title': trades[0].get('market_title', 'Unknown'),
                     'min_wallets': min_wallets,
                     'min_total': min_total,
+                    'outcome': dominant_outcome,
+                    'directionality': directionality,
                 }
 
             # Check publication conditions
@@ -520,8 +525,6 @@ class InsiderAlertsService:
                     reason=f"volume ${total_volume:,.0f} < ${min_total:,.0f}",
                 )
                 return None
-
-            dominant_outcome, directionality = self._calculate_directionality(trades)
 
             if directionality < min_dir:
                 self._set_blocked_reason(
@@ -618,6 +621,7 @@ class InsiderAlertsService:
             # Calculate unique wallets and total volume
             unique_wallets = set(t['wallet'] for t in large_trades)
             total_volume = sum(t['trade_size_usd'] for t in large_trades)
+            dominant_outcome, directionality = self._calculate_directionality(large_trades)
 
             days_with_activity = set()
             for trade in large_trades:
@@ -628,6 +632,8 @@ class InsiderAlertsService:
             # Buffer accumulates wallets over time
             if large_trades:
                 self._active_accumulations[market_id] = {
+                    'market_id': market_id,
+                    'event_slug': large_trades[0].get('event_slug', ''),
                     'wallets': len(unique_wallets),
                     'wallet_list': list(unique_wallets),
                     'volume': total_volume,
@@ -636,6 +642,8 @@ class InsiderAlertsService:
                     'days': len(days_with_activity),
                     'min_wallets': min_wallets,
                     'min_total': min_total,
+                    'outcome': dominant_outcome,
+                    'directionality': directionality,
                 }
 
             # Check publication conditions
@@ -656,8 +664,6 @@ class InsiderAlertsService:
                     reason=f"volume ${total_volume:,.0f} < ${min_total:,.0f}",
                 )
                 return None
-
-            dominant_outcome, directionality = self._calculate_directionality(large_trades)
 
             if directionality < min_dir:
                 self._set_blocked_reason(
@@ -759,11 +765,14 @@ class InsiderAlertsService:
 
             unique_wallets = set(t['wallet'] for t in qualifying_trades)
             total_volume = sum(t['trade_size_usd'] for t in qualifying_trades)
+            dominant_outcome, directionality = self._calculate_directionality(qualifying_trades)
 
             # Store as pending/active pattern - any wallet passing basic filters goes to buffer
             # Buffer accumulates wallets over time
             if qualifying_trades:
                 self._active_bursts[market_id] = {
+                    'market_id': market_id,
+                    'event_slug': qualifying_trades[0].get('event_slug', ''),
                     'wallets': len(unique_wallets),
                     'wallet_list': list(unique_wallets),
                     'volume': total_volume,
@@ -771,6 +780,8 @@ class InsiderAlertsService:
                     'title': qualifying_trades[0].get('market_title', 'Unknown'),
                     'min_wallets': min_wallets,
                     'min_total': min_total,
+                    'outcome': dominant_outcome,
+                    'directionality': directionality,
                 }
 
             # Check publication conditions
@@ -791,8 +802,6 @@ class InsiderAlertsService:
                     reason=f"volume ${total_volume:,.0f} < ${min_total:,.0f}",
                 )
                 return None
-
-            dominant_outcome, directionality = self._calculate_directionality(qualifying_trades)
 
             if directionality < min_dir:
                 self._set_blocked_reason(

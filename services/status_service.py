@@ -23,6 +23,11 @@ _poly_service = None
 # Reference to InsiderAlertsService (set by main.py)
 _insider_service = None
 
+# Whale trades ring buffer (BUY trades >= $10K for /whale-trades page)
+_whale_trades_lock = threading.Lock()
+_whale_trades_buffer = []  # List of dicts, newest first
+_WHALE_TRADES_MAX = 200    # Keep last 200 trades in memory
+
 # Small in-memory cache to reduce expensive status recomputation under concurrent dashboard opens.
 try:
     STATUS_CACHE_TTL_SEC = max(0.0, float(os.getenv("STATUS_CACHE_TTL_SEC", "2.0")))
@@ -412,3 +417,22 @@ def get_full_status() -> dict:
         _status_cache_ts = now
 
     return payload
+
+
+def add_whale_trade(trade_entry: dict):
+    """Add a whale BUY trade (>=$10K) to the ring buffer for /whale-trades page.
+    
+    Expected fields: market_title, event_slug, trader_name, trader_address,
+    amount, outcome, price, open_pnl, open_pnl_pct, open_positions,
+    positions_value, wallet_age_hours, category, timestamp
+    """
+    with _whale_trades_lock:
+        _whale_trades_buffer.insert(0, trade_entry)
+        if len(_whale_trades_buffer) > _WHALE_TRADES_MAX:
+            del _whale_trades_buffer[_WHALE_TRADES_MAX:]
+
+
+def get_whale_trades(limit: int = 100) -> list:
+    """Return whale trades from the ring buffer, newest first."""
+    with _whale_trades_lock:
+        return list(_whale_trades_buffer[:limit])

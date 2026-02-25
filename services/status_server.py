@@ -3,11 +3,12 @@ Flask-based Status Dashboard Server for PolymarketWhales Bot.
 Provides a web interface to monitor bot status and statistics.
 """
 import os
+import hmac
 import logging
 import threading
-from flask import Flask, jsonify, Response
+from flask import Flask, jsonify, Response, request
 
-from services.status_service import get_full_status
+from services.status_service import get_full_status, get_whale_trades
 
 logger = logging.getLogger(__name__)
 
@@ -622,7 +623,9 @@ HTML_TEMPLATE = """
         
         async function loadData() {
             try {
-                const response = await fetch('/api/status');
+                const token = new URLSearchParams(window.location.search).get('token');
+                const apiUrl = token ? `/api/status?token=${encodeURIComponent(token)}` : '/api/status';
+                const response = await fetch(apiUrl);
                 const data = await response.json();
                 renderDashboard(data);
             } catch (error) {
@@ -1217,7 +1220,9 @@ PATTERNS_TEMPLATE = """
         
         async function loadData() {
             try {
-                const response = await fetch('/api/status');
+                const token = new URLSearchParams(window.location.search).get('token');
+                const apiUrl = token ? `/api/status?token=${encodeURIComponent(token)}` : '/api/status';
+                const response = await fetch(apiUrl);
                 const data = await response.json();
                 renderPatterns(data);
             } catch (error) {
@@ -1238,22 +1243,1486 @@ PATTERNS_TEMPLATE = """
 """
 
 
+PUBLIC_PATTERNS_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="300">
+    <title>PolymarketWhales Signals</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-main: #090d19;
+            --bg-card: #101a2d;
+            --bg-soft: #16233d;
+            --line: #263b61;
+            --text-main: #ecf3ff;
+            --text-soft: #a9bddf;
+            --c-cluster: #60a5fa;
+            --c-acc: #2dd4bf;
+            --c-burst: #fb7185;
+            --c-good: #34d399;
+            --c-warn: #f59e0b;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background:
+                radial-gradient(1200px 500px at 5% -10%, rgba(96, 165, 250, 0.25), transparent 60%),
+                radial-gradient(900px 450px at 95% 0%, rgba(45, 212, 191, 0.2), transparent 60%),
+                var(--bg-main);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 24px 18px 30px;
+        }
+        .container {
+            max-width: 1320px;
+            margin: 0 auto;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: end;
+            gap: 16px;
+            margin-bottom: 14px;
+        }
+        .brand h1 {
+            font-size: 2rem;
+            line-height: 1;
+            letter-spacing: 0.2px;
+        }
+        .brand p {
+            margin-top: 8px;
+            color: var(--text-soft);
+            font-size: 0.95rem;
+        }
+        .top-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: end;
+            gap: 8px;
+        }
+        .tag {
+            border: 1px solid var(--line);
+            background: rgba(22, 35, 61, 0.65);
+            color: var(--text-soft);
+            border-radius: 999px;
+            padding: 7px 12px;
+            font-size: 0.78rem;
+            letter-spacing: 0.2px;
+        }
+        .hero {
+            background: linear-gradient(145deg, rgba(16, 26, 45, 0.95), rgba(10, 15, 29, 0.95));
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            padding: 18px;
+            margin-bottom: 14px;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+        }
+        .hero h2 {
+            font-size: 1.1rem;
+            margin-bottom: 10px;
+            color: var(--c-cluster);
+        }
+        .hero p {
+            color: var(--text-main);
+            font-size: 0.95rem;
+            line-height: 1.5;
+            margin-bottom: 7px;
+        }
+        .hero ul {
+            margin: 8px 0 8px 20px;
+            color: var(--text-main);
+            font-size: 0.92rem;
+            line-height: 1.45;
+        }
+        .hero .note {
+            color: var(--text-soft);
+            font-size: 0.9rem;
+        }
+        .signal-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .signal-card {
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 14px;
+            min-height: 108px;
+            animation: reveal 0.45s ease both;
+        }
+        @keyframes reveal {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .signal-card h3 {
+            font-size: 0.78rem;
+            color: var(--text-soft);
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .signal-value {
+            font-size: 1.7rem;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 8px;
+        }
+        .signal-sub {
+            color: var(--text-soft);
+            font-size: 0.86rem;
+        }
+        .v-cluster { color: var(--c-cluster); }
+        .v-acc { color: var(--c-acc); }
+        .v-burst { color: var(--c-burst); }
+        .v-total { color: var(--text-main); }
+
+        .section {
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            padding: 14px 14px 12px;
+            margin-bottom: 16px;
+        }
+        .section-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .section-head h2 {
+            font-size: 1.02rem;
+            letter-spacing: 0.2px;
+        }
+        .section-count {
+            color: var(--text-soft);
+            font-size: 0.86rem;
+            margin-top: 5px;
+        }
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+            margin-top: 6px;
+        }
+        .chip {
+            padding: 5px 9px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: rgba(22, 35, 61, 0.8);
+            color: var(--text-soft);
+            font-size: 0.75rem;
+            white-space: nowrap;
+        }
+        .chip b {
+            color: var(--text-main);
+            font-weight: 500;
+        }
+        .cluster-accent { color: var(--c-cluster); }
+        .acc-accent { color: var(--c-acc); }
+        .burst-accent { color: var(--c-burst); }
+
+        .scroll-wrap {
+            overflow-x: auto;
+            border: 1px solid rgba(38, 59, 97, 0.5);
+            border-radius: 12px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.86rem;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 9px;
+            border-bottom: 1px solid rgba(38, 59, 97, 0.5);
+            vertical-align: top;
+        }
+        th {
+            color: var(--text-soft);
+            font-weight: 600;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: rgba(22, 35, 61, 0.5);
+            white-space: nowrap;
+        }
+        tr:last-child td { border-bottom: none; }
+        .market-link {
+            color: var(--text-main);
+            text-decoration: none;
+            border-bottom: 1px dotted rgba(236, 243, 255, 0.45);
+        }
+        .market-link:hover {
+            color: var(--c-cluster);
+            border-bottom-color: var(--c-cluster);
+        }
+        .wallet-link {
+            color: var(--c-cluster);
+            text-decoration: none;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.8rem;
+            border-bottom: 1px dotted rgba(96, 165, 250, 0.45);
+        }
+        .wallet-link:hover {
+            border-bottom-color: var(--c-cluster);
+        }
+        .mono {
+            font-family: 'IBM Plex Mono', monospace;
+        }
+        .dim { color: var(--text-soft); }
+        .state-ready { color: var(--c-good); }
+        .state-buffer { color: var(--c-warn); }
+        .progress {
+            margin-top: 6px;
+            width: 100%;
+            height: 6px;
+            border-radius: 999px;
+            background: rgba(22, 35, 61, 0.9);
+            overflow: hidden;
+        }
+        .bar {
+            height: 100%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #60a5fa, #2dd4bf);
+        }
+        .empty {
+            color: var(--text-soft);
+            text-align: center;
+            padding: 18px 0;
+        }
+        footer {
+            margin-top: 20px;
+            text-align: center;
+            color: var(--text-soft);
+            font-size: 0.85rem;
+        }
+        .whale-nav-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+            padding: 10px 20px;
+            background: linear-gradient(135deg, rgba(0,212,170,0.12), rgba(96,165,250,0.10));
+            border: 1px solid rgba(0,212,170,0.45);
+            border-radius: 12px;
+            color: var(--text-main);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.95rem;
+            transition: all 0.25s ease;
+            white-space: nowrap;
+            position: relative;
+            animation: whalePulse 3s ease-in-out infinite;
+        }
+        @keyframes whalePulse {
+            0%, 100% { box-shadow: 0 0 6px rgba(0,212,170,0.15); }
+            50% { box-shadow: 0 0 18px rgba(0,212,170,0.35), 0 0 40px rgba(0,212,170,0.10); }
+        }
+        .whale-nav-btn:hover {
+            background: linear-gradient(135deg, rgba(0,212,170,0.22), rgba(96,165,250,0.18));
+            border-color: rgba(0,212,170,0.7);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 24px rgba(0,212,170,0.25);
+            animation: none;
+        }
+        .whale-nav-sub {
+            font-size: 0.72rem;
+            font-weight: 400;
+            color: var(--text-soft);
+        }
+        .whale-live-badge {
+            position: absolute;
+            top: -7px;
+            right: -7px;
+            background: rgba(0,212,170,0.18);
+            border: 1px solid rgba(0,212,170,0.5);
+            color: #00d4aa;
+            font-size: 0.58rem;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            padding: 2px 7px 2px 5px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            text-transform: uppercase;
+        }
+        .whale-live-dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: #00d4aa;
+            animation: liveDot 1.5s ease-in-out infinite;
+        }
+        @keyframes liveDot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        @media (max-width: 860px) {
+            header {
+                flex-direction: column;
+                align-items: start;
+            }
+            .top-actions {
+                align-items: start;
+            }
+            body {
+                padding: 16px 12px 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="brand">
+                <h1>PolymarketWhales Signals</h1>
+                <p>Behavioral intelligence feed for unusual market positioning</p>
+            </div>
+            <div class="top-actions">
+                <a href="/whale-trades" class="whale-nav-btn"><span class="whale-live-badge"><span class="whale-live-dot"></span>LIVE</span>🐋 Whale Trades<span class="whale-nav-sub">Live feed of whale buys over $10K</span></a>
+            </div>
+        </header>
+        <div id="content">
+            <p class="empty">Loading...</p>
+        </div>
+        <footer>
+            Last updated: <span id="last-update">-</span> · Updated every 5 minutes
+        </footer>
+    </div>
+    <script>
+        function formatNumber(num) {
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toLocaleString();
+        }
+
+        function asNumber(value) {
+            const n = Number(value);
+            return Number.isFinite(n) ? n : null;
+        }
+
+        function shortWallet(wallet) {
+            if (!wallet || wallet.length < 10) return wallet || '';
+            return wallet.substring(0, 6) + '..' + wallet.substring(wallet.length - 4);
+        }
+
+        function withRef(url) {
+            if (!url) return '';
+            const sep = url.includes('?') ? '&' : '?';
+            return `${url}${sep}via=PmWhlAlertsWeb`;
+        }
+
+        function toMinutesAgo(ts) {
+            if (!ts) return 'N/A';
+            const diff = Math.max(0, Math.floor((Date.now() / 1000 - ts) / 60));
+            return diff + 'm ago';
+        }
+
+        function hoursToReadable(hoursRaw) {
+            const hours = asNumber(hoursRaw);
+            if (!hours || hours <= 0) return null;
+            const days = Math.floor(hours / 24);
+            const remainHours = hours % 24;
+            if (days > 0 && remainHours > 0) return `${days}d ${remainHours}h`;
+            if (days > 0) return `${days}d`;
+            return `${hours}h`;
+        }
+
+        function pct(current, target) {
+            const c = asNumber(current);
+            const t = asNumber(target);
+            if (!c || !t || t <= 0) return 0;
+            return Math.max(0, Math.min(100, Math.round((c / t) * 100)));
+        }
+
+        function renderProgress(current, target) {
+            const p = pct(current, target);
+            return `<div class="progress"><div class="bar" style="width: ${p}%;"></div></div>`;
+        }
+
+        function textOrDash(value) {
+            return value === null || value === undefined || value === '' ? '<span class="dim">-</span>' : value;
+        }
+
+        function renderScenarioChips(scenario, type) {
+            if (!scenario || Object.keys(scenario).length === 0) return '';
+            const chips = [];
+            if (scenario.min_usd || scenario.min_total) {
+                const minTrade = scenario.min_usd ? `$${formatNumber(Number(scenario.min_usd))}` : 'n/a';
+                const minTotal = scenario.min_total ? `$${formatNumber(Number(scenario.min_total))}` : 'n/a';
+                chips.push(`<span class="chip">Volume: <b>${minTrade} min, ${minTotal} total</b></span>`);
+            }
+            if (scenario.min_wallets) chips.push(`<span class="chip">Wallets: <b>${scenario.min_wallets}+</b></span>`);
+            if (scenario.min_dir) chips.push(`<span class="chip">Direction: <b>${scenario.min_dir}%+</b></span>`);
+            if (scenario.interval) {
+                const intervalLabel = type === 'ACCUMULATION' ? `${scenario.interval}d` : `${scenario.interval}h`;
+                chips.push(`<span class="chip">Interval: <b>${intervalLabel}</b></span>`);
+            }
+            const ageText = hoursToReadable(scenario.max_age);
+            if (ageText) chips.push(`<span class="chip">Wallet age: <b>&le; ${ageText}</b></span>`);
+            if (scenario.max_pos) chips.push(`<span class="chip">Open positions: <b>&le; ${scenario.max_pos}</b></span>`);
+            if (!chips.length) return '';
+            return `<div class="chips">${chips.join('')}</div>`;
+        }
+
+        function marketTitleCell(pattern) {
+            const title = (pattern.title || '').trim();
+            const shortTitle = title.length > 72 ? `${title.substring(0, 72)}...` : title;
+            const makeSlug = (value) => (value || '')
+                .toLowerCase()
+                .normalize('NFKD')
+                .replace(/['".,!?()[\]{}:;\\/|+*&^%$#@`~]/g, '')
+                .replace(/\s+/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-|-$/g, '');
+
+            let url = '';
+            if (pattern.event_slug) {
+                url = withRef(`https://polymarket.com/event/${pattern.event_slug}`);
+            } else {
+                const titleSlug = makeSlug(title);
+                if (titleSlug) {
+                    // Keep this shape because copied Polymarket links often contain double slug segment.
+                    url = withRef(`https://polymarket.com/event/${titleSlug}/${titleSlug}`);
+                } else if (pattern.market_id) {
+                    url = withRef(`https://polymarket.com/event/${pattern.market_id}`);
+                }
+            }
+
+            if (url) {
+                return `<a class="market-link" href="${url}" target="_blank">${shortTitle || pattern.market_id}</a>`;
+            }
+            return shortTitle || '<span class="dim">Unknown market</span>';
+        }
+
+        function directionCell(pattern) {
+            const directionality = asNumber(pattern.directionality);
+            const rawOutcome = String(pattern.outcome || '').trim();
+            if (directionality === null || !rawOutcome) {
+                return '<span class="dim">-</span>';
+            }
+            const outcomeUpper = rawOutcome.toUpperCase();
+            const outcomeLabel = outcomeUpper === 'YES'
+                ? 'Yes'
+                : outcomeUpper === 'NO'
+                    ? 'No'
+                    : rawOutcome;
+            return `${outcomeLabel} ${Math.round(directionality)}%`;
+        }
+
+        function renderRows(items, scenario) {
+            if (!items || items.length === 0) {
+                return '<div class="empty">No active patterns right now.</div>';
+            }
+
+            return `
+                <div class="scroll-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Market</th>
+                                <th>Wallets</th>
+                                <th>Volume</th>
+                                <th>Direction</th>
+                                <th>Participants</th>
+                                <th>Buffer State</th>
+                                <th>Last activity</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${items.map(p => `
+                                <tr>
+                                    <td>${marketTitleCell(p)}</td>
+                                    <td class="mono">
+                                        ${p.wallets || 0} / ${p.min_wallets || scenario.min_wallets || '-'}
+                                        ${renderProgress(p.wallets || 0, p.min_wallets || scenario.min_wallets || 0)}
+                                    </td>
+                                    <td class="mono">
+                                        $${formatNumber(p.volume || 0)} / $${formatNumber(asNumber(p.min_total || scenario.min_total) || 0)}
+                                        ${renderProgress(p.volume || 0, p.min_total || scenario.min_total || 0)}
+                                    </td>
+                                    <td class="mono">${directionCell(p)}</td>
+                                    <td>${(p.wallet_list || []).map(w => `<a class="wallet-link" target="_blank" href="${withRef(`https://polymarket.com/profile/${w}`)}">${shortWallet(w)}</a>`).join(', ') || '<span class="dim">-</span>'}</td>
+                                    <td>${p.blocked_reason ? `<span class="state-buffer">${p.blocked_reason}</span>` : '<span class="state-ready">Ready</span>'}</td>
+                                    <td class="dim">${toMinutesAgo(p.last_ts)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderPublishedTable(items) {
+            if (!items || items.length === 0) {
+                return '<div class="empty">No published alerts yet.</div>';
+            }
+            return `
+                <div class="scroll-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Scenario</th>
+                                <th>Market</th>
+                                <th>Outcome</th>
+                                <th>Volume</th>
+                                <th>Wallets</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${items.map(p => `
+                                <tr>
+                                    <td class="dim">${toMinutesAgo(p.timestamp)}</td>
+                                    <td><span class="mono">${textOrDash(p.scenario)}</span></td>
+                                    <td>${p.market_id ? `<a class="market-link" target="_blank" href="${withRef(`https://polymarket.com/event/${p.market_id}`)}">${(p.market_title || p.market_id).substring(0, 70)}</a>` : textOrDash(p.market_title)}</td>
+                                    <td>${textOrDash(p.outcome)}</td>
+                                    <td class="mono">$${formatNumber(p.total_volume || 0)}</td>
+                                    <td class="mono">${textOrDash(p.participants_count)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function sumVolume(items) {
+            return (items || []).reduce((acc, p) => acc + (Number(p.volume) || 0), 0);
+        }
+
+        function renderPage(data) {
+            const patterns = data.patterns || {};
+            const scenarios = data.scenarios || {};
+            const clusters = patterns.clusters || [];
+            const accumulations = patterns.accumulations || [];
+            const bursts = patterns.bursts || [];
+            const published = data.recent_published || [];
+
+            const totalSignals = clusters.length + accumulations.length + bursts.length;
+            const trackedVolume = sumVolume(clusters) + sumVolume(accumulations) + sumVolume(bursts);
+
+            const html = `
+                <div class="hero">
+                    <h2>About These Signals</h2>
+                    <p>This page publishes signals of unusual trading behavior on Polymarket.</p>
+                    <p>The focus is not on predictions, but on participant behavior patterns that may indicate early information or high conviction positioning.</p>
+                    <p>This is not financial advice. These are behavioral signals.</p>
+                    <p class="note"><strong>Distribution:</strong> confirmed signals are published in Telegram: <a class="market-link" href="https://t.me/PMInsiderSignals" target="_blank" rel="noopener noreferrer">@PMInsiderSignals</a>.</p>
+                    <p class="note"><strong>Platform:</strong> data is sourced from <a class="market-link" href="https://polymarket.com?via=PmWhlAlertsWeb" target="_blank" rel="noopener noreferrer">Polymarket</a>.</p>
+                    <p class="note"><strong>Signal engine:</strong> signals are formed by <a class="market-link" href="https://t.me/PolymarketWhales_bot" target="_blank" rel="noopener noreferrer">@PolymarketWhales_bot</a>.</p>
+
+                    <p><strong>Signal Types</strong></p>
+                    <ul>
+                        <li><strong>CLUSTER:</strong> Several new wallets enter the same market, same direction, almost at the same time, with meaningful size.</li>
+                        <li><strong>ACCUMULATION:</strong> Several new wallets steadily and significantly build a position in one market over multiple days.</li>
+                        <li><strong>BURST:</strong> Sharp spike of activity from multiple young wallets in a short time window.</li>
+                    </ul>
+                    <p class="note">Why this can be useful: signals can appear before news and public consensus, and strict time/size/direction filters are applied.</p>
+                    <p class="note">Sports and crypto-related events are intentionally excluded due to high noise, emotion, arbitrage, and automated strategies that can hide real behavioral patterns.</p>
+                </div>
+
+                <div class="signal-grid">
+                    <div class="signal-card">
+                        <h3>Total Active Signals</h3>
+                        <div class="signal-value v-total">${totalSignals}</div>
+                        <div class="signal-sub">across all pattern types</div>
+                    </div>
+                    <div class="signal-card">
+                        <h3>Clusters</h3>
+                        <div class="signal-value v-cluster">${clusters.length}</div>
+                        <div class="signal-sub">$${formatNumber(sumVolume(clusters))} tracked volume</div>
+                    </div>
+                    <div class="signal-card">
+                        <h3>Accumulations</h3>
+                        <div class="signal-value v-acc">${accumulations.length}</div>
+                        <div class="signal-sub">$${formatNumber(sumVolume(accumulations))} tracked volume</div>
+                    </div>
+                    <div class="signal-card">
+                        <h3>Bursts</h3>
+                        <div class="signal-value v-burst">${bursts.length}</div>
+                        <div class="signal-sub">$${formatNumber(sumVolume(bursts))} tracked volume</div>
+                    </div>
+                    <div class="signal-card">
+                        <h3>Recent Alerts</h3>
+                        <div class="signal-value v-total">${published.length}</div>
+                        <div class="signal-sub">last published pattern alerts</div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-head">
+                        <div>
+                            <h2 class="cluster-accent">Active CLUSTERS</h2>
+                            <div class="section-count">${clusters.length} active</div>
+                        </div>
+                    </div>
+                    ${renderScenarioChips(scenarios.CLUSTER || {}, 'CLUSTER')}
+                    ${renderRows(clusters, scenarios.CLUSTER || {})}
+                </div>
+
+                <div class="section">
+                    <div class="section-head">
+                        <div>
+                            <h2 class="acc-accent">Active ACCUMULATIONS</h2>
+                            <div class="section-count">${accumulations.length} active</div>
+                        </div>
+                    </div>
+                    ${renderScenarioChips(scenarios.ACCUMULATION || {}, 'ACCUMULATION')}
+                    ${renderRows(accumulations, scenarios.ACCUMULATION || {})}
+                </div>
+
+                <div class="section">
+                    <div class="section-head">
+                        <div>
+                            <h2 class="burst-accent">Active BURSTS</h2>
+                            <div class="section-count">${bursts.length} active</div>
+                        </div>
+                    </div>
+                    ${renderScenarioChips(scenarios.BURST || {}, 'BURST')}
+                    ${renderRows(bursts, scenarios.BURST || {})}
+                </div>
+
+                <div class="section">
+                    <div class="section-head">
+                        <div>
+                            <h2>Recently Published Alerts</h2>
+                            <div class="section-count">last ${published.length} alerts</div>
+                        </div>
+                    </div>
+                    ${renderPublishedTable(published)}
+                </div>
+            `;
+
+            document.getElementById('content').innerHTML = html;
+            document.getElementById('last-update').textContent = data.timestamp || '-';
+        }
+
+        async function loadData() {
+            try {
+                const response = await fetch('/api/public_patterns');
+                const data = await response.json();
+                renderPage(data);
+            } catch (error) {
+                console.error('Failed to load data:', error);
+                document.getElementById('content').innerHTML = '<p class="empty">Failed to load data.</p>';
+            }
+        }
+
+        loadData();
+        setInterval(loadData, 300000);
+    </script>
+</body>
+</html>
+"""
+
+
+WHALE_TRADES_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🐋 Whale Trades — PolymarketWhales</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-main: #090d19;
+            --bg-card: #101a2d;
+            --bg-soft: #16233d;
+            --line: #263b61;
+            --text-main: #ecf3ff;
+            --text-soft: #a9bddf;
+            --c-good: #34d399;
+            --c-burst: #fb7185;
+            --c-cluster: #60a5fa;
+            --c-acc: #2dd4bf;
+            --c-warn: #f59e0b;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background:
+                radial-gradient(1200px 500px at 5% -10%, rgba(96,165,250,0.20), transparent 60%),
+                radial-gradient(900px 450px at 95% 0%, rgba(52,211,153,0.15), transparent 60%),
+                var(--bg-main);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 24px 18px 30px;
+        }
+        .container {
+            max-width: 1420px;
+            margin: 0 auto;
+        }
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: end;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+        .brand h1 {
+            font-size: 2rem;
+            line-height: 1;
+            letter-spacing: 0.2px;
+        }
+        .brand p {
+            margin-top: 8px;
+            color: var(--text-soft);
+            font-size: 0.95rem;
+        }
+        .top-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 9px 16px;
+            background: rgba(22,35,61,0.65);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            color: var(--text-soft);
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        .back-btn:hover {
+            color: var(--text-main);
+            border-color: var(--c-cluster);
+            background: rgba(96,165,250,0.08);
+        }
+        .tag {
+            border: 1px solid var(--line);
+            background: rgba(22,35,61,0.65);
+            color: var(--text-soft);
+            border-radius: 999px;
+            padding: 7px 12px;
+            font-size: 0.78rem;
+            letter-spacing: 0.2px;
+        }
+        .live-dot {
+            display: inline-block;
+            width: 7px; height: 7px;
+            background: var(--c-good);
+            border-radius: 50%;
+            margin-right: 5px;
+            animation: pulse-dot 2s infinite;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52,211,153,0.5); }
+            50% { opacity: 0.7; box-shadow: 0 0 0 5px rgba(52,211,153,0); }
+        }
+
+        /* Filters */
+        .filters-bar {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+            padding: 14px 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+        }
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .filter-label {
+            color: var(--text-soft);
+            font-size: 0.8rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+        .seg-group {
+            display: flex;
+            background: var(--bg-soft);
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            overflow: hidden;
+        }
+        .seg-btn {
+            padding: 7px 14px;
+            background: transparent;
+            border: none;
+            color: var(--text-soft);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.82rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .seg-btn.active {
+            background: linear-gradient(135deg, rgba(96,165,250,0.25), rgba(45,212,191,0.15));
+            color: var(--text-main);
+            font-weight: 600;
+        }
+        .seg-btn:hover:not(.active) {
+            background: rgba(96,165,250,0.08);
+            color: var(--text-main);
+        }
+        .chk-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            font-size: 0.84rem;
+            color: var(--text-soft);
+            user-select: none;
+            transition: color 0.2s ease;
+        }
+        .chk-label:hover {
+            color: var(--text-main);
+        }
+        .chk-label input[type="checkbox"] {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 16px; height: 16px;
+            border: 1.5px solid var(--line);
+            border-radius: 4px;
+            background: var(--bg-soft);
+            cursor: pointer;
+            position: relative;
+            transition: all 0.2s ease;
+        }
+        .chk-label input[type="checkbox"]:checked {
+            background: var(--c-cluster);
+            border-color: var(--c-cluster);
+        }
+        .chk-label input[type="checkbox"]:checked::after {
+            content: '✓';
+            position: absolute;
+            top: -1px; left: 2px;
+            font-size: 11px;
+            color: #fff;
+            font-weight: 700;
+        }
+        .filter-sep {
+            width: 1px;
+            height: 24px;
+            background: var(--line);
+        }
+
+        /* Table */
+        .scroll-wrap {
+            overflow-x: auto;
+            border: 1px solid rgba(38,59,97,0.5);
+            border-radius: 14px;
+            background: var(--bg-card);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.86rem;
+        }
+        th, td {
+            text-align: left;
+            padding: 12px 10px;
+            border-bottom: 1px solid rgba(38,59,97,0.4);
+            vertical-align: middle;
+        }
+        th {
+            color: var(--text-soft);
+            font-weight: 600;
+            font-size: 0.73rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: rgba(22,35,61,0.6);
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+        }
+        tr:last-child td { border-bottom: none; }
+        tr {
+            animation: reveal 0.4s ease both;
+        }
+        @keyframes reveal {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        tr:hover td {
+            background: rgba(96,165,250,0.04);
+        }
+        .market-link {
+            color: var(--text-main);
+            text-decoration: none;
+            border-bottom: 1px dotted rgba(236,243,255,0.35);
+            font-weight: 500;
+        }
+        .market-link:hover {
+            color: var(--c-cluster);
+            border-bottom-color: var(--c-cluster);
+        }
+        .trader-link {
+            color: var(--c-cluster);
+            text-decoration: none;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.8rem;
+            border-bottom: 1px dotted rgba(96,165,250,0.35);
+        }
+        .trader-link:hover {
+            border-bottom-color: var(--c-cluster);
+        }
+        .amount-cell {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: var(--c-good);
+            white-space: nowrap;
+        }
+        .outcome-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            font-family: 'IBM Plex Mono', monospace;
+        }
+        .outcome-yes {
+            background: rgba(52,211,153,0.12);
+            color: var(--c-good);
+        }
+        .outcome-no {
+            background: rgba(251,113,133,0.12);
+            color: var(--c-burst);
+        }
+        .price-tag {
+            font-family: 'IBM Plex Mono', monospace;
+            color: var(--text-soft);
+            font-size: 0.82rem;
+            margin-left: 5px;
+        }
+        .pnl-positive {
+            color: var(--c-good);
+            font-family: 'IBM Plex Mono', monospace;
+            font-weight: 500;
+        }
+        .pnl-negative {
+            color: var(--c-burst);
+            font-family: 'IBM Plex Mono', monospace;
+            font-weight: 500;
+        }
+        .mono {
+            font-family: 'IBM Plex Mono', monospace;
+        }
+        .dim {
+            color: var(--text-soft);
+        }
+        .small-dim {
+            color: var(--text-soft);
+            font-size: 0.78rem;
+        }
+        .empty {
+            color: var(--text-soft);
+            text-align: center;
+            padding: 40px 0;
+            font-size: 0.95rem;
+        }
+        footer {
+            margin-top: 24px;
+            text-align: center;
+            color: var(--text-soft);
+            font-size: 0.85rem;
+        }
+        .count-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            background: var(--bg-soft);
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.78rem;
+            color: var(--text-soft);
+            margin-left: 10px;
+        }
+
+        /* Mobile cards */
+        .mobile-cards, .whale-cards {
+            display: none;
+        }
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                align-items: start;
+            }
+            .top-actions {
+                width: 100%;
+                justify-content: space-between;
+            }
+            body {
+                padding: 16px 10px 24px;
+            }
+            .scroll-wrap, .whale-table {
+                display: none;
+            }
+            .mobile-cards, .whale-cards {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+            .whale-card {
+                background: var(--bg-card);
+                border: 1px solid var(--line);
+                border-radius: 14px;
+                padding: 14px;
+                animation: reveal 0.4s ease both;
+            }
+            .card-market { font-weight: 500; font-size: 0.92rem; line-height: 1.3; margin-bottom: 6px; }
+            .card-market a { color: var(--text-primary); text-decoration: none; }
+            .card-amount { font-family: 'IBM Plex Mono', monospace; font-size: 1.3rem; font-weight: 700; color: var(--c-good); margin-bottom: 8px; }
+            .card-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-top: 1px solid rgba(38,59,97,0.3); }
+            .card-label { color: var(--text-soft); font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.3px; }
+            .m-card {
+                background: var(--bg-card);
+                border: 1px solid var(--line);
+                border-radius: 14px;
+                padding: 14px;
+                animation: reveal 0.4s ease both;
+            }
+            .m-card-head {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                gap: 10px;
+                margin-bottom: 10px;
+            }
+            .m-card-market {
+                font-weight: 500;
+                font-size: 0.92rem;
+                line-height: 1.3;
+                flex: 1;
+            }
+            .m-card-amount {
+                font-family: 'IBM Plex Mono', monospace;
+                font-size: 1.3rem;
+                font-weight: 700;
+                color: var(--c-good);
+                white-space: nowrap;
+            }
+            .m-card-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 5px 0;
+                border-top: 1px solid rgba(38,59,97,0.3);
+            }
+            .m-card-label {
+                color: var(--text-soft);
+                font-size: 0.76rem;
+                text-transform: uppercase;
+                letter-spacing: 0.3px;
+            }
+            .m-card-value {
+                font-size: 0.86rem;
+                text-align: right;
+            }
+            .filters-bar {
+                gap: 10px;
+                padding: 12px;
+            }
+            .filter-sep {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="brand">
+                <h1>🐋 Whale Trades</h1>
+                <p>Live feed of large BUY trades over $10,000 on Polymarket</p>
+            </div>
+            <div class="top-actions">
+                <a href="/public" class="back-btn">← Intelligence Feed</a>
+                <span class="tag"><span class="live-dot"></span>Live · 60s refresh</span>
+            </div>
+        </header>
+
+        <div class="filters-bar" id="filters-bar">
+            <div class="filter-group">
+                <span class="filter-label">Show</span>
+                <div class="seg-group" id="seg-limit">
+                    <button class="seg-btn active" data-val="25">25</button>
+                    <button class="seg-btn" data-val="50">50</button>
+                    <button class="seg-btn" data-val="100">100</button>
+                </div>
+            </div>
+            <div class="filter-sep"></div>
+            <div class="filter-group">
+                <span class="filter-label">Include</span>
+                <label class="chk-label"><input type="checkbox" id="chk-crypto"> Crypto</label>
+                <label class="chk-label"><input type="checkbox" id="chk-sport"> Sport</label>
+            </div>
+        </div>
+
+        <div id="content">
+            <p class="empty">Loading whale trades…</p>
+        </div>
+        <footer>
+            Last updated: <span id="last-update">-</span>
+        </footer>
+    </div>
+
+    <script>
+        // ========== LIVE DATA ==========
+        let allTrades = [];
+
+        // ========== STATE ==========
+        let currentLimit = 25;
+        let includeCrypto = false;
+        let includeSport = false;
+
+        // ========== HELPERS ==========
+        function formatUSD(num) {
+            if (num >= 1000000) return '$' + (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return '$' + (num / 1000).toFixed(1) + 'K';
+            return '$' + num;
+        }
+
+        function shortAddr(addr) {
+            if (!addr || addr.length < 10) return addr || '-';
+            return addr.substring(0, 6) + '…' + addr.substring(addr.length - 4);
+        }
+
+        function timeAgo(ts) {
+            const now = Date.now() / 1000;
+            const diff = Math.max(0, now - ts);
+            if (diff < 60) return Math.floor(diff) + 's ago';
+            if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+            if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+            return Math.floor(diff / 86400) + 'd ago';
+        }
+
+        function walletAge(hours) {
+            if (hours == null) return '-';
+            if (hours < 1) return '<1h';
+            if (hours < 24) return Math.floor(hours) + 'h';
+            if (hours < 720) return Math.floor(hours / 24) + 'd';
+            if (hours < 8760) return (hours / 720).toFixed(1) + 'mo';
+            return (hours / 8760).toFixed(1) + 'y';
+        }
+
+        function pnlClass(val) {
+            return val >= 0 ? 'pnl-positive' : 'pnl-negative';
+        }
+
+        function pnlSign(val) {
+            return val >= 0 ? '+' : '';
+        }
+
+        function withRef(url) {
+            if (!url) return '';
+            const sep = url.includes('?') ? '&' : '?';
+            return url + sep + 'via=PmWhlAlertsWeb';
+        }
+
+        // ========== FILTER & RENDER ==========
+        function filterTrades(trades) {
+            let filtered = trades.filter(t => {
+                const cat = (t.category || '').toLowerCase();
+                if (cat === 'crypto' && !includeCrypto) return false;
+                if ((cat === 'sport' || cat === 'sports') && !includeSport) return false;
+                return true;
+            });
+            filtered.sort((a, b) => b.timestamp - a.timestamp);
+            return filtered.slice(0, currentLimit);
+        }
+
+        function renderTable(trades) {
+            if (!trades.length) {
+                return '<div class="empty">No whale trades yet. Trades will appear as they happen in real-time.</div>';
+            }
+
+            const traderDisplay = (t) => {
+                const name = t.trader_name || shortAddr(t.trader_address);
+                const url = withRef('https://polymarket.com/profile/' + t.trader_address);
+                return `<a class="trader-link" href="${url}" target="_blank">${name}</a>`;
+            };
+
+            const marketLink = (t) => {
+                const title = (t.market_title || '').length > 65 ? t.market_title.substring(0, 65) + '…' : t.market_title;
+                const url = withRef('https://polymarket.com/event/' + (t.event_slug || ''));
+                return `<a class="market-link" href="${url}" target="_blank">${title}</a>`;
+            };
+
+            const outcomeHtml = (t) => {
+                const cls = t.outcome && t.outcome.toUpperCase() === 'YES' ? 'outcome-yes' : 'outcome-no';
+                return `<span class="${cls}">${t.outcome || '-'}</span> <span class="dim">@ ${t.price != null ? t.price + '%' : '-'}</span>`;
+            };
+
+            const pnlHtml = (t) => {
+                if (t.open_pnl == null) return '<span class="dim">n/a</span>';
+                const cls = pnlClass(t.open_pnl);
+                return `<span class="${cls}">${pnlSign(t.open_pnl)}${formatUSD(Math.abs(t.open_pnl))}</span> <span class="dim">(${pnlSign(t.open_pnl_pct || 0)}${(t.open_pnl_pct || 0).toFixed(1)}%)</span>`;
+            };
+
+            const posHtml = (t) => {
+                if (t.open_positions == null) return '<span class="dim">n/a</span>';
+                return `${t.open_positions} <span class="dim">| ${formatUSD(t.positions_value || 0)}</span>`;
+            };
+
+            // Desktop table
+            let html = `<table class="whale-table">
+                <thead><tr>
+                    <th>Market</th><th>Trader</th><th>Amount</th><th>Outcome & Price</th>
+                    <th>Open PnL</th><th>Positions</th><th>Wallet Age</th><th>Time</th>
+                </tr></thead><tbody>`;
+            trades.forEach((t, i) => {
+                html += `<tr style="animation-delay:${i*0.04}s">
+                    <td>${marketLink(t)}</td>
+                    <td>${traderDisplay(t)}</td>
+                    <td class="amount-cell">${formatUSD(t.amount)}</td>
+                    <td>${outcomeHtml(t)}</td>
+                    <td>${pnlHtml(t)}</td>
+                    <td>${posHtml(t)}</td>
+                    <td>${walletAge(t.wallet_age_hours)}</td>
+                    <td>${timeAgo(t.timestamp)}</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+
+            // Mobile cards
+            html += '<div class="whale-cards">';
+            trades.forEach((t, i) => {
+                html += `<div class="whale-card" style="animation-delay:${i*0.04}s">
+                    <div class="card-market">${marketLink(t)}</div>
+                    <div class="card-amount">${formatUSD(t.amount)}</div>
+                    <div class="card-row">
+                        <span class="card-label">Trader</span>
+                        <span>${traderDisplay(t)}</span>
+                    </div>
+                    <div class="card-row">
+                        <span class="card-label">Outcome</span>
+                        <span>${outcomeHtml(t)}</span>
+                    </div>
+                    <div class="card-row">
+                        <span class="card-label">Open PnL</span>
+                        <span>${pnlHtml(t)}</span>
+                    </div>
+                    <div class="card-row">
+                        <span class="card-label">Positions</span>
+                        <span>${posHtml(t)}</span>
+                    </div>
+                    <div class="card-row">
+                        <span class="card-label">Wallet Age</span>
+                        <span>${walletAge(t.wallet_age_hours)}</span>
+                    </div>
+                    <div class="card-row">
+                        <span class="card-label">Time</span>
+                        <span>${timeAgo(t.timestamp)}</span>
+                    </div>
+                </div>`;
+            });
+            html += '</div>';
+
+            return html;
+        }
+
+        function render() {
+            const filtered = filterTrades(allTrades);
+            document.getElementById('content').innerHTML = renderTable(filtered);
+            document.getElementById('trade-count').textContent = filtered.length;
+        }
+
+        function fetchTrades() {
+            fetch('/api/whale_trades?limit=200')
+                .then(r => r.json())
+                .then(data => {
+                    allTrades = data.trades || [];
+                    render();
+                    document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+                })
+                .catch(err => console.error('Failed to fetch whale trades:', err));
+        }
+
+        // ========== LIMIT BUTTONS ==========
+        document.querySelectorAll('.seg-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentLimit = parseInt(btn.dataset.limit);
+                render();
+            });
+        });
+
+        document.getElementById('chk-crypto').addEventListener('change', (e) => {
+            includeCrypto = e.target.checked;
+            render();
+        });
+
+        document.getElementById('chk-sport').addEventListener('change', (e) => {
+            includeSport = e.target.checked;
+            render();
+        });
+
+        // ========== INIT ==========
+        fetchTrades();
+
+        // Auto-refresh every 60 seconds
+        setInterval(fetchTrades, 60000);
+    </script>
+</body>
+</html>
+"""
+
+
+def _is_admin_authorized() -> bool:
+    """Check optional token auth for sensitive admin endpoints."""
+    configured_token = os.getenv("STATUS_ADMIN_TOKEN", "").strip()
+    if not configured_token:
+        return True
+
+    provided_token = request.args.get("token", "") or request.headers.get("X-Status-Token", "")
+    return hmac.compare_digest(provided_token, configured_token)
+
+
+def _public_patterns_payload() -> dict:
+    """Return sanitized payload for public patterns page."""
+    status = get_full_status()
+    insider = status.get("insider") or {}
+    pending = insider.get("pending_patterns") or {}
+    scenarios = insider.get("scenarios") or {}
+    
+    def sanitize_pattern(pattern: dict) -> dict:
+        return {
+            "title": pattern.get("title", ""),
+            "market_id": pattern.get("market_id"),
+            "event_slug": pattern.get("event_slug"),
+            "wallets": pattern.get("wallets", 0),
+            "volume": pattern.get("volume", 0),
+            "min_wallets": pattern.get("min_wallets"),
+            "min_total": pattern.get("min_total"),
+            "side": pattern.get("side"),
+            "min_dir": pattern.get("min_dir"),
+            "interval": pattern.get("interval"),
+            "blocked_reason": pattern.get("blocked_reason"),
+            "wallet_list": pattern.get("wallet_list", []),
+            "last_ts": pattern.get("last_ts"),
+            "outcome": pattern.get("outcome"),
+            "directionality": pattern.get("directionality"),
+        }
+    
+    def sanitize_published(item: dict) -> dict:
+        return {
+            "timestamp": item.get("timestamp"),
+            "scenario": item.get("scenario"),
+            "market_id": item.get("market_id"),
+            "market_title": item.get("market_title"),
+            "outcome": item.get("outcome"),
+            "total_volume": item.get("total_volume", 0),
+            "participants_count": item.get("participants_count", 0),
+            "wallet_list": item.get("wallet_list", []),
+        }
+
+    def sanitize_scenario(cfg: dict) -> dict:
+        if not isinstance(cfg, dict):
+            return {}
+        return {
+            "enabled": cfg.get("enabled"),
+            "min_usd": cfg.get("min_usd"),
+            "min_total": cfg.get("min_total"),
+            "min_wallets": cfg.get("min_wallets"),
+            "max_age": cfg.get("max_age"),
+            "min_dir": cfg.get("min_dir"),
+            "side": cfg.get("side"),
+            "max_pos": cfg.get("max_pos"),
+            "interval": cfg.get("interval"),
+        }
+
+    return {
+        "timestamp": status.get("timestamp"),
+        "patterns": {
+            "clusters": [sanitize_pattern(p) for p in pending.get("clusters", [])],
+            "accumulations": [sanitize_pattern(p) for p in pending.get("accumulations", [])],
+            "bursts": [sanitize_pattern(p) for p in pending.get("bursts", [])],
+        },
+        "scenarios": {
+            "CLUSTER": sanitize_scenario(scenarios.get("CLUSTER")),
+            "ACCUMULATION": sanitize_scenario(scenarios.get("ACCUMULATION")),
+            "BURST": sanitize_scenario(scenarios.get("BURST")),
+        },
+        "recent_published": [sanitize_published(p) for p in (insider.get("published_history") or [])[:20]],
+    }
+
+
 @app.route('/')
 def index():
     """Serve the dashboard HTML page."""
+    if not _is_admin_authorized():
+        return jsonify({"error": "Forbidden"}), 403
     return Response(HTML_TEMPLATE, mimetype='text/html')
 
 
 @app.route('/patterns')
 def patterns():
     """Serve the active patterns page."""
+    if not _is_admin_authorized():
+        return jsonify({"error": "Forbidden"}), 403
     return Response(PATTERNS_TEMPLATE, mimetype='text/html')
 
 
 @app.route('/api/status')
 def api_status():
     """Return full status as JSON."""
+    if not _is_admin_authorized():
+        return jsonify({"error": "Forbidden"}), 403
     return jsonify(get_full_status())
+
+
+@app.route('/public')
+def public_patterns():
+    """Serve public patterns page."""
+    return Response(PUBLIC_PATTERNS_TEMPLATE, mimetype='text/html')
+
+
+@app.route('/whale-trades')
+def whale_trades_page():
+    """Serve whale trades live feed page."""
+    return Response(WHALE_TRADES_TEMPLATE, mimetype='text/html')
+
+
+@app.route('/api/whale_trades')
+def api_whale_trades():
+    """Return whale trades from the in-memory ring buffer."""
+    limit = request.args.get('limit', 100, type=int)
+    limit = min(limit, 200)  # Cap at 200
+    trades = get_whale_trades(limit=limit)
+    return jsonify({'trades': trades, 'count': len(trades)})
+
+
+@app.route('/api/public_patterns')
+def api_public_patterns():
+    """Return public safe patterns payload."""
+    return jsonify(_public_patterns_payload())
 
 
 def run_server(port=5000, host='0.0.0.0'):

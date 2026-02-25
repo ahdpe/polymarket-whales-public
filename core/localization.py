@@ -142,7 +142,8 @@ TRANSLATIONS = {
 Если в названии есть: nfl, nba, football, soccer, ufc, f1, lakers, goal и др.
 
 💬 Обратная связь: @Andrey\_Os
-📢 Polymarket Insider Signals: @PMInsiderSignals
+📢 @PMInsiderSignals — сигналы о нетипичной скоординированной активности свежих кошельков на Polymarket.
+🌐 https://polymarketwhales.online/ — активные сигналы, буфер до публикации и причины непубликации в канал.
 🐦 [Twitter/X](https://x.com/PolyMrktWhales)
 
 💝 *Поддержать проект:*
@@ -356,7 +357,8 @@ Keywords: bitcoin, btc, ethereum, eth, solana, doge, pepe, binance, nft, airdrop
 Keywords: nfl, nba, football, soccer, ufc, f1, lakers, goal, etc.
 
 💬 Feedback: @Andrey\_Os
-📢 Polymarket Insider Signals: @PMInsiderSignals
+📢 @PMInsiderSignals — signals of atypical coordinated activity of fresh wallets on Polymarket.
+🌐 https://polymarketwhales.online/ — active signals, pre-publish buffer, and reasons why a signal is not yet posted to the channel.
 🐦 [Twitter/X](https://x.com/PolyMrktWhales)
 
 💝 *Support the project:*

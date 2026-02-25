@@ -118,8 +118,6 @@ def _finalize_tweet_text(tweet_text: str) -> str:
     if body.endswith(AUTOPOST_FOOTER):
         body = body[:-len(AUTOPOST_FOOTER)].rstrip()
 
-    body = add_polymarket_ref(body).replace("via=PolymarketWhaleAlerts", "via=PmWhlAlerts")
-
     footer_block = f"\n\n{AUTOPOST_FOOTER}"
     max_body_len = MAX_TWEET_TEXT_LEN - len(footer_block)
     if max_body_len <= 0:
@@ -769,7 +767,9 @@ class TwitterService:
                  
                  # Construct valid profile link
                  profile_link = ""
-                 if trader_address and trader_address.startswith('0x'):
+                 if trader_name and trader_name.startswith('@'):
+                      profile_link = f"https://polymarket.com/{trader_name}"
+                 elif trader_address and trader_address.startswith('0x'):
                       profile_link = f"https://polymarket.com/profile/{trader_address}"
                  
                  # Build display for trader
@@ -1028,7 +1028,10 @@ class TwitterService:
                 lines.append(f"Wallet age: {wallet_age_str}")
         
         # Add profile link to whale tweets
-        if trader_address and trader_address.startswith('0x'):
+        if trader_name and trader_name.startswith('@'):
+            profile_link = f"https://polymarket.com/{trader_name}"
+            lines.append(profile_link)
+        elif trader_address and trader_address.startswith('0x'):
             profile_link = f"https://polymarket.com/profile/{trader_address}"
             lines.append(profile_link)
         
