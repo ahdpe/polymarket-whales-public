@@ -4,24 +4,55 @@ from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.exceptions import TelegramRetryAfter, TelegramForbiddenError
+import asyncio
 import logging
 import hashlib
-from config import TELEGRAM_BOT_TOKEN, FILTERS, OWNER_ID
+import time
+import re
+from datetime import datetime
+import html
+import aiohttp
+from urllib.parse import quote
+_aiolimiter_available = False
+try:
+    from aiolimiter import AsyncLimiter
+    import aiolimiter
+    _aiolimiter_available = True
+    _aiolimiter_version = getattr(aiolimiter, '__version__', 'unknown')
+except ImportError:
+    AsyncLimiter = None
+    _aiolimiter_version = None
+from config import TELEGRAM_BOT_TOKEN, FILTERS, OWNER_ID, RETRY_SHORT_MAX, MUTE_DURATIONS, FAIL_STREAK_MUTE_THRESHOLD, HOTFIX_CHAT_ID, HOTFIX_THRESHOLD, HOTFIX_MUTE, QUEUE_MAX_SIZE, WORKER_COUNT, GLOBAL_RATE, PER_CHAT_RATE
 from core.localization import get_text
+from core.utils import shorten_trader_name
 from storage import saved_whales
+from storage import saved_markets
 from services.report_service import generate_report
+DATA_API_URL = 'https://data-api.polymarket.com'
+_poly_service = None
 
-def shorten_trader_name(name):
+def add_polymarket_ref(text: str) -> str:
     """
-    Shorten trader name:
-    1. Remove timestamp suffix (starting with '-') if present.
-    2. Truncate long addresses: 0xB0B1Ecb5eD8a22d38Ee89f20b196246005d37507 -> 0xB0B1E...37507
+    Add via=PolymarketWhaleAlerts to all polymarket.com URLs in text.
+    
+    Test cases:
+    1. "https://polymarket.com" → "https://polymarket.com?via=PolymarketWhaleAlerts"
+    2. "https://polymarket.com/event/slug" → "https://polymarket.com/event/slug?via=PolymarketWhaleAlerts"
+    3. "https://polymarket.com/profile/0x123?tab=history" → "https://polymarket.com/profile/0x123?tab=history&via=PolymarketWhaleAlerts"
+    4. "https://polymarket.com?via=PolymarketWhaleAlerts" → unchanged
+    5. "https://google.com" → unchanged
+    6. "[Market](https://polymarket.com/event/x)" → "[Market](https://polymarket.com/event/x?via=PolymarketWhaleAlerts)"
     """
     pass
-_poly_service = None
 
 def set_poly_service(service):
     """Store reference to PolymarketService for report generation."""
+    pass
+_insider_alerts_service = None
+
+def set_insider_alerts_service(service):
+    """Store reference to InsiderAlertsService for admin commands."""
     pass
 
 class NoteState(StatesGroup):
@@ -30,10 +61,16 @@ class NoteState(StatesGroup):
 class ManualAddState(StatesGroup):
     waiting_for_input = State()
 
+class MarketManualAddState(StatesGroup):
+    waiting_for_input = State()
+
 class AgeFilterState(StatesGroup):
     waiting_for_range = State()
 
 class PositionsFilterState(StatesGroup):
+    waiting_for_range = State()
+
+class ProbabilityFilterState(StatesGroup):
     waiting_for_range = State()
 MAX_COMMENT_LEN = 240
 logger = logging.getLogger(__name__)
@@ -50,7 +87,46 @@ def load_settings():
 def save_settings():
     """Save user settings to file."""
     pass
-(user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types, user_wallet_ages, user_open_positions, bot_enabled) = load_settings()
+(user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types, user_wallet_ages, user_open_positions, blocked_users, bot_enabled) = load_settings()
+user_menu_state = {}
+
+def set_menu_state(chat_id: int, state: str) -> None:
+    pass
+
+def get_menu_state(chat_id: int) -> str:
+    pass
+muted_until = {}
+fail_streak = {}
+mute_level = {}
+last_fail_reason = {}
+last_mute_time = {}
+MUTE_STATE_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'mute_state.json')
+
+def load_mute_state():
+    """Load mute state from file."""
+    pass
+
+def save_mute_state():
+    """Save mute state to file (atomic write)."""
+    pass
+
+def cleanup_mute_state():
+    """Clean up old mute state entries to prevent memory bloat."""
+    pass
+_stats_lock = asyncio.Lock()
+_stats_reset_time = time.time()
+alert_queue = None
+worker_tasks = []
+queue_stats = {'sent_total': 0, 'dropped_total': 0, 'error_total': 0, 'skipped_prequeue_total': 0, 'skipped_worker_gate_total': 0, 'sent_per_min': 0, 'dropped_per_min': 0, 'skipped_prequeue_per_min': 0, 'skipped_worker_gate_per_min': 0, 'retryafter_min': 0, 'requeued_total': 0, 'requeued_per_min': 0}
+_queue_stats_lock = asyncio.Lock()
+_queue_stats_reset_time = time.time()
+_queue_oldest_enqueued = None
+_queue_oldest_lock = asyncio.Lock()
+_queue_lag_warn_count = 0
+global_rate_limiter = None
+_per_chat_next_send = {}
+_per_chat_lock = asyncio.Lock()
+_queue_enabled = False
 
 def is_bot_enabled():
     """Check if bot is enabled (not stopped by admin)."""
@@ -157,6 +233,16 @@ async def cmd_probability(message: types.Message):
     """Show probability filter menu."""
     pass
 
+@dp.message(Command('tlgrm_prob'))
+async def cmd_tlgrm_prob(message: types.Message):
+    """
+    Handle /tlgrm_prob command (GLOBAL Insider Alerts filter).
+    Usage:
+    - /tlgrm_prob 10 90 (sets range 10-90%)
+    - /tlgrm_prob 0 (resets to 0-100%)
+    """
+    pass
+
 @dp.message(Command('sides'))
 async def cmd_sides(message: types.Message):
     """Show side types menu."""
@@ -249,6 +335,11 @@ async def cmd_lang(message: types.Message):
     """Command to toggle language."""
     pass
 
+@dp.message(Command('reset'))
+async def cmd_reset(message: types.Message):
+    """Reset all user settings to default."""
+    pass
+
 @dp.message(Command('hide'))
 async def cmd_hide(message: types.Message):
     """Command to hide menu."""
@@ -268,6 +359,11 @@ async def cmd_filters(message: types.Message):
 async def cmd_saved(message: types.Message):
     """Command to show saved traders list."""
     pass
+
+@dp.message(Command('markets'))
+async def cmd_markets(message: types.Message):
+    """Command to show saved markets list."""
+    pass
 AQUARIUM_PAGE_SIZE = 10
 
 def get_aquarium_list(chat_id, page=0, edit_mode=False):
@@ -280,6 +376,83 @@ def get_aquarium_list(chat_id, page=0, edit_mode=False):
 @dp.message(lambda message: message.text in [get_text('ru', 'btn_saved'), get_text('en', 'btn_saved')])
 async def btn_saved(message: types.Message):
     """Handle Aquarium button press - Show List View."""
+    pass
+MARKETS_PAGE_SIZE = 10
+
+def get_markets_list(chat_id, page=0, edit_mode=False):
+    """
+    Generate text list and keyboard for Saved Markets.
+    Supports View Mode and Edit Mode.
+    """
+    pass
+
+@dp.message(lambda message: message.text in [get_text('ru', 'btn_saved_markets'), get_text('en', 'btn_saved_markets')])
+async def btn_saved_markets(message: types.Message):
+    """Handle Saved Markets button press - Show List View."""
+    pass
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('mk_mode:'))
+async def callback_markets_mode(callback_query: types.CallbackQuery):
+    """Toggle View/Edit Mode for Markets."""
+    pass
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('mk_page:'))
+async def callback_markets_page(callback_query: types.CallbackQuery):
+    """Navigate Saved Markets pages."""
+    pass
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('mk_delete:'))
+async def callback_market_delete(callback: types.CallbackQuery):
+    """Handle delete from saved markets."""
+    pass
+
+@dp.callback_query(lambda c: c.data == 'mk_clearall')
+async def callback_markets_clear_all(callback: types.CallbackQuery):
+    """Ask for confirmation before clearing all markets."""
+    pass
+
+@dp.callback_query(lambda c: c.data == 'mk_confirm_clear')
+async def callback_markets_confirm_clear(callback: types.CallbackQuery):
+    """Execute clear all markets."""
+    pass
+
+@dp.callback_query(lambda c: c.data == 'mk_cancel_clear')
+async def callback_markets_cancel_clear(callback: types.CallbackQuery):
+    """Cancel clear all markets."""
+    pass
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('mk_toggle:'))
+async def callback_market_toggle_notif(callback: types.CallbackQuery):
+    """Toggle notifications/state for a saved market.
+    
+    Cycle: 🔕 off → 🔔 on → 🚫 ignore → 🔕 off (back to start)
+    """
+    pass
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('mk_toggle_all:'))
+async def callback_market_toggle_all(callback: types.CallbackQuery):
+    """Toggle notifications for all saved markets."""
+    pass
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('market_manual_add:'))
+async def callback_market_manual_add(callback: types.CallbackQuery, state: FSMContext):
+    """Handle manual add button for markets."""
+    pass
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('cancel_market_manual_add:'))
+async def callback_cancel_market_manual_add(callback: types.CallbackQuery, state: FSMContext):
+    """Cancel manual add operation for markets."""
+    pass
+
+def _extract_event_slug(text: str) -> str | None:
+    pass
+
+async def _fetch_market_title_by_slug(slug: str) -> str | None:
+    pass
+
+@dp.message(MarketManualAddState.waiting_for_input)
+async def process_market_manual_add_input(message: types.Message, state: FSMContext):
+    """Handle manual add text input for markets."""
     pass
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('aq_mode:'))
@@ -299,7 +472,30 @@ async def callback_save(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith('saved:'))
 async def callback_already_saved(callback: CallbackQuery):
-    """Handle click on already saved button."""
+    """Handle click on already saved button.
+
+    Toggle: remove from favorites and switch button back to "To Favorites".
+    """
+    pass
+
+@dp.callback_query(F.data.startswith('market_save:'))
+async def callback_market_save(callback: CallbackQuery):
+    """Handle save market callback."""
+    pass
+
+@dp.callback_query(F.data.startswith('market_saved:'))
+async def callback_market_saved(callback: CallbackQuery):
+    """Handle click on already saved market button (remove)."""
+    pass
+
+@dp.callback_query(F.data.startswith('ign_trader:'))
+async def callback_ignore_trader(callback: CallbackQuery):
+    """Handle ignore trader callback - upsert with state='ignore'."""
+    pass
+
+@dp.callback_query(F.data.startswith('ign_market:'))
+async def callback_ignore_market(callback: CallbackQuery):
+    """Handle ignore market callback - upsert with state='ignore'."""
     pass
 
 class NoteState(StatesGroup):
@@ -337,7 +533,15 @@ async def callback_cancel_clear(callback: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('toggle_notif:'))
 async def callback_toggle_notif(callback: types.CallbackQuery):
-    """Toggle notifications for a saved trader."""
+    """Toggle notifications/state for a saved trader.
+    
+    Cycle: 🔕 off → 🔔 on → 🚫 ignore → 🔕 off (back to start)
+    """
+    pass
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('toggle_notif_all:'))
+async def callback_toggle_notif_all(callback: types.CallbackQuery):
+    """Toggle notifications for all saved traders."""
     pass
 
 @dp.callback_query(F.data == 'noop')
@@ -380,9 +584,29 @@ async def callback_cancel_filter_500(callback: CallbackQuery):
     """Handle cancellation for $500 filter - return to amount menu."""
     pass
 
-@dp.callback_query(F.data.startswith('prob_'))
+@dp.callback_query(F.data.startswith('prob_') & (F.data != 'prob_custom'))
 async def callback_probability(callback: CallbackQuery):
     """Handle probability filter selection."""
+    pass
+
+@dp.callback_query(F.data == 'prob_custom')
+async def callback_prob_custom(callback: CallbackQuery, state: FSMContext):
+    """Handle custom probability filter selection."""
+    pass
+
+def parse_probability_ranges(text):
+    """
+    Parse probability ranges from string.
+    Supports:
+    - Multiple ranges: "0-5, 95-100"
+    - Space/underscore as separator: "20 80", "20_80"
+    - Single ranges: "20-80"
+    """
+    pass
+
+@dp.message(ProbabilityFilterState.waiting_for_range)
+async def process_prob_custom_input(message: types.Message, state: FSMContext):
+    """Process custom probability range input."""
     pass
 
 @dp.callback_query(F.data == 'age_any')
@@ -425,6 +649,11 @@ async def callback_side_type(callback: CallbackQuery):
     """Handle side type toggle callback."""
     pass
 
+@dp.callback_query()
+async def callback_query_catch_all(callback: CallbackQuery):
+    """Catch-all handler for unhandled callback queries - logs for debugging."""
+    pass
+
 def get_user_min_threshold(chat_id):
     """Get user's minimum threshold. Return default if not set."""
     pass
@@ -434,7 +663,7 @@ def get_user_categories(chat_id):
     pass
 
 def get_user_probability_filter(chat_id):
-    """Get user's probability filter setting. Returns (min, max) tuple or None."""
+    """Get user's probability filter setting. Returns LIST of (min, max) tuples or None."""
     pass
 
 def get_user_side_types(chat_id):
@@ -471,6 +700,31 @@ async def cmd_users(message: types.Message):
 @dp.message(Command('broadcast'))
 async def cmd_broadcast(message: types.Message):
     """Broadcast message to all users (owner only)."""
+    pass
+
+@dp.message(Command('mute_status'))
+async def cmd_mute_status(message: types.Message):
+    """Show mute statistics (owner only)."""
+    pass
+
+@dp.message(Command('queue_status'))
+async def cmd_queue_status(message: types.Message):
+    """Show queue statistics (owner only)."""
+    pass
+
+@dp.message(Command('queue_clear'))
+async def cmd_queue_clear(message: types.Message):
+    """Clear queue (owner only)."""
+    pass
+
+@dp.message(Command('unmute'))
+async def cmd_unmute(message: types.Message):
+    """Unmute a user (owner only)."""
+    pass
+
+@dp.message(Command('mute'))
+async def cmd_mute(message: types.Message):
+    """Manually mute a user (owner only)."""
     pass
 
 @dp.message(Command('cache'))
@@ -523,6 +777,11 @@ async def cmd_twitter_pos_ins(message: types.Message):
     """Set Twitter max positions needed for Insider tweets."""
     pass
 
+@dp.message(Command('twitter_delay'))
+async def cmd_twitter_delay(message: types.Message):
+    """Set delay between trade and Twitter signal (in minutes, owner only)."""
+    pass
+
 @dp.message(Command('twitter_interval'))
 async def cmd_twitter_interval(message: types.Message):
     """Set interval between tweets in minutes (owner only)."""
@@ -558,6 +817,206 @@ async def cmd_twitter_cat(message: types.Message):
     """Set category filters for Twitter (owner only)."""
     pass
 
+@dp.message(Command('tlgrm'))
+async def cmd_tlgrm(message: types.Message):
+    """Show Insider Alerts status and settings (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_pending'))
+async def cmd_tlgrm_pending(message: types.Message):
+    """Show pending alerts close to threshold (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_on'))
+async def cmd_tlgrm_on(message: types.Message):
+    """Enable Insider Alerts globally (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_off'))
+async def cmd_tlgrm_off(message: types.Message):
+    """Disable Insider Alerts globally (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_channel'))
+async def cmd_tlgrm_channel(message: types.Message):
+    """Set Telegram channel ID for insider alerts (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_cluster'))
+async def cmd_tlgrm_cluster(message: types.Message):
+    """Toggle CLUSTER scenario (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_cluster_interval'))
+async def cmd_tlgrm_cluster_interval(message: types.Message):
+    """Set CLUSTER interval in hours (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_cluster_wallet_age'))
+async def cmd_tlgrm_cluster_wallet_age(message: types.Message):
+    """Set CLUSTER max wallet age in hours (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_cluster_min'))
+async def cmd_tlgrm_cluster_min(message: types.Message):
+    """Set CLUSTER minimum volume in USD (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_cluster_wallets'))
+async def cmd_tlgrm_cluster_wallets(message: types.Message):
+    """Set CLUSTER minimum wallet count (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_cluster_direction'))
+async def cmd_tlgrm_cluster_direction(message: types.Message):
+    """Set CLUSTER minimum directionality % (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_cluster_pos'))
+async def cmd_tlgrm_cluster_pos(message: types.Message):
+    """Set CLUSTER maximum open positions (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_accumulation'))
+async def cmd_tlgrm_accumulation(message: types.Message):
+    """Toggle ACCUMULATION scenario (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_accumulation_interval'))
+async def cmd_tlgrm_accumulation_interval(message: types.Message):
+    """Set ACCUMULATION interval window in days (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_accumulation_min'))
+async def cmd_tlgrm_accumulation_min(message: types.Message):
+    """Set ACCUMULATION minimum trade size in USD (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_accumulation_total'))
+async def cmd_tlgrm_accumulation_total(message: types.Message):
+    """Set ACCUMULATION minimum total volume in USD (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_accumulation_wallets'))
+async def cmd_tlgrm_accumulation_wallets(message: types.Message):
+    """Set ACCUMULATION minimum wallets count (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_accumulation_pos'))
+async def cmd_tlgrm_accumulation_pos(message: types.Message):
+    """Set ACCUMULATION maximum open positions (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_accumulation_direction'))
+async def cmd_tlgrm_accumulation_direction(message: types.Message):
+    """Set ACCUMULATION minimum directionality % (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_burst'))
+async def cmd_tlgrm_burst(message: types.Message):
+    """Toggle BURST scenario (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_burst_interval'))
+async def cmd_tlgrm_burst_interval(message: types.Message):
+    """Set BURST interval in hours (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_burst_min'))
+async def cmd_tlgrm_burst_min(message: types.Message):
+    """Set BURST minimum trade size in USD (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_burst_wallets'))
+async def cmd_tlgrm_burst_wallets(message: types.Message):
+    """Set BURST minimum wallet count (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_burst_direction'))
+async def cmd_tlgrm_burst_direction(message: types.Message):
+    """Set BURST minimum directionality % (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_burst_pos'))
+async def cmd_tlgrm_burst_pos(message: types.Message):
+    """Set BURST maximum open positions (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_cat'))
+async def cmd_tlgrm_cat(message: types.Message):
+    """Set category enabled status (owner only)."""
+    pass
+
+@dp.message(Command('tlgrm_cluster_side'))
+async def cmd_tlgrm_cluster_side(message: types.Message):
+    """Set CLUSTER side filter (buy/sell/both)."""
+    pass
+
+@dp.message(Command('tlgrm_cluster_total'))
+async def cmd_tlgrm_cluster_total(message: types.Message):
+    """Set CLUSTER min total volume."""
+    pass
+
+@dp.message(Command('tlgrm_cluster_profiles'))
+async def cmd_tlgrm_cluster_profiles(message: types.Message):
+    """Toggle displaying profiles in CLUSTER alerts."""
+    pass
+
+@dp.message(Command('tlgrm_cluster_show'))
+async def cmd_tlgrm_cluster_show(message: types.Message):
+    """Show detailed CLUSTER settings."""
+    pass
+
+@dp.message(Command('tlgrm_cluster_reset'))
+async def cmd_tlgrm_cluster_reset(message: types.Message):
+    """Reset CLUSTER settings to default."""
+    pass
+
+@dp.message(Command('tlgrm_burst_age'))
+async def cmd_tlgrm_burst_age(message: types.Message):
+    """Set BURST max wallet age."""
+    pass
+
+@dp.message(Command('tlgrm_burst_total'))
+async def cmd_tlgrm_burst_total(message: types.Message):
+    """Set BURST min total volume."""
+    pass
+
+@dp.message(Command('tlgrm_burst_profiles'))
+async def cmd_tlgrm_burst_profiles(message: types.Message):
+    """Toggle displaying profiles in BURST alerts."""
+    pass
+
+@dp.message(Command('tlgrm_burst_show'))
+async def cmd_tlgrm_burst_show(message: types.Message):
+    """Show detailed BURST settings."""
+    pass
+
+@dp.message(Command('tlgrm_burst_reset'))
+async def cmd_tlgrm_burst_reset(message: types.Message):
+    """Reset BURST settings to default."""
+    pass
+
+@dp.message(Command('tlgrm_accumulation_age'))
+async def cmd_tlgrm_accumulation_age(message: types.Message):
+    """Set ACCUMULATION max wallet age."""
+    pass
+
+@dp.message(Command('tlgrm_accumulation_profiles'))
+async def cmd_tlgrm_accumulation_profiles(message: types.Message):
+    """Toggle displaying profiles in ACCUMULATION alerts."""
+    pass
+
+@dp.message(Command('tlgrm_accumulation_show'))
+async def cmd_tlgrm_accumulation_show(message: types.Message):
+    """Show detailed ACCUMULATION settings."""
+    pass
+
+@dp.message(Command('tlgrm_accumulation_reset'))
+async def cmd_tlgrm_accumulation_reset(message: types.Message):
+    """Reset ACCUMULATION settings to default."""
+    pass
+
 async def send_admin_notification(message: str, parse_mode='HTML'):
     """Send notification message to bot owner/admin."""
     pass
@@ -565,10 +1024,98 @@ async def send_admin_notification(message: str, parse_mode='HTML'):
 async def start_telegram():
     pass
 
-def get_trade_alert_keyboard(lang: str, whale_key: str, is_saved: bool, level_icon: str='🦐'):
+async def _periodic_cleanup():
+    """Periodic cleanup of mute state (every hour)."""
+    pass
+
+def get_trade_alert_keyboard(lang: str, whale_key: str, is_saved: bool, level_icon: str='🦐', market_key: str | None=None, is_market_saved: bool=False, is_trader_ignored: bool=False, is_market_ignored: bool=False):
     """Create inline keyboard for trade alerts."""
     pass
 
-async def send_trade_alert(chat_id, message_text, whale_key: str=None, is_saved: bool=False, level_icon: str='🦐'):
-    """Send trade alert with optional inline keyboard for saving traders."""
+def _get_mute_duration(chat_id: int) -> int:
+    """Get mute duration based on escalation level."""
+    pass
+
+def _apply_mute(chat_id: int, reason: str, mute_seconds: int=None):
+    """Apply mute to chat_id."""
+    pass
+
+def _is_muted(chat_id: int) -> tuple[bool, float]:
+    """Check if chat_id is muted. Returns (is_muted, seconds_left)."""
+    pass
+
+async def _clear_muted_chat_queue(chat_id: int):
+    """Background helper: clear queued alerts for newly muted chat."""
+    pass
+
+def _can_enqueue_or_send(chat_id: int, value_usd: float | None=None, bypass_filters: bool=False) -> bool:
+    """Fast eligibility gate used before queueing and before worker rate-limit wait."""
+    pass
+
+async def _log_mute_stats():
+    """Log mute statistics (called periodically)."""
+    pass
+
+async def clear_pending_alert_queue(chat_id: int | None=None) -> int:
+    """
+    Remove pending Telegram alert tasks from queue.
+    If chat_id is provided, only tasks for that user are removed.
+    """
+    pass
+
+def _get_per_chat_delay(chat_id: int) -> float:
+    """
+    Check how long to wait for per-chat rate limit WITHOUT updating state.
+    Returns seconds to wait (0 if ready).
+    """
+    pass
+
+async def _reserve_per_chat_slot(chat_id: int, delay_threshold: float=0.5) -> float:
+    """
+    Reserve a slot for sending. 
+    If delay > delay_threshold, DO NOT reserve and return delay (so caller can requeue).
+    If delay <= delay_threshold, reserve and return delay (caller must wait).
+    """
+    pass
+
+async def enqueue_trade_alert(chat_id, message_text, whale_key: str=None, is_saved: bool=False, level_icon: str='🦐', market_key: str | None=None, is_market_saved: bool=False, value_usd: float | None=None, bypass_filters: bool=False):
+    """
+    Add trade alert to queue for sending.
+    Returns immediately (fire-and-forget).
+    Falls back to direct send if queue is disabled.
+    """
+    pass
+
+async def _per_chat_rate_limiter_wait(chat_id: int):
+    """Wait if needed to respect per-chat rate limit."""
+    pass
+
+async def _queue_worker(worker_id: int):
+    """Worker that processes tasks from the queue."""
+    pass
+
+async def _get_queue_age_stats():
+    """Get oldest and average age of tasks in queue."""
+    pass
+
+async def _log_queue_stats():
+    """Periodically log queue statistics."""
+    pass
+
+def start_queue_workers():
+    """Start queue workers and initialize queue."""
+    pass
+
+async def _log_mute_stats_periodic():
+    """Periodically log mute statistics (called from queue system)."""
+    pass
+
+async def stop_queue_workers():
+    """Stop queue workers gracefully."""
+    pass
+
+async def send_trade_alert(chat_id, message_text, whale_key: str=None, is_saved: bool=False, level_icon: str='🦐', market_key: str | None=None, is_market_saved: bool=False, value_usd: float | None=None, bypass_filters: bool=False):
+    """
+    Send trade alert with robust error handling (RetryAfter) and auto-mute for problematic users.
+    """
     pass

@@ -12,24 +12,45 @@ Anti-spam & rate-limit protection:
 import logging
 import json
 import os
+import tempfile
 import asyncio
 import time
 import random
 from typing import Optional
+from services.telegram_service import add_polymarket_ref
 logger = logging.getLogger(__name__)
 TWITTER_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), '..', 'twitter_settings.json')
 TWITTER_QUEUE_FILE = os.path.join(os.path.dirname(__file__), '..', 'twitter_queue.json')
+TWITTER_DELAY_QUEUE_FILE = os.path.join(os.path.dirname(__file__), '..', 'twitter_delay_queue.json')
 DEFAULT_TWEET_INTERVAL_SEC = 25 * 60
 PAUSE_ON_403_SEC = 6 * 60 * 60
 PROBABILITY_OPTIONS = {'any': None, '1_99': (0.01, 0.99), '5_95': (0.05, 0.95), '10_90': (0.1, 0.9)}
 MAX_TWEETS_PER_24H = 17
 TWEET_WINDOW_SEC = 24 * 60 * 60
-INSIDER_TEMPLATES = ['Fresh wallet with heavy focus. Only {pos_count} active position(s). Betting {amount} straight out of the gate. 👀', 'Laser focus? 🎯 Brand new wallet ignoring everything else to deploy {amount} on this outcome.', 'Single target detected. No history, minimal positions. Just a massive {amount} bet on this specific market.', 'Unusual market pattern. Large volume ({amount}) from a source with zero prior history.', 'Anomaly detected. A silent wallet suddenly wakes up with a major position. Worth monitoring.', 'Pattern watch: High-confidence trade from a completely fresh wallet. No previous track record.', 'Straight to business. 💼 Fresh wallet, no warmup trades. Starts directly with a {amount} position.', 'Big entry, zero history. Just activated and dropping {amount}. Who is this?', 'Aggressive newcomer. Skipping the small trades. First major move is a {amount} bet here.', 'Smart tracking or something else? 🤔 Brand new wallet bets {amount} on this single outcome.', 'Gut feeling or calculations? Fresh wallet stakes {amount} immediately after funding.', 'What did they see? 👀 {amount} flows into this market from a wallet with no history.']
-DEFAULT_SETTINGS = {'enabled': False, 'min_alert_usd': 100000, 'min_alert_insider_usd': 20000, 'max_insider_age_days': 2.0, 'max_insider_positions': 3, 'tweet_timestamps': [], 'paused_until': 0, 'interval_minutes': 25, 'probability_filter': '1_99', 'allow_sell': False, 'allow_split': False, 'allow_merge': False, 'allow_redeem': False, 'categories': {'crypto': True, 'sports': True, 'other': True}}
+MAX_TWEET_TEXT_LEN = 4000
+AUTOPOST_FOOTER = 'Auto-posted by bot.'
+INSIDER_TEMPLATES = ['Fresh wallet with heavy focus. Only {pos_count} active position(s). Betting {amount} straight out of the gate. 👀', '🎯 Brand new wallet ignoring everything else to deploy {amount} on this outcome.', 'Single target detected. No history, minimal positions. Just a massive {amount} bet on this specific market.', 'Unusual market pattern. Large volume ({amount}) from a source with zero prior history.', 'Anomaly detected. A silent wallet suddenly wakes up with a major position. Worth monitoring.', 'Pattern watch: High-confidence trade from a completely fresh wallet. No previous track record.', 'Fresh wallet, no warmup trades. Starts directly with a {amount} position.', 'Big entry, zero history. Just activated and dropping {amount}. Who is this?', 'Aggressive newcomer. Skipping the small trades. First major move is a {amount} bet here.', 'Brand new wallet bets {amount} on this single outcome.', 'Gut feeling or calculations? Fresh wallet stakes {amount} immediately after funding.', '{amount} flows into this market from a wallet with no history.']
+DEFAULT_SETTINGS = {'enabled': False, 'min_alert_usd': 100000, 'min_alert_insider_usd': 20000, 'max_insider_age_days': 2.0, 'max_insider_positions': 3, 'tweet_timestamps': [], 'paused_until': 0, 'interval_minutes': 25, 'probability_min': 1, 'probability_max': 99, 'probability_filter': '1_99', 'allow_sell': False, 'allow_split': False, 'allow_merge': False, 'allow_redeem': False, 'categories': {'crypto': True, 'sports': True, 'other': True}, 'delay_seconds': 600}
 _twitter_settings = None
+
+def _trim_tweet_body_to_limit(body_text: str, max_body_len: int) -> str:
+    """Trim tweet body by dropping trailing lines before hard cutting."""
+    pass
+
+def _add_twitter_ref(text: str) -> str:
+    """Add ?via=PmWhlAlerts to all polymarket.com URLs in tweet text."""
+    pass
+
+def _finalize_tweet_text(tweet_text: str) -> str:
+    """Finalize outgoing tweet: add ref params, append footer, enforce max length."""
+    pass
 
 def _load_settings() -> dict:
     """Load Twitter settings from file."""
+    pass
+
+def _migrate_prob_filter(settings: dict) -> None:
+    """Migrate old probability_filter string to min/max values."""
     pass
 
 def _save_settings():
@@ -42,6 +63,14 @@ def get_twitter_settings() -> dict:
 
 def set_twitter_min_alert(min_usd: int) -> None:
     """Set minimum USD value for Twitter alerts."""
+    pass
+
+def get_twitter_delay_seconds() -> int:
+    """Get delay before tweeting after trade (in seconds)."""
+    pass
+
+def set_twitter_delay_seconds(delay_seconds: int) -> None:
+    """Set delay before tweeting after trade (in seconds)."""
     pass
 
 def set_twitter_enabled(enabled: bool) -> None:
@@ -88,12 +117,20 @@ def set_twitter_interval(minutes: int) -> None:
     """Set interval between tweets in minutes."""
     pass
 
+def get_twitter_probability_range() -> tuple[int, int]:
+    """Get probability range (min, max)."""
+    pass
+
+def set_twitter_probability_range(min_p: int, max_p: int) -> None:
+    """Set probability range."""
+    pass
+
 def get_twitter_probability_filter() -> str:
-    """Get probability filter key."""
+    """Deprecated: Get probability filter key."""
     pass
 
 def set_twitter_probability_filter(filter_key: str) -> bool:
-    """Set probability filter. Returns True if valid."""
+    """Deprecated: Set probability filter via legacy key."""
     pass
 
 def is_twitter_sell_allowed() -> bool:
@@ -137,7 +174,9 @@ def set_twitter_category(category: str, enabled: bool) -> bool:
     pass
 
 def is_twitter_paused() -> tuple[bool, int]:
-    """Check if Twitter is paused due to 403. Returns (is_paused, seconds_remaining)."""
+    """Check if Twitter is paused due to 403. Returns (is_paused, seconds_remaining).
+    Always re-reads paused_until from disk so manual resets take effect immediately.
+    """
     pass
 
 def _clean_old_timestamps(timestamps: list, now: float) -> list:
@@ -202,11 +241,11 @@ class TwitterService:
         pass
 
     def _load_queue(self):
-        """Load queue from disk."""
+        """Load queue from disk. Falls back to .bak if main file is corrupt."""
         pass
 
     def _save_queue(self):
-        """Save queue to disk."""
+        """Save queue to disk atomically (tmp -> fsync -> replace)."""
         pass
 
     def _get_trade_value_usd(self, trade_data: dict) -> float:
@@ -230,8 +269,47 @@ class TwitterService:
         """Process pending queue - try to post tweets if interval allows."""
         pass
 
+    def _get_delayed_lock(self):
+        """Get or create lock for delayed queue operations."""
+        pass
+
+    def _load_delayed_queue(self):
+        """Load delayed queue (10‑minute hold) from disk. Falls back to .bak if corrupt."""
+        pass
+
+    def _save_delayed_queue(self):
+        """Persist delayed queue to disk atomically (tmp -> fsync -> replace)."""
+        pass
+
+    def set_poly_service(self, poly_service):
+        """Inject PolymarketService instance for position verification before tweeting."""
+        pass
+
+    async def enqueue_with_delay(self, twitter_data: dict, *, condition_id: str, trader_address: str, trade_timestamp: float, delay_seconds: int | None=None) -> None:
+        """
+        Enqueue trade for delayed Twitter posting.
+        
+        Trade will be eligible for tweeting only after `delay_seconds`
+        and only if wallet still holds a position on this market.
+        """
+        pass
+
+    async def _process_delayed_queue_once(self):
+        """
+        Process delayed queue:
+        - Only consider trades whose ready_at has passed (>= 10 minutes since trade)
+        - For each, verify wallet still holds position on this market
+        - If yes, forward to standard Twitter posting pipeline
+        - In all cases, remove processed entries from delayed queue
+        """
+        pass
+
     async def process_queue_periodically(self, interval=60):
         """Background task to periodically check and process pending queue."""
+        pass
+
+    async def process_delayed_queue_periodically(self, interval=30):
+        """Background task: periodically process delayed (10‑minute hold) queue."""
         pass
 _twitter_service = None
 

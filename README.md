@@ -11,6 +11,12 @@
 
 Telegram-бот для отслеживания крупных сделок ("китов") на [Polymarket](https://polymarket.com) в режиме реального времени.
 
+### 🌐 Веб-сайт
+
+**[polymarketwhales.online](https://polymarketwhales.online)** — публичная страница с live-сигналами и whale-трейдами:
+- 📡 **[Signals & Patterns](https://polymarketwhales.online/public)** — лента сигналов о поведенческих паттернах (кластеры, накопления, всплески объёмов)
+- 🐋 **[Whale Trades](https://polymarketwhales.online/whale-trades)** — live-поток крупных BUY-ордеров от $10K+ с PnL, позициями и возрастом кошелька
+
 ### Возможности
 
 - 📊 **Мониторинг сделок** от $500 до $100,000+
@@ -23,8 +29,16 @@ Telegram-бот для отслеживания крупных сделок ("к
 - 🌐 **Двуязычный интерфейс** — Русский / English
 - 🔗 **Ссылки на профиль трейдера** и рынок
 - 📈 **Расширенная аналитика:** Open PnL, активные позиции, возраст кошелька
-- ⭐ **Избранное:** Сохранение интересных трейдеров с их текущим "уровнем" (🦐-🔥) + **🔔 Уведомления** (персональная подписка на трейдера)
+- ⭐ **Трейдеры:** Сохранение трейдеров с их текущим "уровнем" (🦐-🔥) + **🔔 Уведомления** и **🚫 Игнор** (персональная подписка или скрытие сигналов)
+- ⭐ **Маркеты:** Сохранение маркетов + **🔔 Уведомления** и **🚫 Игнор** по маркету (все сделки $500+, с учётом фильтра типов событий)
 - 🐦 **Twitter интеграция** — автоматическая публикация крупных сделок в Twitter/X
+
+### Обратная связь и поддержка
+
+📢 [Feedback](https://t.me/polymarketwhales_feedback) | 💻 [GitHub](https://github.com/ahdpe/PolymarketWhales) | 🐦 [Twitter](https://x.com/polywhales_bot)
+
+💝 **Поддержать проект:**  
+ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
 
 ### Классификация объёмов
 
@@ -86,7 +100,7 @@ Polymarket API часто обрезает историю сделок для а
 - **Персонализация:** Каждый пользователь может настроить свои фильтры:
   - **Минимальная сумма:** от $500 до $100,000
   - **Категории:** Крипто, Спорт, Остальное (определяются по ключевым словам)
-  - **Вероятность:** Любая, 1%-99%, 5%-95%, 10%-90%
+  - **Вероятность:** Любая, 1%-99%, 5%-95%, или **свой диапазон** (20-80%)
   - **Типы событий:** BUY, SELL, SPLIT, MERGE, REDEEM
   - **Возраст кошелька:** Фильтр по возрасту кошелька трейдера в днях (мин-макс диапазон, по умолчанию неограничено). ⚠️ Тестовый режим — возможны неточности.
   - **Количество позиций:** Фильтр по количеству открытых позиций (мин-макс диапазон, по умолчанию неограничено)
@@ -96,12 +110,12 @@ Polymarket API часто обрезает историю сделок для а
     - **Строка 1:** `💰 Сумма сделки`, `📂 Категории`, `⚖️ Вероятность`
     - **Строка 2:** `🔄 Типы событий`, `🕐 Возраст`, `💼 Позиции`
     - **Строка 3:** `⬅️ Назад`
-  - **Настройка фильтров возраста и позиций:**
-    - Выберите "🌐 Любой" для неограниченного фильтра
-    - Или "📝 Настроить интервал" для ввода диапазона
+  - **Настройка фильтров:**
+    - Для **вероятности**, **возраста** и **позиций** доступен ввод произвольного диапазона нажатием "📝 Настроить интервал".
     - Формат: `мин-макс` (например: `7-365`), `мин-` (от минимума), `-макс` (до максимума), или `0` (сбросить)
   - `▶️ Запустить / ⏸️ Остановить` — переключатель уведомлений
-  - `⭐ Избранное` — список сохранённых трейдеров
+  - `⭐ Трейдеры` — список сохранённых трейдеров
+  - `⭐ Маркеты` — список сохранённых маркетов
 - **Уведомления:** Присылает сообщение с:
   - Эмодзи категории (💰, ⚽, 📌) и названием рынка
   - Типом сделки (BUY/SELL/SPLIT/MERGE/REDEEM) с цветовыми индикаторами:
@@ -116,11 +130,13 @@ Polymarket API часто обрезает историю сделок для а
 - `/start` — Запуск бота
 - `/stop` — Вкл/Выкл уведомления (аналог кнопки ▶️/⏸️)
 - `/filters` — Меню настроек фильтров
-- `/saved` — Список избранных китов
+- `/saved` — Список сохранённых трейдеров
+- `/markets` — Список сохранённых маркетов
 - `/about` — Информация о боте
 - `/lang` — Переключение языка (🇬🇧 / 🇷🇺)
 - `/hide` — Скрыть клавиатуру меню
 - `/menu` — Показать клавиатуру меню
+- `/reset` — Сброс всех фильтров по умолчанию
 
 **Настройки фильтров:**
 - `/amount` — Фильтр суммы
@@ -131,8 +147,8 @@ Polymarket API часто обрезает историю сделок для а
 - `/positions` — Фильтр открытых позиций
 - `/back` — Назад в главное меню
 
-#### 6. Архитектура "Избранного" (Saved Traders)
-Реализация списка избранных трейдеров оптимизирована для работы с ограничениями Telegram API:
+#### 6. Архитектура "Трейдеров" (Saved Traders)
+Реализация списка сохранённых трейдеров оптимизирована для работы с ограничениями Telegram API:
 1. **Компактные ключи (Callback Data):**
    - Telegram ограничивает `callback_data` до 64 байт.
    - Полные адреса кошельков (42 символа) + префикс команды часто превышают лимит.
@@ -146,6 +162,15 @@ Polymarket API часто обрезает историю сделок для а
 4. **Персональные уведомления (Bell Feature):**
    - Возможность включить уведомления (🔔) для конкретного трейдера.
    - Такие уведомления **игнорируют общие фильтры** (сумма, категория, вероятность) и приходят всегда.
+
+#### 7. Архитектура "Маркетов" (Saved Markets)
+Реализация списка сохранённых маркетов:
+1. **Компактные ключи (Callback Data):**
+   - Используется таблица `market_keys`, где `SHA1(market_ref)[:10]` мапится на market_id/slug.
+2. **Хранение данных (SQLite):**
+   - `saved_markets`: Связь `user_id` <-> `market_ref` + флаг уведомлений.
+3. **Персональные уведомления по рынку:**
+   - При включении (🔔) приходят **все сделки $500+** на этом рынке, с учётом фильтра типов событий пользователя.
 
 ### Установка
 
@@ -180,6 +205,12 @@ python main.py
 
 Telegram bot for real-time tracking of large trades ("whales") on [Polymarket](https://polymarket.com).
 
+### 🌐 Website
+
+**[polymarketwhales.online](https://polymarketwhales.online)** — public page with live signals and whale trades:
+- 📡 **[Signals & Patterns](https://polymarketwhales.online/public)** — behavioral intelligence feed (clusters, accumulations, volume bursts)
+- 🐋 **[Whale Trades](https://polymarketwhales.online/whale-trades)** — live feed of $10K+ BUY orders with PnL, positions, and wallet age
+
 ### Features
 
 - 📊 **Trade monitoring** from $500 to $100,000+
@@ -192,8 +223,16 @@ Telegram bot for real-time tracking of large trades ("whales") on [Polymarket](h
 - 🌐 **Bilingual interface** — Russian / English
 - 🔗 **Links to trader profile** and market
 - 📈 **Advanced Analytics:** Open PnL, Active Positions, Wallet Age
-- ⭐ **Favorites:** Save interesting traders with their current "level" (🦐-🔥) + **🔔 Notifications** (subscribe to specific trader)
+- ⭐ **Traders:** Save traders with their current "level" (🦐-🔥) + **🔔 Notifications** and **🚫 Ignore** (subscribe to or hide signals)
+- ⭐ **Markets:** Save markets + **🔔 Notifications** and **🚫 Ignore** per market (all trades $500+, event types filter applied)
 - 🐦 **Twitter integration** — automatic posting of large trades to Twitter/X
+
+### Feedback and Support
+
+📢 [Feedback](https://t.me/polymarketwhales_feedback) | 💻 [GitHub](https://github.com/ahdpe/PolymarketWhales) | 🐦 [Twitter](https://x.com/polywhales_bot)
+
+💝 **Support the project:**  
+ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
 
 ### Volume Classification
 
@@ -223,12 +262,12 @@ Polymarket API often truncates activity history for high-frequency traders. For 
 
 ### How It Works
 
-#### 7. Data Fetching (PolymarketService)
+#### 8. Data Fetching (PolymarketService)
 - **Source:** Uses public **Polymarket Data API** (`data-api.polymarket.com`).
 - **Method:** Polls the API every **3 seconds**.
 - **Input filtering:** Only `CASH` type trades from **$10** are requested.
 
-#### 8. Processing and Aggregation
+#### 9. Processing and Aggregation
 A single large trade is often split into multiple fills. To avoid spam, the bot groups them:
 - **Grouping:** Same wallet, market, side (BUY/SELL/SPLIT/MERGE/REDEEM), outcome.
 - **Event types:** The bot supports all Polymarket trade types:
@@ -240,17 +279,18 @@ A single large trade is often split into multiple fills. To avoid spam, the bot 
 - **Trigger:** Series sum > **$500**.
 - **Optimization:** Expensive API calls (PnL, Pos, Age) are deferred and only executed if the trade matches at least one active user's filters.
 
-#### 9. Deduplication and Persistence
+#### 10. Deduplication and Persistence
 - **Database:** Local **SQLite** (`data/trades.db`) stores processed trade keys.
 - **Cache:** 10,000 most recent trades in RAM.
 - **Cleanup:** Records > 72h are deleted.
 
-#### 10. Telegram Bot (TelegramService)
-- **Filters:** Amount, Category, Probability, Event Types (BUY/SELL/SPLIT/MERGE/REDEEM), Wallet Age, Open Positions, Language.
+#### 11. Telegram Bot (TelegramService)
+- **Filters:** Amount, Category, Probability (Presets or Custom Range), Event Types, Wallet Age, Open Positions, Language.
 - **Interface:** Compact menu with "⚙️ Filters" submenu for all filter settings:
   - **Row 1:** Amount, Categories, Probability
   - **Row 2:** Event Types, Wallet Age, Open Positions
   - **Row 3:** Back
+  - **Buttons:** Start/Stop, ⭐ Traders, ⭐ Markets
 - **Filter Details:**
   - **Wallet Age:** Filter by trader wallet age in days (min-max range, default: unlimited). ⚠️ Beta mode - may have inaccuracies.
     - Format: `min-max` (e.g., `7-365`), `min-` (from minimum), `-max` (up to maximum), or `0` (reset)
@@ -259,17 +299,19 @@ A single large trade is often split into multiple fills. To avoid spam, the bot 
 - **Alerts:** Rich messages with emojis, links, and trader stats:
   - Color-coded trade types: 🟢 BUY Yes, 🔴 BUY No, 🔵 SELL, ⚪ SPLIT, ↔️ MERGE, 🟣 REDEEM
 
-#### 11. Commands
+#### 12. Commands
 
 **Main:**
 - `/start` — Start bot
 - `/stop` — Toggle alerts ON/OFF (same as ▶️/⏸️ button)
 - `/filters` — Filter settings menu
-- `/saved` — Saved whales list
+- `/saved` — Saved traders list
+- `/markets` — Saved markets list
 - `/about` — About bot info
 - `/lang` — Switch language (🇬🇧 / 🇷🇺)
 - `/hide` — Hide menu keyboard
 - `/menu` — Show menu keyboard
+- `/reset` — Reset all filters to default
 
 **Filter Settings:**
 - `/amount` — Amount filter
@@ -280,7 +322,7 @@ A single large trade is often split into multiple fills. To avoid spam, the bot 
 - `/positions` — Open positions filter
 - `/back` — Back to main menu
 
-#### 12. Favorites Architecture (Saved Traders)
+#### 13. Traders Architecture (Saved Traders)
 The saved traders implementation is optimized for Telegram API constraints:
 1. **Compact Keys (Callback Data):**
    - Telegram limits `callback_data` to 64 bytes.
@@ -295,6 +337,15 @@ The saved traders implementation is optimized for Telegram API constraints:
 4. **Direct Notifications (Bell Feature):**
    - Toggle notifications (🔔) for specific saved traders.
    - These alerts **bypass general filters** (amount, category, probability) and are always delivered.
+
+#### 14. Markets Architecture (Saved Markets)
+Saved markets implementation:
+1. **Compact Keys (Callback Data):**
+   - Uses `market_keys` table mapping `SHA1(market_ref)[:10]` to market_id/slug.
+2. **Data Storage (SQLite):**
+   - `saved_markets`: Maps `user_id` <-> `market_ref` + notifications flag.
+3. **Market Notifications:**
+   - When enabled (🔔), all trades **$500+** on that market are delivered, with user event-type filter applied.
 
 ### Installation
 

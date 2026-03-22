@@ -3,7 +3,7 @@
 TRANSLATIONS = {
     'ru': {
         # Start message
-        'welcome': "🐋 *Polymarket Whale Alerts*\n\nКрупные сделки на Polymarket — в реальном времени.\n\n*Что умеет бот:*\n• 🔔 Уведомления от $500 до $100,000+\n• 🎯 Фильтры: сумма, категории, вероятность, типы, возраст, позиции\n• 📊 Аналитика: PnL, возраст кошелька, открытые позиции\n• 🔗 Быстрые ссылки на профили\n• ⭐ Избранное — сохранённые трейдеры, заметки и уведомления об их сделках ($500+)\n\nДля настройки уведомлений нажми кнопку ⚙️ **Фильтры** в меню ниже.",
+        'welcome': "🐋 *Polymarket Whale Alerts*\n\nКрупные сделки на [Polymarket](https://polymarket.com?via=PolymarketWhaleAlerts) — в реальном времени.\n\n*Что умеет бот:*\n• 🔔 Уведомления от $500 до $100,000+\n• 🎯 Фильтры: сумма, категории, вероятность, типы, возраст, позиции\n• 📊 Аналитика: PnL, возраст кошелька, открытые позиции\n• 🔗 Быстрые ссылки на профили\n• ⭐ Трейдеры — сохранённые трейдеры, заметки и уведомления об их сделках ($500+)\n• ⭐ Маркеты — сохранённые маркеты с отдельными уведомлениями ($500+)\n• 🚫 Игнор — скрытие сигналов от выбранных трейдеров или маркетов\n\nДля настройки уведомлений нажми кнопку ⚙️ **Фильтры** в меню ниже.\n\n🌐 Live-лента крупных сделок BUY от $10,000 на Polymarket:\n[polymarketwhales.online/whale-trades](https://polymarketwhales.online/whale-trades)",
         
         # Buttons
         'btn_filters': "⚙️ Фильтры",
@@ -18,6 +18,8 @@ TRANSLATIONS = {
         'btn_hide_menu': "⬇️ Скрыть меню",
         'btn_show_menu': "⬆️ Показать меню",
         'btn_back': "⬅️ Назад",
+        'btn_saved': "⭐ Трейдеры",
+        'btn_saved_markets': "⭐ Маркеты",
         'menu_hidden': "✅ Меню скрыто. Нажмите 'Показать меню' чтобы вернуть его.",
         'menu_shown': "✅ Меню показано.",
         
@@ -56,6 +58,10 @@ TRANSLATIONS = {
         'prob_1_99': "🟢 1% — 99%",
         'prob_5_95': "🟡 5% — 95%",
         'prob_10_90': "🟠 10% — 90%",
+        'prob_custom': "📝 Настроить интервал",
+        'prob_set': "✅ Фильтр вероятности: *{range}*",
+        'prob_prompt': "**Введите диапазон в процентах:**\nФормат: мин-макс\nПримеры:\n• 20-80 (от 20% до 80%)\n• 0-5, 95-100 (редкие или верняки)\n• 0-100 (сбросить)",
+        'prob_invalid': "❌ Неверный формат. Примеры: `20-80` или `0-5, 95-100`\n\nНажмите кнопку снова, чтобы повторить ввод.",
         'filter_toast': "Настройки обновлены!",
         
         # Filter - Wallet Age
@@ -94,7 +100,7 @@ TRANSLATIONS = {
         
         # About
         'about': """*Polymarket Whale Alerts* 🐋
-Мониторинг крупных сделок на [Polymarket](https://polymarket.com) в реальном времени.
+Мониторинг крупных сделок на [Polymarket](https://polymarket.com?via=PolymarketWhaleAlerts) в реальном времени.
 
 *Функционал:*
 • 🔔 Уведомления о сделках от $500 до $100,000+
@@ -104,7 +110,8 @@ TRANSLATIONS = {
 • 🔄 Фильтр типов событий (BUY, SELL, SPLIT, MERGE, REDEEM)
 • 🕐 Фильтр возраста кошелька (по дням, мин-макс)
 • 💼 Фильтр количества позиций (мин-макс)
-• ⭐ Избранное (Сохранение избранных трейдеров + персональные уведомления)
+• ⭐ Трейдеры (сохранять, уведомлять, игнорировать)
+• ⭐ Маркеты (сохранять, уведомлять, игнорировать)
 
 *Классификация объемов:*
 🔥 МЕГА КИТ — >$100,000
@@ -135,48 +142,83 @@ TRANSLATIONS = {
 Если в названии есть: nfl, nba, football, soccer, ufc, f1, lakers, goal и др.
 
 💬 Обратная связь: @Andrey\_Os
-💻 [GitHub](https://github.com/ahdpe/polymarket-whales-public)
+📢 @PMInsiderSignals — сигналы о нетипичной скоординированной активности свежих кошельков на Polymarket.
+🌐 https://polymarketwhales.online/ — активные сигналы, буфер до публикации и причины непубликации в канал.
 🐦 [Twitter/X](https://x.com/PolyMrktWhales)
 
-⚡ *ТОП Биржа для торговли:*
-[Регистрируйся на Bybit и получи бонусы! 🎁](https://www.bybit.com/invite?ref=JDRKDN)""",
+💝 *Поддержать проект:*
+ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
+
+""",
         
         # Trade alerts
 
         
         # Saved Traders
-        'btn_saved': "⭐ Избранное",
-        'save_btn': "В избранное",
+        'save_btn': "Сохранить трейдера",
         'saved_btn': "✅ Сохранено",
         'note_btn': "💬 Коммент",
-        'saved_list_title': "⭐ **Избранное**\n\n",
-        'saved_list_header': "⭐ Избранное\n🔔 - уведомления включены (все сделки $500+)\n🔕 - только по общим фильтрам\n",
-        'saved_empty': "Список пуст. Сохраняй китов из алертов!",
+        'saved_list_title': "⭐ **Трейдеры**\n\n",
+        'saved_list_header': "⭐ Трейдеры\n🔔 - уведомления включены (все сделки $500+)\n🔕 - только по общим фильтрам\n🚫 - скрыт из алертов\n",
+        'saved_empty': "Список пуст. Сохраняй трейдеров из алертов!",
         'saved_deleted': "🗑 Трейдер удалён",
         'saved_added': "⭐ Трейдер сохранён!",
-        'note_prompt': "💬 Введи комментарий (макс. 240 символов):\n\nОтправь \"–\" чтобы удалить комментарий.",
+        'note_prompt': "💬 Введи комментарий к трейдеру (макс. 240 символов):\n\nОтправь \"–\" чтобы удалить комментарий.",
         'note_saved': "✅ Комментарий сохранён",
         'note_too_long': "❌ Слишком длинный! Макс. 240 символов. Попробуй ещё раз:",
         'note_removed': "✅ Комментарий удалён",
         'page_info': "Стр. {page}/{total}",
         'notif_on': "🔔 Вкл",
         'notif_off': "🔕 Выкл",
+        'notif_all_on': "🔔 Все",
+        'notif_all_off': "🔕 Все",
         'notif_enabled': "🔔 Уведомления включены (без фильтров)",
         'notif_disabled': "🔕 Уведомления выключены (по общим фильтрам)",
         'saved_cleared': "🗑 Все трейдеры удалены",
+        
+        # Ignore
+        'ignore_trader_btn': "🚫 Трейдер",
+        'ignore_market_btn': "🚫 Маркет",
+        'ignored_trader_added': "🛑 Трейдер в игноре",
+        'ignored_market_added': "🛑 Маркет в игноре",
+        'state_ignore': "🛑 Игнор",
+        'state_notify': "🔔 Активен",
+
+        # Saved Markets
+        'market_track_btn': "💾 Сохранить маркет",
+        'market_saved_btn': "✅ В списке",
+        'markets_list_header': "⭐ Маркеты\n🔔 - уведомления включены (все сделки $500+, фильтр типов событий)\n🔕 - только по общим фильтрам\n🚫 - скрыт из алертов\n",
+        'markets_empty': "Список пуст. Добавляй маркеты из алертов или вручную!",
+        'market_added': "✅ Маркет добавлен!",
+        'market_deleted': "🗑 Маркет удалён",
+        'markets_cleared': "🗑 Все маркеты удалены",
+        'market_exists': "ℹ️ Этот маркет уже в списке.",
+        'market_notif_on': "🔔 Вкл",
+        'market_notif_off': "🔕 Выкл",
+        'market_notif_all_on': "🔔 Все",
+        'market_notif_all_off': "🔕 Все",
+        'market_notif_enabled': "🔔 Уведомления включены (все сделки $500+, с учётом типов)",
+        'market_notif_disabled': "🔕 Уведомления выключены (по общим фильтрам)",
+        'market_manual_add_btn': "➕ Добавить",
+        'market_manual_add_prompt': "✍️ Отправьте ссылку на маркет Polymarket:\n\nПример:\n• `https://polymarket.com/event/...`",
+        'market_manual_add_invalid': "❌ Неверный формат. Отправьте ссылку на маркет вида `https://polymarket.com/event/...`\n\nНажмите ➕ снова, чтобы повторить.",
+        'market_manual_add_exists': "ℹ️ Этот маркет уже в списке.",
+        'market_manual_add_success': "✅ Маркет добавлен!",
+        'market_manual_add_cancel': "❌ Отмена",
         
         # Manual add
         'manual_add_btn': "➕ Добавить",
         'manual_add_prompt': "✍️ Отправьте ссылку на профиль Polymarket или адрес кошелька трейдера:\n\nПример:\n• `https://polymarket.com/profile/0x123...`\n• `0x1234567890abcdef...`",
         'manual_add_invalid': "❌ Неверный формат. Отправьте ссылку на профиль или адрес кошелька (0x...)\n\nНажмите ➕ снова, чтобы повторить.",
-        'manual_add_exists': "ℹ️ Этот трейдер уже в избранном.",
-        'manual_add_success': "✅ Трейдер добавлен в избранное!",
+        'manual_add_exists': "ℹ️ Этот трейдер уже в списке.",
+        'manual_add_success': "✅ Трейдер добавлен в список!",
         'manual_add_cancel': "❌ Отмена",
+        'reset_done': "🔄 **Настройки сброшены!**\nВсе фильтры вернулись к значениям по умолчанию.",
     },
     
     'en': {
         # Start message
-        'welcome': "🐋 *Polymarket Whale Alerts*\n\nLarge trades on Polymarket — in real-time.\n\n*What the bot can do:*\n• 🔔 Alerts from $500 to $100,000+\n• 🎯 Filters: amount, categories, probability, types, age, positions\n• 📊 Analytics: PnL, wallet age, open positions\n• 🔗 Quick links to profiles\n• ⭐ Favorites — saved traders, notes and notifications about their trades ($500+)\n\nTo configure alerts, press the ⚙️ **Filters** button in the menu below.",
+        'welcome': "🐋 *Polymarket Whale Alerts*\n\nLarge trades on [Polymarket](https://polymarket.com?via=PolymarketWhaleAlerts) — in real-time.\n\n*What the bot can do:*\n• 🔔 Alerts from $500 to $100,000+\n• 🎯 Filters: amount, categories, probability, types, age, positions\n• 📊 Analytics: PnL, wallet age, open positions\n• 🔗 Quick links to profiles\n• ⭐ Traders — saved traders, notes and notifications about their trades ($500+)\n• ⭐ Markets — saved markets with personal notifications ($500+)\n• 🚫 Ignore traders/markets — hide signals from selected traders or markets\n\nTo configure alerts, press the ⚙️ **Filters** button in the menu below.\n\n🌐 Live feed of large BUY trades over $10,000 on Polymarket:\n[polymarketwhales.online/whale-trades](https://polymarketwhales.online/whale-trades)",
         
         # Buttons
         'btn_filters': "⚙️ Filters",
@@ -191,6 +233,8 @@ TRANSLATIONS = {
         'btn_hide_menu': "⬇️ Hide Menu",
         'btn_show_menu': "⬆️ Show Menu",
         'btn_back': "⬅️ Back",
+        'btn_saved': "⭐ Traders",
+        'btn_saved_markets': "⭐ Markets",
         'menu_hidden': "✅ Menu hidden. Press 'Show Menu' to restore it.",
         'menu_shown': "✅ Menu shown.",
         
@@ -229,6 +273,11 @@ TRANSLATIONS = {
         'prob_1_99': "🟢 1% — 99%",
         'prob_5_95': "🟡 5% — 95%",
         'prob_10_90': "🟠 10% — 90%",
+        'prob_custom': "📝 Set interval",
+        'prob_set': "✅ Probability filter: *{range}*",
+        'prob_prompt': "**Enter range in %:**\nFormat: min-max\nExamples:\n• 20-80 (20% to 80%)\n• 0-5, 95-100 (rare or certain)\n• 0-100 (reset)",
+        'prob_invalid': "❌ Invalid format. Examples: `20-80` or `0-5, 95-100`\n\nPress the button again to retry.",
+        'filter_toast': "Settings updated!",
         
         # Filter - Wallet Age
         'btn_age': "🕐 Age",
@@ -266,7 +315,7 @@ TRANSLATIONS = {
         
         # About
         'about': """*Polymarket Whale Alerts* 🐋
-Real-time monitoring of large trades on [Polymarket](https://polymarket.com).
+Real-time monitoring of large trades on [Polymarket](https://polymarket.com?via=PolymarketWhaleAlerts).
 
 *Functionality:*
 • 🔔 Trade alerts from $500 to $100,000+
@@ -276,7 +325,8 @@ Real-time monitoring of large trades on [Polymarket](https://polymarket.com).
 • 🔄 Event type filter (BUY, SELL, SPLIT, MERGE, REDEEM)
 • 🕐 Wallet age filter (in days, min-max range)
 • 💼 Open positions filter (min-max range)
-• ⭐ Favorites (Save favorite traders + direct notifications)
+• ⭐ Traders (Save traders, notify, ignore)
+• ⭐ Markets (Save markets, notify, ignore)
 
 *Volume classification:*
 🔥 MEGA WHALE — >$100,000
@@ -307,43 +357,78 @@ Keywords: bitcoin, btc, ethereum, eth, solana, doge, pepe, binance, nft, airdrop
 Keywords: nfl, nba, football, soccer, ufc, f1, lakers, goal, etc.
 
 💬 Feedback: @Andrey\_Os
-💻 [GitHub](https://github.com/ahdpe/polymarket-whales-public)
+📢 @PMInsiderSignals — signals of atypical coordinated activity of fresh wallets on Polymarket.
+🌐 https://polymarketwhales.online/ — active signals, pre-publish buffer, and reasons why a signal is not yet posted to the channel.
 🐦 [Twitter/X](https://x.com/PolyMrktWhales)
 
-⚡ *Best Exchange to Trade:*
-[Join Bybit and get massive bonuses! 🎁](https://www.bybit.com/invite?ref=JDRKDN)""",
+💝 *Support the project:*
+ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
+
+""",
         
         # Trade alerts
 
         
         # Saved Traders
-        'btn_saved': "⭐ Favorites",
-        'save_btn': "To Favorites",
+        'save_btn': "Save Trader",
         'saved_btn': "✅ Saved",
         'note_btn': "💬 Note",
-        'saved_list_title': "⭐ **Favorites**\n\n",
-        'saved_list_header': "⭐ Favorites\n🔔 - notifications enabled (all trades $500+)\n🔕 - general filters only\n",
-        'saved_empty': "Empty list. Save whales from alerts!",
+        'saved_list_title': "⭐ **Traders**\n\n",
+        'saved_list_header': "⭐ Traders\n🔔 - notifications enabled (all trades $500+)\n🔕 - general filters only\n🚫 - hidden from alerts\n",
+        'saved_empty': "Empty list. Save traders from alerts!",
         'saved_deleted': "🗑 Trader removed",
         'saved_added': "⭐ Trader saved!",
-        'note_prompt': "💬 Enter note (max 240 chars):\n\nSend \"–\" to remove note.",
+        'note_prompt': "💬 Enter note for trader (max 240 chars):\n\nSend \"–\" to remove note.",
         'note_saved': "✅ Note saved",
         'note_too_long': "❌ Too long! Max 240 characters. Try again:",
         'note_removed': "✅ Note removed",
         'page_info': "Page {page}/{total}",
         'notif_on': "🔔 On",
         'notif_off': "🔕 Off",
+        'notif_all_on': "🔔 All",
+        'notif_all_off': "🔕 All",
         'notif_enabled': "🔔 Notifications enabled (bypassing filters)",
         'notif_disabled': "🔕 Notifications disabled (using general filters)",
         'saved_cleared': "🗑 All traders removed",
+        
+        # Ignore
+        'ignore_trader_btn': "🚫 Trader",
+        'ignore_market_btn': "🚫 Market",
+        'ignored_trader_added': "🛑 Trader ignored",
+        'ignored_market_added': "🛑 Market ignored",
+        'state_ignore': "🛑 Ignored",
+        'state_notify': "🔔 Active",
+
+        # Saved Markets
+        'market_track_btn': "💾 Save Market",
+        'market_saved_btn': "✅ Tracking",
+        'markets_list_header': "⭐ Markets\n🔔 - notifications enabled (all trades $500+, event types filter)\n🔕 - general filters only\n🚫 - hidden from alerts\n",
+        'markets_empty': "Empty list. Track markets from alerts or add manually!",
+        'market_added': "✅ Market added!",
+        'market_deleted': "🗑 Market removed",
+        'markets_cleared': "🗑 All markets removed",
+        'market_exists': "ℹ️ This market is already in the list.",
+        'market_notif_on': "🔔 On",
+        'market_notif_off': "🔕 Off",
+        'market_notif_all_on': "🔔 All",
+        'market_notif_all_off': "🔕 All",
+        'market_notif_enabled': "🔔 Notifications enabled (all trades $500+, event types applied)",
+        'market_notif_disabled': "🔕 Notifications disabled (general filters only)",
+        'market_manual_add_btn': "➕ Add",
+        'market_manual_add_prompt': "✍️ Send a Polymarket market link:\n\nExample:\n• `https://polymarket.com/event/...`",
+        'market_manual_add_invalid': "❌ Invalid format. Send a link like `https://polymarket.com/event/...`\n\nPress ➕ again to retry.",
+        'market_manual_add_exists': "ℹ️ This market is already in the list.",
+        'market_manual_add_success': "✅ Market added!",
+        'market_manual_add_cancel': "❌ Cancel",
         
         # Manual add
         'manual_add_btn': "➕ Add",
         'manual_add_prompt': "✍️ Send a Polymarket profile link or trader wallet address:\n\nExample:\n• `https://polymarket.com/profile/0x123...`\n• `0x1234567890abcdef...`",
         'manual_add_invalid': "❌ Invalid format. Send a profile link or wallet address (0x...)\n\nPress ➕ again to retry.",
-        'manual_add_exists': "ℹ️ This trader is already in favorites.",
-        'manual_add_success': "✅ Trader added to favorites!",
+        'manual_add_exists': "ℹ️ This trader is already in the list.",
+        'manual_add_success': "✅ Trader added to the list!",
         'manual_add_cancel': "❌ Cancel",
+        'reset_done': "🔄 **Settings reset!**\nAll filters have been restored to default values.",
     }
 }
 
