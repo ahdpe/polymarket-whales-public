@@ -405,6 +405,9 @@ class InsiderAlertsService:
         if self.settings.get(cat_key, 'true').lower() != 'true':
             return
 
+        # NEW STEP: Check for appending to existing alerts (updates website without new Telegram message)
+        await self._check_and_append_to_existing_alerts(market_id)
+
         # Pre-filter: Remove trades from wallets that no longer qualify (too many positions)
         # This keeps the buffer clean and allows new qualifying trades to accumulate
         await self._cleanup_invalid_trades(market_id)
@@ -426,6 +429,107 @@ class InsiderAlertsService:
             alert_data = self._check_burst(market_id)
             if alert_data:
                 self._publish_alert('BURST', alert_data)
+
+    async def _check_and_append_to_existing_alerts(self, market_id: str) -> None:
+        """
+        Check if there are new unconsumed trades for a market that already has an active
+        published alert (on website). If so, fetch them, filter by scenario settings, 
+        append to the website DB, and mark as consumed.
+        """
+        cooldown_hours = int(self.settings.get('cooldown_hours', '24'))
+        
+        # Scenarios we support appending to:
+        supported_scenarios = ['CLUSTER', 'BURST', 'ACCUMULATION']
+        
+        for scenario in supported_scenarios:
+            for outcome in ['YES', 'NO']:
+                if alerts_storage.was_published(scenario, market_id, outcome, cooldown_hours):
+                    # We have an active published alert for this market/outcome combination.
+                    # Let's see if there are new unconsumed trades we can append.
+                    
+                    if scenario == 'CLUSTER':
+                        if self.settings.get('cluster_enabled', 'false').lower() != 'true': continue
+                        interval = float(self.settings.get('cluster_interval_hours', '2'))
+                        max_age = float(self.settings.get('cluster_wallet_age_hours', '24'))
+                        min_usd = float(self.settings.get('cluster_min_usd', '5000'))
+                        max_pos = int(self.settings.get('cluster_max_positions', '3'))
+                    elif scenario == 'BURST':
+                        if self.settings.get('burst_enabled', 'false').lower() != 'true': continue
+                        interval = float(self.settings.get('burst_interval_hours', '1'))
+                        max_age = float(self.settings.get('burst_wallet_age_hours', '72'))
+                        min_usd = float(self.settings.get('burst_min_usd', '1000'))
+                        max_pos = int(self.settings.get('burst_max_positions', '3'))
+                    elif scenario == 'ACCUMULATION':
+                        if self.settings.get('accumulation_enabled', 'false').lower() != 'true': continue
+                        interval_days = float(self.settings.get('accumulation_interval_days', '14'))
+                        interval = max(1.0, interval_days) * 24
+                        max_age = float(self.settings.get('accumulation_wallet_age_hours', '48'))
+                        min_usd = float(self.settings.get('accumulation_min_usd', '10000'))
+                        max_pos = int(self.settings.get('accumulation_max_positions', '3'))
+                    else:
+                        continue
+
+                    new_trades = alerts_storage.get_trades_window(
+                        market_id=market_id,
+                        window_hours=interval,
+                        max_wallet_age_hours=max_age
+                    )
+
+                    if not new_trades:
+                        continue
+
+                    # Filter for trades matching size and positions criteria (any outcome direction)
+                    valid_trades = []
+                    new_wallets_set = set()
+                    additional_volume = 0.0
+                    wallet_outcomes = {}  # wallet -> outcome (YES/NO)
+
+                    for t in new_trades:
+                        if t.get('trade_size_usd', 0) >= min_usd:
+                            if (t.get('open_positions') or 0) <= max_pos:
+                                valid_trades.append(t)
+                                wallet = t.get('wallet')
+                                if wallet:
+                                    new_wallets_set.add(wallet)
+                                    wallet_outcomes[wallet] = t.get('outcome', '').upper()
+                                additional_volume += t.get('trade_size_usd', 0)
+
+                    if not valid_trades:
+                        continue
+
+                    # Optionally verify positions against polymarket to ensure they still hold them
+                    if self._poly_service:
+                        verified_trades = []
+                        wallets_to_keep = set()
+                        for wallet in new_wallets_set:
+                            try:
+                                position_value = await self._poly_service.check_wallet_has_position(wallet, market_id)
+                                if position_value >= min_usd:
+                                    wallets_to_keep.add(wallet)
+                            except Exception as e:
+                                logger.debug(f"Append validation error for {wallet}: {e}")
+                                # Assume no if error
+                        
+                        valid_trades = [t for t in valid_trades if t.get('wallet') in wallets_to_keep]
+                        new_wallets_set = wallets_to_keep
+                        additional_volume = sum(t.get('trade_size_usd', 0) for t in valid_trades)
+                        # Keep only verified wallet outcomes
+                        wallet_outcomes = {w: o for w, o in wallet_outcomes.items() if w in wallets_to_keep}
+
+                    if valid_trades:
+                        success = alerts_storage.append_to_published_alert(
+                            scenario=scenario,
+                            market_id=market_id,
+                            outcome=outcome,
+                            new_wallets=list(new_wallets_set),
+                            additional_volume=additional_volume,
+                            wallet_outcomes=wallet_outcomes
+                        )
+
+                        if success:
+                            trade_ids = [t['id'] for t in valid_trades if t.get('id')]
+                            alerts_storage.mark_trades_consumed(trade_ids, 'APPENDED')
+                            logger.info(f"Appended {len(trade_ids)} new trades ({len(new_wallets_set)} wallets) to active {scenario} alert for {market_id}")
 
     def _check_cluster(self, market_id: str) -> Optional[Dict[str, Any]]:
         try:
@@ -1083,10 +1187,28 @@ class InsiderAlertsService:
                         if t.get('wallet')
                     ))
                     
+                    # Calculate average entry price
+                    entry_price = 0.0
+                    try:
+                        total_cost = 0.0
+                        total_vol_for_price = 0.0
+                        target_outcome = alert_data.get('outcome', '').upper()
+                        for t in verified_data.get('trades', []):
+                            if t.get('outcome', '').upper() == target_outcome and t.get('price') is not None:
+                                vol = t.get('trade_size_usd', 0)
+                                total_cost += vol * t.get('price')
+                                total_vol_for_price += vol
+                        
+                        if total_vol_for_price > 0:
+                            entry_price = total_cost / total_vol_for_price
+                    except Exception as e:
+                        logger.error(f"Error calculating entry price for alert: {e}")
+
                     # CRITICAL: Atomically check and mark as published BEFORE sending
                     # This prevents duplicate sends when multiple check_scenarios calls happen concurrently
                     cooldown = int(self.settings.get('cooldown_hours', '24'))
                     market_title = alert_data.get('trade_title') or verified_data.get('trades', [{}])[0].get('market_title', '')
+                    event_slug = verified_data.get('trades', [{}])[0].get('event_slug', '') or alert_data.get('event_slug', '')
                     
                     was_marked = alerts_storage.try_mark_published_atomic(
                         scenario=scenario,
@@ -1096,7 +1218,10 @@ class InsiderAlertsService:
                         market_title=market_title,
                         total_volume=alert_data.get('total_volume', 0),
                         participants_count=len(verified_data.get('trades', [])),
-                        wallet_list=wallet_list
+                        wallet_list=wallet_list,
+                        event_slug=event_slug,
+                        directionality=alert_data.get('directionality', 0),
+                        entry_price=entry_price
                     )
                     
                     if not was_marked:
@@ -1110,6 +1235,25 @@ class InsiderAlertsService:
                                 reason="already published (race condition prevented)",
                             )
                         return
+
+                    # Website-only: record a historical published event (does NOT affect Telegram).
+                    # This preserves multiple signals per market/outcome/scenario on the site.
+                    try:
+                        alerts_storage.create_published_event(
+                            scenario=scenario,
+                            market_id=alert_data['market_id'],
+                            outcome=alert_data.get('outcome', ''),
+                            published_at=int(time.time()),
+                            market_title=market_title,
+                            event_slug=event_slug,
+                            directionality=alert_data.get('directionality', 0),
+                            entry_price=entry_price,
+                            total_volume=alert_data.get('total_volume', 0),
+                            participants_count=len(verified_data.get('trades', [])),
+                            original_wallets=wallet_list,
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to create website published event: {e}")
                     
                     # Analyze shared funding sources (enrichment only, not filtering)
                     shared_wallets = set()

@@ -727,6 +727,17 @@ async def check_insider_scenarios_periodically():
         
         await asyncio.sleep(300)  # 5 minutes
 
+async def update_alert_results_periodically():
+    """Periodically check Polymarket for final outcome prices of recent alerts."""
+    while True:
+        try:
+            from storage.alerts_storage import update_published_alert_results
+            await update_published_alert_results()
+        except Exception as e:
+            logger.error(f"Error in background alert result updater: {e}")
+        
+        await asyncio.sleep(600)  # Every 10 minutes
+
 async def start_insider_collector():
     """Start all background tasks and return list of tasks."""
     tasks = []
@@ -791,6 +802,11 @@ async def start_insider_collector():
         insider_check_task = asyncio.create_task(check_insider_scenarios_periodically())
         tasks.append(insider_check_task)
         logger.info("Insider alerts scenario checker started")
+    
+    # Start the published alerts result updater
+    alert_result_updater_task = asyncio.create_task(update_alert_results_periodically())
+    tasks.append(alert_result_updater_task)
+    logger.info("Published alerts result updater started")
     
     # Start memory monitoring
     memory_monitor_task = asyncio.create_task(monitor_memory())

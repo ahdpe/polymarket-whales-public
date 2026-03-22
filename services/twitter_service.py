@@ -112,11 +112,42 @@ def _trim_tweet_body_to_limit(body_text: str, max_body_len: int) -> str:
     return body_text[:max_body_len].rstrip()
 
 
+def _add_twitter_ref(text: str) -> str:
+    """Add ?via=PmWhlAlerts to all polymarket.com URLs in tweet text."""
+    if "polymarket.com" not in text:
+        return text
+    try:
+        from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+
+        REF_PARAM = "via"
+        REF_VALUE = "PmWhlAlerts"
+
+        def transform_url(url: str) -> str:
+            parsed = urlparse(url)
+            if parsed.netloc not in ("polymarket.com", "www.polymarket.com"):
+                return url
+            query_params = parse_qs(parsed.query, keep_blank_values=True)
+            if REF_PARAM in query_params:
+                return url
+            query_params[REF_PARAM] = [REF_VALUE]
+            new_query = urlencode(query_params, doseq=True)
+            return urlunparse(parsed._replace(query=new_query))
+
+        import re as _re
+        url_pattern = r'https?://[^\s\)\]>]+'
+        return _re.sub(url_pattern, lambda m: transform_url(m.group(0)), text)
+    except Exception:
+        return text
+
+
 def _finalize_tweet_text(tweet_text: str) -> str:
     """Finalize outgoing tweet: add ref params, append footer, enforce max length."""
     body = (tweet_text or "").rstrip()
     if body.endswith(AUTOPOST_FOOTER):
         body = body[:-len(AUTOPOST_FOOTER)].rstrip()
+
+    # Add ?via=PmWhlAlerts to all polymarket.com links
+    body = _add_twitter_ref(body)
 
     footer_block = f"\n\n{AUTOPOST_FOOTER}"
     max_body_len = MAX_TWEET_TEXT_LEN - len(footer_block)
@@ -404,9 +435,23 @@ def set_twitter_category(category: str, enabled: bool) -> bool:
 
 
 def is_twitter_paused() -> tuple[bool, int]:
-    """Check if Twitter is paused due to 403. Returns (is_paused, seconds_remaining)."""
+    """Check if Twitter is paused due to 403. Returns (is_paused, seconds_remaining).
+    Always re-reads paused_until from disk so manual resets take effect immediately.
+    """
+    # Re-read paused_until directly from file (bypassing in-memory cache)
+    # so that manual edits to twitter_settings.json take effect without a restart.
+    paused_until = 0
+    try:
+        if os.path.exists(TWITTER_SETTINGS_FILE):
+            with open(TWITTER_SETTINGS_FILE, 'r') as f:
+                paused_until = json.load(f).get('paused_until', 0)
+    except Exception:
+        paused_until = _load_settings().get('paused_until', 0)
+
+    # Also keep in-memory cache in sync so _activate_403_pause works correctly
     settings = _load_settings()
-    paused_until = settings.get('paused_until', 0)
+    settings['paused_until'] = paused_until
+
     now = time.time()
     if paused_until > now:
         return True, int(paused_until - now)

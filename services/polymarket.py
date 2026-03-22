@@ -570,9 +570,15 @@ class PolymarketService:
         try:
             oldest_ts = None
             is_full_batch = False
+            
+            # API has a hard limit of offset 3000 and max items per response of 1000
+            MAX_OFFSET = 3000
+            LIMIT = 1000
 
             async with aiohttp.ClientSession() as session:
-                url = f"{DATA_API_URL}/activity?user={proxy_wallet}&limit=100&offset=0"
+                # 1. Fetch first batch to get recent activity and see if wallet has many trades.
+                # We start with limit=1000 to maximize the chance of finding the true oldest without multiple requests.
+                url = f"{DATA_API_URL}/activity?user={proxy_wallet}&limit={LIMIT}&offset=0"
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status != 200:
                         return None
@@ -580,18 +586,21 @@ class PolymarketService:
                     if not data or not isinstance(data, list):
                         return None
 
-                    if len(data) == 100:
+                    if len(data) == LIMIT:
                         is_full_batch = True
                     
                     # Always capture oldest from this batch as fallback
                     if data:
                         oldest_ts = norm_ts(data[-1].get("timestamp", 0))
 
-                    if len(data) < 100:
+                    # If we got less than the limit, we've found all activities, so oldest_ts is the true absolute first
+                    if len(data) < LIMIT:
                         if oldest_ts:
-                            _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now, "source": "etherscan"}
+                            _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now, "source": "polymarket_full"}
                             return oldest_ts
 
+                # 2. Try Polygonscan as it gives absolute absolute creation time (even before first Polymarket trade).
+                # (Polymarket proxy wallets often don't have standard txs on polygonscan, but we still try)
                 poly_api_key = POLYGONSCAN_API_KEY
                 if isinstance(poly_api_key, list):
                     poly_api_key = random.choice(poly_api_key)
@@ -624,12 +633,32 @@ class PolymarketService:
                     except Exception as e:
                         logger.error(f"Error checking PolygonScan for {proxy_wallet}: {e}")
                 
-                # If PolygonScan failed or not configured, use Polymarket Data API fallback
-                # This gives us at least the oldest timestamp from the first 100 activities
-                # Note: This may underestimate wallet age for very active wallets, but is better than None
+                # 3. If PolygonScan failed or not configured, use Polymarket Data API fallback
+                # Since the first batch was full, we need to paginate to find the oldest activity up to API limit.
+                if is_full_batch:
+                    offset = LIMIT
+                    while offset <= MAX_OFFSET:
+                        url_fallback = f"{DATA_API_URL}/activity?user={proxy_wallet}&limit={LIMIT}&offset={offset}"
+                        async with session.get(url_fallback, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                            if resp.status != 200:
+                                break
+                            
+                            fallback_data = await resp.json()
+                            if not fallback_data or not isinstance(fallback_data, list):
+                                break
+                                
+                            current_oldest = norm_ts(fallback_data[-1].get("timestamp", 0))    
+                            if current_oldest > 0:
+                                oldest_ts = current_oldest
+
+                            if len(fallback_data) < LIMIT:
+                                break
+                                
+                            offset += LIMIT
+
                 if oldest_ts:
-                    logger.debug(f"PolygonScan unavailable, using Polymarket Data API fallback for {proxy_wallet[:10]}...")
-                    _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now, "source": "fallback"}
+                    logger.debug(f"Setting wallet age from Polymarket API fallback for {proxy_wallet[:10]}...")
+                    _wallet_age_cache[proxy_wallet] = {"first_ts": oldest_ts, "cached_at": now, "source": "polymarket_fallback"}
                     return oldest_ts
 
             return None

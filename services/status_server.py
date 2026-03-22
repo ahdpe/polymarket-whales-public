@@ -27,8 +27,10 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
     <meta http-equiv="refresh" content="300">
     <title>🐋 PolymarketWhales Status</title>
+    <link rel="icon" type="image/png" href="/favicon.ico">
     <style>
         :root {
             --bg-primary: #0d1117;
@@ -239,7 +241,7 @@ HTML_TEMPLATE = """
         </div>
         
         <footer>
-            <div>Last updated: <span id="last-update">-</span></div>
+            <div style="display: none;">Last updated: <span id="last-update">-</span></div>
             <div class="refresh-info">Auto-refresh every 5 minutes</div>
         </footer>
     </div>
@@ -649,8 +651,10 @@ PATTERNS_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
     <meta http-equiv="refresh" content="300">
     <title>🕵️ Active Patterns - PolymarketWhales</title>
+    <link rel="icon" type="image/png" href="/favicon.ico">
     <style>
         :root {
             --bg-primary: #0d1117;
@@ -883,7 +887,7 @@ PATTERNS_TEMPLATE = """
         </div>
         
         <footer>
-            <div>Last updated: <span id="last-update">-</span></div>
+            <div style="display: none;">Last updated: <span id="last-update">-</span></div>
             <div style="margin-top: 5px;">Auto-refresh every 5 minutes</div>
         </footer>
     </div>
@@ -1157,10 +1161,21 @@ PATTERNS_TEMPLATE = """
             
             // Recently Published Alerts Table
             if (insider && insider.published_history && insider.published_history.length > 0) {
+                // Pagination state for admin page
+                window.currentPagePublishedAdmin = window.currentPagePublishedAdmin || 1;
+                const itemsPerPage = 20;
+                const items = insider.published_history;
+                
+                const totalPages = Math.ceil(items.length / itemsPerPage);
+                if (window.currentPagePublishedAdmin > totalPages) window.currentPagePublishedAdmin = Math.max(1, totalPages);
+                
+                const startIdx = (window.currentPagePublishedAdmin - 1) * itemsPerPage;
+                const currentItems = items.slice(startIdx, startIdx + itemsPerPage);
+
                 html += `
                     <div class="section">
                         <div class="section-header">
-                            <h2>Recently Published Alerts (Last 20)</h2>
+                            <h2>Recently Published Alerts (${items.length} total)</h2>
                         </div>
                         <div style="overflow-x: auto;">
                             <table>
@@ -1170,13 +1185,14 @@ PATTERNS_TEMPLATE = """
                                         <th>Scenario</th>
                                         <th>Market</th>
                                         <th>Outcome</th>
+                                        <th>Result</th>
                                         <th>Volume</th>
                                         <th>Wallets</th>
                                         <th style="width: 35%;">Buffer Participants</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    ${insider.published_history.map(p => `
+                                    ${currentItems.map(p => `
                                     <tr>
                                         <td style="color: var(--text-secondary);">
                                             ${Math.floor((Date.now() / 1000 - p.timestamp)/60)}m ago
@@ -1185,25 +1201,39 @@ PATTERNS_TEMPLATE = """
                                             <span class="status-badge status-online" style="font-size: 0.75rem;">${p.scenario}</span>
                                         </td>
                                         <td>
-                                            <a href="https://polymarket.com/event/${p.market_id}" target="_blank" style="color: var(--text-primary); text-decoration: none;">
+                                            <a href="https://polymarket.com/event/${p.event_slug || p.market_id}" target="_blank" style="color: var(--text-primary); text-decoration: none;">
                                                 ${(p.market_title || p.market_id).substring(0, 50) + ((p.market_title || p.market_id).length > 50 ? '...' : '')}
                                             </a>
                                         </td>
                                         <td>${p.outcome || '-'}</td>
+                                        <td>
+                                            ${p.result_status === 'win' ? '<span title="In Profit / Won">✅</span>' : 
+                                              p.result_status === 'loss' ? '<span title="In Loss / Lost">❌</span>' : 
+                                              '<span title="Pending">⏳</span>'}
+                                        </td>
                                         <td>$${formatNumber(p.total_volume || 0)}</td>
                                         <td>${p.participants_count || '-'}</td>
                                         <td>
-                                            ${(p.wallet_list && p.wallet_list.length > 0) ? p.wallet_list.map(w => 
-                                                `<a href="https://polymarket.com/profile/${w}" target="_blank" class="wallet-link">${w.substring(0,5)}..${w.substring(39)}</a>`
-                                            ).join(', ') : '-'}
+                                            ${renderWalletsWithAppendedAdmin(p)}
                                         </td>
                                     </tr>
                                     `).join('')}
                                 </tbody>
                             </table>
                         </div>
-                    </div>
                 `;
+                
+                if (totalPages > 1) {
+                    html += `
+                        <div class="pagination" style="margin-top: 15px; display: flex; justify-content: center; align-items: center; gap: 10px;">
+                            <button onclick="window.changePubPageAdmin(-1)" ${window.currentPagePublishedAdmin === 1 ? 'disabled' : ''} style="padding: 6px 12px; font-size: 13px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; cursor: ${window.currentPagePublishedAdmin === 1 ? 'not-allowed' : 'pointer'}; opacity: ${window.currentPagePublishedAdmin === 1 ? '0.5' : '1'};">Previous</button>
+                            <span style="font-size: 13px; color: var(--text-secondary);">Page ${window.currentPagePublishedAdmin} of ${totalPages}</span>
+                            <button onclick="window.changePubPageAdmin(1)" ${window.currentPagePublishedAdmin >= totalPages ? 'disabled' : ''} style="padding: 6px 12px; font-size: 13px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; cursor: ${window.currentPagePublishedAdmin >= totalPages ? 'not-allowed' : 'pointer'}; opacity: ${window.currentPagePublishedAdmin >= totalPages ? '0.5' : '1'};">Next</button>
+                        </div>
+                    `;
+                }
+                
+                html += `</div>`;
             }
             
             if (!html || (html.includes('status-section') && !patterns.clusters?.length && !patterns.accumulations?.length && !patterns.bursts?.length && !insider?.published_history?.length)) {
@@ -1217,13 +1247,64 @@ PATTERNS_TEMPLATE = """
             document.getElementById('patterns-content').innerHTML = html;
             document.getElementById('last-update').textContent = data.timestamp;
         }
-        
+
+        function renderWalletsWithAppendedAdmin(p) {
+            const original = p.original_wallet_list || [];
+            const appendedInfo = p.appended_wallets_info || {};
+            const allWallets = p.wallet_list || [];
+            
+            if (allWallets.length === 0) return '-';
+
+            const originalSet = new Set(original);
+            const appendedWallets = allWallets.filter(w => !originalSet.has(w));
+            
+            let html = '';
+            
+            if (appendedWallets.length > 0) {
+                let yesCount = 0;
+                let noCount = 0;
+                appendedWallets.forEach(w => {
+                    if (appendedInfo[w] === 'YES') yesCount++;
+                    else if (appendedInfo[w] === 'NO') noCount++;
+                });
+                
+                const stats = [];
+                if (yesCount > 0) stats.push(`<span style="color: #34d399">${yesCount} YES</span>`);
+                if (noCount > 0) stats.push(`<span style="color: #fb7185">${noCount} NO</span>`);
+                
+                html += `<div style="font-size: 0.75rem; margin-bottom: 4px; color: #888;">+${appendedWallets.length} since signal (${stats.join(' / ')})</div>`;
+            }
+
+            const originalWallets = allWallets.filter(w => originalSet.has(w));
+            const appendedWalletsReversed = [...appendedWallets].reverse();
+            
+            const originalHtml = originalWallets.map(w => {
+                return `<a href="https://polymarket.com/profile/${w}" target="_blank" class="wallet-link">${w.substring(0,5)}..${w.substring(39)}</a>`;
+            }).join(', ');
+            
+            const appendedHtml = appendedWalletsReversed.map(w => {
+                const outcome = appendedInfo[w];
+                let prefix = '';
+                if (outcome === 'YES') prefix = '🟢 ';
+                else if (outcome === 'NO') prefix = '🔴 ';
+                return `<a href="https://polymarket.com/profile/${w}" target="_blank" class="wallet-link">${prefix}${w.substring(0,5)}..${w.substring(39)}</a>`;
+            }).join(', ');
+            
+            html += originalHtml;
+            if (appendedHtml) {
+                html += (originalHtml ? `<div style="margin-top: 4px;">` : `<div>`) + appendedHtml + `</div>`;
+            }
+            
+            return html;
+        }
+
         async function loadData() {
             try {
                 const token = new URLSearchParams(window.location.search).get('token');
                 const apiUrl = token ? `/api/status?token=${encodeURIComponent(token)}` : '/api/status';
                 const response = await fetch(apiUrl);
                 const data = await response.json();
+                window.lastRenderDataAdmin = data;
                 renderPatterns(data);
             } catch (error) {
                 console.error('Failed to load data:', error);
@@ -1232,6 +1313,14 @@ PATTERNS_TEMPLATE = """
             }
         }
         
+        window.lastRenderDataAdmin = null;
+        window.changePubPageAdmin = function(delta) {
+            window.currentPagePublishedAdmin += delta;
+            if (window.lastRenderDataAdmin) {
+                renderPatterns(window.lastRenderDataAdmin);
+            }
+        };
+
         // Initial load
         loadData();
         
@@ -1249,8 +1338,18 @@ PUBLIC_PATTERNS_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="300">
-    <title>PolymarketWhales Signals</title>
+    <meta name="robots" content="index, follow">
+    <title>PolymarketWhales – Live Whale Signals &amp; Smart Money Alerts on Polymarket</title>
+    <link rel="icon" type="image/png" href="/favicon.ico">
+    <meta name="description" content="PolymarketWhales — real-time intelligence feed tracking unusual positioning, accumulation patterns, and volume bursts on Polymarket. Free behavioral analytics for prediction market traders.">
+    <link rel="canonical" href="https://polymarketwhales.online/public">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="PolymarketWhales – Live Whale Signals & Smart Money Alerts">
+    <meta property="og:description" content="PolymarketWhales — real-time intelligence feed tracking unusual positioning, accumulation patterns, and volume bursts on Polymarket.">
+    <meta property="og:url" content="https://polymarketwhales.online/public">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="PolymarketWhales – Live Whale Signals & Smart Money Alerts">
+    <meta name="twitter:description" content="PolymarketWhales — real-time intelligence feed tracking unusual positioning, accumulation patterns, and volume bursts on Polymarket.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1596,11 +1695,17 @@ PUBLIC_PATTERNS_TEMPLATE = """
                 <a href="/whale-trades" class="whale-nav-btn"><span class="whale-live-badge"><span class="whale-live-dot"></span>LIVE</span>🐋 Whale Trades<span class="whale-nav-sub">Live feed of whale buys over $10K</span></a>
             </div>
         </header>
+
+        <div style="font-size: 0.85rem; color: var(--text-soft); padding: 0 10px 15px; line-height: 1.4;">
+            <p style="margin: 0 0 5px 0;">Real-time intelligence feed tracking atypical behavior and fresh wallets on Polymarket. <em>Not financial advice.</em></p>
+            <p style="margin: 0;">Signal types: <strong>CLUSTER</strong> (coordinated activity), <strong>ACCUMULATION</strong> (steady buildup), <strong>BURST</strong> (sudden volume spikes).</p>
+        </div>
+
         <div id="content">
             <p class="empty">Loading...</p>
         </div>
         <footer>
-            Last updated: <span id="last-update">-</span> · Updated every 5 minutes
+            <span id="last-update" style="display: none;">-</span>Updated every 5 minutes
         </footer>
     </div>
     <script>
@@ -1611,6 +1716,7 @@ PUBLIC_PATTERNS_TEMPLATE = """
         }
 
         function asNumber(value) {
+            if (value === null || value === undefined || value === '') return null;
             const n = Number(value);
             return Number.isFinite(n) ? n : null;
         }
@@ -1630,6 +1736,57 @@ PUBLIC_PATTERNS_TEMPLATE = """
             if (!ts) return 'N/A';
             const diff = Math.max(0, Math.floor((Date.now() / 1000 - ts) / 60));
             return diff + 'm ago';
+        }
+
+        function renderWalletsWithAppended(p) {
+            const original = p.original_wallet_list || [];
+            const appendedInfo = p.appended_wallets_info || {};
+            const allWallets = p.wallet_list || [];
+            
+            if (allWallets.length === 0) return '<span class="dim">-</span>';
+
+            const originalSet = new Set(original);
+            const appendedWallets = allWallets.filter(w => !originalSet.has(w));
+            
+            let html = '';
+            
+            // Show summary if there are appended wallets
+            if (appendedWallets.length > 0) {
+                let yesCount = 0;
+                let noCount = 0;
+                appendedWallets.forEach(w => {
+                    if (appendedInfo[w] === 'YES') yesCount++;
+                    else if (appendedInfo[w] === 'NO') noCount++;
+                });
+                
+                const stats = [];
+                if (yesCount > 0) stats.push(`<span style="color: var(--c-good)">${yesCount} YES</span>`);
+                if (noCount > 0) stats.push(`<span style="color: var(--c-burst)">${noCount} NO</span>`);
+                
+                html += `<div style="font-size: 0.72rem; margin-bottom: 4px; color: var(--text-soft);">+${appendedWallets.length} since signal (${stats.join(' / ')})</div>`;
+            }
+
+            const originalWallets = allWallets.filter(w => originalSet.has(w));
+            const appendedWalletsReversed = [...appendedWallets].reverse();
+            
+            const originalHtml = originalWallets.map(w => {
+                return `<a class="wallet-link" target="_blank" href="${withRef(`https://polymarket.com/profile/${w}`)}">${shortWallet(w)}</a>`;
+            }).join(', ');
+            
+            const appendedHtml = appendedWalletsReversed.map(w => {
+                const outcome = appendedInfo[w];
+                let prefix = '';
+                if (outcome === 'YES') prefix = '🟢 ';
+                else if (outcome === 'NO') prefix = '🔴 ';
+                return `<a class="wallet-link" target="_blank" href="${withRef(`https://polymarket.com/profile/${w}`)}">${prefix}${shortWallet(w)}</a>`;
+            }).join(', ');
+            
+            html += originalHtml;
+            if (appendedHtml) {
+                html += (originalHtml ? `<div style="margin-top: 4px;">` : `<div>`) + appendedHtml + `</div>`;
+            }
+            
+            return html;
         }
 
         function hoursToReadable(hoursRaw) {
@@ -1690,17 +1847,12 @@ PUBLIC_PATTERNS_TEMPLATE = """
                 .replace(/-+/g, '-')
                 .replace(/^-|-$/g, '');
 
+            const titleSlug = makeSlug(title);
             let url = '';
             if (pattern.event_slug) {
                 url = withRef(`https://polymarket.com/event/${pattern.event_slug}`);
-            } else {
-                const titleSlug = makeSlug(title);
-                if (titleSlug) {
-                    // Keep this shape because copied Polymarket links often contain double slug segment.
-                    url = withRef(`https://polymarket.com/event/${titleSlug}/${titleSlug}`);
-                } else if (pattern.market_id) {
-                    url = withRef(`https://polymarket.com/event/${pattern.market_id}`);
-                }
+            } else if (pattern.market_id) {
+                url = withRef(`https://polymarket.com/event/${pattern.market_id}`);
             }
 
             if (url) {
@@ -1712,7 +1864,7 @@ PUBLIC_PATTERNS_TEMPLATE = """
         function directionCell(pattern) {
             const directionality = asNumber(pattern.directionality);
             const rawOutcome = String(pattern.outcome || '').trim();
-            if (directionality === null || !rawOutcome) {
+            if (!rawOutcome) {
                 return '<span class="dim">-</span>';
             }
             const outcomeUpper = rawOutcome.toUpperCase();
@@ -1721,6 +1873,10 @@ PUBLIC_PATTERNS_TEMPLATE = """
                 : outcomeUpper === 'NO'
                     ? 'No'
                     : rawOutcome;
+            
+            if (directionality === null) {
+                return outcomeLabel;
+            }
             return `${outcomeLabel} ${Math.round(directionality)}%`;
         }
 
@@ -1767,11 +1923,23 @@ PUBLIC_PATTERNS_TEMPLATE = """
             `;
         }
 
+        // Pagination state for public page
+        let currentPublishedPagePublic = 1;
+        const itemsPerPagePublic = 20;
+
         function renderPublishedTable(items) {
             if (!items || items.length === 0) {
                 return '<div class="empty">No published alerts yet.</div>';
             }
-            return `
+            
+            const totalPages = Math.ceil(items.length / itemsPerPagePublic);
+            if (currentPublishedPagePublic > totalPages) currentPublishedPagePublic = Math.max(1, totalPages);
+            if (currentPublishedPagePublic < 1) currentPublishedPagePublic = 1;
+            
+            const startIdx = (currentPublishedPagePublic - 1) * itemsPerPagePublic;
+            const currentItems = items.slice(startIdx, startIdx + itemsPerPagePublic);
+            
+            let html = `
                 <div class="scroll-wrap">
                     <table>
                         <thead>
@@ -1780,32 +1948,55 @@ PUBLIC_PATTERNS_TEMPLATE = """
                                 <th>Scenario</th>
                                 <th>Market</th>
                                 <th>Outcome</th>
+                                <th>Result</th>
                                 <th>Volume</th>
                                 <th>Wallets</th>
+                                <th>Participants</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${items.map(p => `
+                            ${currentItems.map(p => `
                                 <tr>
                                     <td class="dim">${toMinutesAgo(p.timestamp)}</td>
                                     <td><span class="mono">${textOrDash(p.scenario)}</span></td>
-                                    <td>${p.market_id ? `<a class="market-link" target="_blank" href="${withRef(`https://polymarket.com/event/${p.market_id}`)}">${(p.market_title || p.market_id).substring(0, 70)}</a>` : textOrDash(p.market_title)}</td>
-                                    <td>${textOrDash(p.outcome)}</td>
+                                    <td>${marketTitleCell(p)}</td>
+                                    <td class="mono">${directionCell(p)}</td>
+                                    <td style="text-align: center;">
+                                        ${p.result_status === 'win' ? '<span title="In Profit / Won">✅</span>' : 
+                                          p.result_status === 'loss' ? '<span title="In Loss / Lost">❌</span>' : 
+                                          '<span title="Pending">⏳</span>'}
+                                    </td>
                                     <td class="mono">$${formatNumber(p.total_volume || 0)}</td>
                                     <td class="mono">${textOrDash(p.participants_count)}</td>
+                                    <td>${renderWalletsWithAppended(p)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
                     </table>
                 </div>
             `;
+            
+            if (totalPages > 1) {
+                html += `
+                    <div class="pagination" style="margin-top: 15px; display: flex; justify-content: center; align-items: center; gap: 10px;">
+                        <button onclick="changePubPagePublic(-1)" ${currentPublishedPagePublic === 1 ? 'disabled' : ''} style="padding: 6px 12px; font-size: 13px; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--line); border-radius: 4px; cursor: ${currentPublishedPagePublic === 1 ? 'not-allowed' : 'pointer'}; opacity: ${currentPublishedPagePublic === 1 ? '0.5' : '1'};">Previous</button>
+                        <span style="font-size: 13px; color: var(--text-soft);">Page ${currentPublishedPagePublic} of ${totalPages}</span>
+                        <button onclick="changePubPagePublic(1)" ${currentPublishedPagePublic >= totalPages ? 'disabled' : ''} style="padding: 6px 12px; font-size: 13px; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--line); border-radius: 4px; cursor: ${currentPublishedPagePublic >= totalPages ? 'not-allowed' : 'pointer'}; opacity: ${currentPublishedPagePublic >= totalPages ? '0.5' : '1'};">Next</button>
+                    </div>
+                `;
+            }
+            
+            return html;
         }
 
         function sumVolume(items) {
             return (items || []).reduce((acc, p) => acc + (Number(p.volume) || 0), 0);
         }
 
+        let lastFetchedData = {};
+
         function renderPage(data) {
+            lastFetchedData = data;
             const patterns = data.patterns || {};
             const scenarios = data.scenarios || {};
             const clusters = patterns.clusters || [];
@@ -1917,11 +2108,18 @@ PUBLIC_PATTERNS_TEMPLATE = """
                 const response = await fetch('/api/public_patterns');
                 const data = await response.json();
                 renderPage(data);
-            } catch (error) {
-                console.error('Failed to load data:', error);
-                document.getElementById('content').innerHTML = '<p class="empty">Failed to load data.</p>';
+            } catch (err) {
+                console.error('Failed to load data:', err);
+                document.getElementById('content').innerHTML = '<div class="empty" style="color:#ef4444">Failed to load data. Retrying...</div>';
             }
         }
+        
+        window.changePubPagePublic = function(delta) {
+            currentPublishedPagePublic += delta;
+            if (lastFetchedData) {
+                renderPage(lastFetchedData);
+            }
+        };
 
         loadData();
         setInterval(loadData, 300000);
@@ -1937,7 +2135,18 @@ WHALE_TRADES_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🐋 Whale Trades — PolymarketWhales</title>
+    <meta name="robots" content="index, follow">
+    <title>PolymarketWhales – Live Whale Trades on Polymarket | Real-Time $10K+ BUY Orders</title>
+    <link rel="icon" type="image/png" href="/favicon.ico">
+    <meta name="description" content="PolymarketWhales — track large whale BUY orders over $10,000 on Polymarket in real-time. See trader PnL, open positions, wallet age, and entry prices as they happen.">
+    <link rel="canonical" href="https://polymarketwhales.online/whale-trades">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="PolymarketWhales – Live Whale Trades | Real-Time $10K+ Orders">
+    <meta property="og:description" content="PolymarketWhales — track large whale BUY orders over $10,000 on Polymarket in real-time. Trader PnL, positions, wallet age, and entry prices.">
+    <meta property="og:url" content="https://polymarketwhales.online/whale-trades">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="PolymarketWhales – Live Whale Trades | Real-Time $10K+ Orders">
+    <meta name="twitter:description" content="PolymarketWhales — track large whale BUY orders over $10,000 on Polymarket in real-time. Trader PnL, positions, wallet age, and entry prices.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -2002,19 +2211,21 @@ WHALE_TRADES_TEMPLATE = """
             align-items: center;
             gap: 6px;
             padding: 9px 16px;
-            background: rgba(22,35,61,0.65);
-            border: 1px solid var(--line);
+            background: linear-gradient(135deg, rgba(45,212,191,0.08), rgba(96,165,250,0.08));
+            border: 1px solid rgba(45,212,191,0.3);
             border-radius: 10px;
-            color: var(--text-soft);
+            color: var(--text-main);
             text-decoration: none;
             font-size: 0.85rem;
             font-weight: 500;
             transition: all 0.2s ease;
+            box-shadow: 0 0 10px rgba(45,212,191,0.05);
         }
         .back-btn:hover {
+            background: linear-gradient(135deg, rgba(45,212,191,0.15), rgba(96,165,250,0.12));
+            border-color: rgba(45,212,191,0.6);
             color: var(--text-main);
-            border-color: var(--c-cluster);
-            background: rgba(96,165,250,0.08);
+            box-shadow: 0 4px 15px rgba(45,212,191,0.15);
         }
         .tag {
             border: 1px solid var(--line);
@@ -2362,7 +2573,7 @@ WHALE_TRADES_TEMPLATE = """
                 <p>Live feed of large BUY trades over $10,000 on Polymarket</p>
             </div>
             <div class="top-actions">
-                <a href="/public" class="back-btn">← Intelligence Feed</a>
+                <a href="/public" class="back-btn">← Signals & Patterns</a>
                 <span class="tag"><span class="live-dot"></span>Live · 60s refresh</span>
             </div>
         </header>
@@ -2379,16 +2590,20 @@ WHALE_TRADES_TEMPLATE = """
             <div class="filter-sep"></div>
             <div class="filter-group">
                 <span class="filter-label">Include</span>
-                <label class="chk-label"><input type="checkbox" id="chk-crypto"> Crypto</label>
-                <label class="chk-label"><input type="checkbox" id="chk-sport"> Sport</label>
+                <label class="chk-label"><input type="checkbox" id="chk-crypto" checked> Crypto</label>
+                <label class="chk-label"><input type="checkbox" id="chk-sport" checked> Sport</label>
             </div>
+        </div>
+
+        <div style="font-size: 0.85rem; color: var(--text-soft); padding: 0 10px 15px; line-height: 1.4;">
+            <p style="margin: 0;">Live whale trades feed monitoring large Polymarket positions. Minimum trade threshold is $10,000 USD. Data updates automatically in real-time.</p>
         </div>
 
         <div id="content">
             <p class="empty">Loading whale trades…</p>
         </div>
         <footer>
-            Last updated: <span id="last-update">-</span>
+            <span id="last-update" style="display: none;">-</span>
         </footer>
     </div>
 
@@ -2398,8 +2613,8 @@ WHALE_TRADES_TEMPLATE = """
 
         // ========== STATE ==========
         let currentLimit = 25;
-        let includeCrypto = false;
-        let includeSport = false;
+        let includeCrypto = true;
+        let includeSport = true;
 
         // ========== HELPERS ==========
         function formatUSD(num) {
@@ -2569,7 +2784,7 @@ WHALE_TRADES_TEMPLATE = """
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                currentLimit = parseInt(btn.dataset.limit);
+                currentLimit = parseInt(btn.dataset.val);
                 render();
             });
         });
@@ -2637,10 +2852,18 @@ def _public_patterns_payload() -> dict:
             "scenario": item.get("scenario"),
             "market_id": item.get("market_id"),
             "market_title": item.get("market_title"),
+            # marketTitleCell() in JS reads 'title' and 'event_slug'
+            "title": item.get("market_title", ""),
+            "event_slug": item.get("event_slug"),
             "outcome": item.get("outcome"),
+            "directionality": item.get("directionality"),
             "total_volume": item.get("total_volume", 0),
             "participants_count": item.get("participants_count", 0),
             "wallet_list": item.get("wallet_list", []),
+            "original_wallet_list": item.get("original_wallet_list", []),
+            "appended_wallets_info": item.get("appended_wallets_info", {}),
+            "result_status": item.get("result_status", "pending"),
+            "entry_price": item.get("entry_price"),
         }
 
     def sanitize_scenario(cfg: dict) -> dict:
@@ -2658,6 +2881,9 @@ def _public_patterns_payload() -> dict:
             "interval": cfg.get("interval"),
         }
 
+    from storage.alerts_storage import get_recent_published
+    recent_published = get_recent_published(200)
+
     return {
         "timestamp": status.get("timestamp"),
         "patterns": {
@@ -2670,7 +2896,7 @@ def _public_patterns_payload() -> dict:
             "ACCUMULATION": sanitize_scenario(scenarios.get("ACCUMULATION")),
             "BURST": sanitize_scenario(scenarios.get("BURST")),
         },
-        "recent_published": [sanitize_published(p) for p in (insider.get("published_history") or [])[:20]],
+        "recent_published": [sanitize_published(p) for p in recent_published],
     }
 
 
@@ -2723,6 +2949,48 @@ def api_whale_trades():
 def api_public_patterns():
     """Return public safe patterns payload."""
     return jsonify(_public_patterns_payload())
+
+
+@app.route('/robots.txt')
+def robots_txt():
+    """Serve robots.txt for search engine crawlers."""
+    content = (
+        "User-agent: *\n"
+        "Allow: /public\n"
+        "Allow: /whale-trades\n"
+        "Disallow: /api/status\n"
+        "Disallow: /patterns\n"
+        "Allow: /api/public_patterns\n"
+        "Allow: /api/whale_trades\n"
+        "\n"
+        "Sitemap: https://polymarketwhales.online/sitemap.xml\n"
+    )
+    return Response(content, mimetype='text/plain')
+
+
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    """Serve sitemap.xml for search engine indexing."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        '  <url>\n'
+        '    <loc>https://polymarketwhales.online/public</loc>\n'
+        f'    <lastmod>{now}</lastmod>\n'
+        '    <changefreq>hourly</changefreq>\n'
+        '    <priority>1.0</priority>\n'
+        '  </url>\n'
+        '  <url>\n'
+        '    <loc>https://polymarketwhales.online/whale-trades</loc>\n'
+        f'    <lastmod>{now}</lastmod>\n'
+        '    <changefreq>hourly</changefreq>\n'
+        '    <priority>0.9</priority>\n'
+        '  </url>\n'
+        '</urlset>\n'
+    )
+    return Response(xml, mimetype='application/xml')
 
 
 def run_server(port=5000, host='0.0.0.0'):

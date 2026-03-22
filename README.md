@@ -8,6 +8,12 @@
 
 Telegram-бот для отслеживания крупных сделок ("китов") на [Polymarket](https://polymarket.com) в режиме реального времени.
 
+### 🌐 Веб-сайт
+
+**[polymarketwhales.online](https://polymarketwhales.online)** — публичная страница с live-сигналами и whale-трейдами:
+- 📡 **[Signals & Patterns](https://polymarketwhales.online/public)** — лента сигналов о поведенческих паттернах (кластеры, накопления, всплески объёмов)
+- 🐋 **[Whale Trades](https://polymarketwhales.online/whale-trades)** — live-поток крупных BUY-ордеров от $10K+ с PnL, позициями и возрастом кошелька
+
 ### Возможности
 
 - 📊 **Мониторинг сделок** от $500 до $100,000+
@@ -231,6 +237,12 @@ python main.py
 ## 🇬🇧 English
 
 Telegram bot for real-time tracking of large trades ("whales") on [Polymarket](https://polymarket.com).
+
+### 🌐 Website
+
+**[polymarketwhales.online](https://polymarketwhales.online)** — public page with live signals and whale trades:
+- 📡 **[Signals & Patterns](https://polymarketwhales.online/public)** — behavioral intelligence feed (clusters, accumulations, volume bursts)
+- 🐋 **[Whale Trades](https://polymarketwhales.online/whale-trades)** — live feed of $10K+ BUY orders with PnL, positions, and wallet age
 
 ### Features
 

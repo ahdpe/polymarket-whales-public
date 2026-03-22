@@ -5,9 +5,9 @@
   "max_insider_age_days": 1.0,
   "max_insider_positions": 1,
   "tweet_timestamps": [
-    1771721504.897187
+    1773953629.8010273
   ],
-  "paused_until": 1770017490.1706045,
+  "paused_until": 0,
   "interval_minutes": 25,
   "probability_min": 0,
   "probability_max": 90,
