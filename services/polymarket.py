@@ -511,6 +511,104 @@ class PolymarketService:
                     return cached["data"] if (use_stale_cache and cached) else None
             return cached["data"] if (use_stale_cache and cached) else None
 
+    async def check_wallet_has_position_safe(
+        self, proxy_wallet: str, condition_id: str
+    ) -> tuple[float, str]:
+        """
+        Check position with explicit status (for insider buffer / sold detection).
+
+        Returns:
+            (value_usd, status)
+            status:
+              'found'    — matching conditionId present (value may be 0 in edge cases)
+              'empty'    — HTTP OK, full paginated scan completed, no matching position
+              'error'    — timeout, non-200, or invalid payload (do NOT treat as "sold")
+        """
+        if not proxy_wallet or not condition_id:
+            return (0.0, "error")
+
+        want = (condition_id or "").strip().lower()
+        if not want:
+            return (0.0, "error")
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                offset = 0
+                limit = 1000
+                max_offset = 5000
+
+                while offset <= max_offset:
+                    url = f"{DATA_API_URL}/positions?user={proxy_wallet}&limit={limit}&offset={offset}"
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status != 200:
+                            return (0.0, "error")
+
+                        positions = await resp.json()
+                        if not isinstance(positions, list):
+                            return (0.0, "error")
+
+                        for pos in positions:
+                            pos_condition = (
+                                pos.get("conditionId", "") or pos.get("condition_id", "") or ""
+                            ).strip().lower()
+                            current_value = float(pos.get("currentValue", 0) or 0)
+
+                            if pos_condition and pos_condition == want:
+                                return (current_value, "found")
+
+                        if len(positions) < limit:
+                            break
+
+                        offset += len(positions)
+                        if offset >= max_offset:
+                            break
+
+                return (0.0, "empty")
+
+        except asyncio.TimeoutError:
+            logger.debug(f"Timeout checking position for {proxy_wallet[:10]}...")
+            return (0.0, "error")
+        except Exception as e:
+            logger.debug(f"Error checking position: {e}")
+            return (0.0, "error")
+
+    async def confirm_wallet_has_no_position(
+        self,
+        proxy_wallet: str,
+        condition_id: str,
+        *,
+        rounds: int = 3,
+        pause_sec: float = 0.65,
+    ) -> bool:
+        """
+        Return True only if every round reports status 'empty' with value 0.
+        False if any round errors, finds value > 0, or returns 'found' with value > 0.
+
+        Used before marking insider buffer trades as sold — avoids false positives
+        from transient API issues.
+        """
+        rounds = max(1, int(rounds))
+        pause_sec = max(0.1, float(pause_sec))
+
+        for i in range(rounds):
+            val, st = await self.check_wallet_has_position_safe(proxy_wallet, condition_id)
+            if st == "error":
+                logger.info(
+                    f"confirm_no_position: uncertain (API error) for {proxy_wallet[:10]}... "
+                    f"round {i + 1}/{rounds}"
+                )
+                return False
+            if float(val or 0) > 0:
+                return False
+            # Row still tied to this market — do not treat as fully closed / sold
+            if st == "found":
+                return False
+            if st != "empty":
+                return False
+            if i + 1 < rounds:
+                await asyncio.sleep(pause_sec)
+        return True
+
     async def check_wallet_has_position(self, proxy_wallet: str, condition_id: str) -> float:
         """
         Check if a wallet currently holds a position on a specific market.
@@ -522,38 +620,10 @@ class PolymarketService:
         Returns:
             Position value in USD if wallet holds position, 0.0 otherwise
         """
-        if not proxy_wallet or not condition_id:
+        val, st = await self.check_wallet_has_position_safe(proxy_wallet, condition_id)
+        if st == "error":
             return 0.0
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                # Query positions for this wallet
-                url = f"{DATA_API_URL}/positions?user={proxy_wallet}&limit=500"
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    if resp.status != 200:
-                        return 0.0
-                    
-                    positions = await resp.json()
-                    if not positions or not isinstance(positions, list):
-                        return 0.0
-                    
-                    # Find position for this market and return its value
-                    for pos in positions:
-                        pos_condition = pos.get('conditionId', '') or pos.get('condition_id', '')
-                        current_value = float(pos.get('currentValue', 0) or 0)
-                        
-                        # Match by conditionId
-                        if pos_condition == condition_id:
-                            return current_value
-                    
-                    return 0.0
-                    
-        except asyncio.TimeoutError:
-            logger.debug(f"Timeout checking position for {proxy_wallet[:10]}...")
-            return 0.0  # Assume no position on timeout
-        except Exception as e:
-            logger.debug(f"Error checking position: {e}")
-            return 0.0
+        return float(val or 0.0)
 
     async def get_trader_first_activity(self, proxy_wallet, bypass_cache=False):
         if not proxy_wallet or not str(proxy_wallet).startswith("0x"):

@@ -113,14 +113,14 @@ def _trim_tweet_body_to_limit(body_text: str, max_body_len: int) -> str:
 
 
 def _add_twitter_ref(text: str) -> str:
-    """Add ?via=PmWhlAlerts to all polymarket.com URLs in tweet text."""
+    """Add ?r=PolymarketWhaleAlrts to all polymarket.com URLs in tweet text."""
     if "polymarket.com" not in text:
         return text
     try:
         from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
-        REF_PARAM = "via"
-        REF_VALUE = "PmWhlAlerts"
+        REF_PARAM = "r"
+        REF_VALUE = "PolymarketWhaleAlrts"
 
         def transform_url(url: str) -> str:
             parsed = urlparse(url)
@@ -131,7 +131,8 @@ def _add_twitter_ref(text: str) -> str:
                 return url
             query_params[REF_PARAM] = [REF_VALUE]
             new_query = urlencode(query_params, doseq=True)
-            return urlunparse(parsed._replace(query=new_query))
+            normalized_path = parsed.path or "/"
+            return urlunparse(parsed._replace(path=normalized_path, query=new_query))
 
         import re as _re
         url_pattern = r'https?://[^\s\)\]>]+'
@@ -146,7 +147,7 @@ def _finalize_tweet_text(tweet_text: str) -> str:
     if body.endswith(AUTOPOST_FOOTER):
         body = body[:-len(AUTOPOST_FOOTER)].rstrip()
 
-    # Add ?via=PmWhlAlerts to all polymarket.com links
+    # Add ?r=PolymarketWhaleAlrts to all polymarket.com links
     body = _add_twitter_ref(body)
 
     footer_block = f"\n\n{AUTOPOST_FOOTER}"

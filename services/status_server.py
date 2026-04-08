@@ -4,6 +4,7 @@ Provides a web interface to monitor bot status and statistics.
 """
 import os
 import hmac
+import json
 import logging
 import threading
 from flask import Flask, jsonify, Response, request
@@ -11,6 +12,49 @@ from flask import Flask, jsonify, Response, request
 from services.status_service import get_full_status, get_whale_trades
 
 logger = logging.getLogger(__name__)
+
+
+def _insider_scenario_check_interval_sec() -> int:
+    """Must match main.py check_insider_scenarios_periodically() default."""
+    return max(60, int(os.getenv("INSIDER_SCENARIO_CHECK_INTERVAL_SEC", "900")))
+
+
+def _insider_refresh_interval_human() -> str:
+    sec = _insider_scenario_check_interval_sec()
+    if sec % 3600 == 0:
+        h = sec // 3600
+        return f"{h} hour{'s' if h != 1 else ''}"
+    if sec % 60 == 0:
+        m = sec // 60
+        return f"{m} minute{'s' if m != 1 else ''}"
+    return f"{sec} seconds"
+
+
+def _apply_insider_refresh_to_html(html: str) -> str:
+    """Substitute meta refresh, footer text, and JS poll interval from env."""
+    sec = _insider_scenario_check_interval_sec()
+    ms = sec * 1000
+    human = _insider_refresh_interval_human()
+    return (
+        html.replace("__INSIDER_REFRESH_META_SEC__", str(sec))
+        .replace("__INSIDER_JS_REFRESH_MS__", str(ms))
+        .replace("__INSIDER_REFRESH_HUMAN__", human)
+    )
+
+
+def _safe_inline_json(payload: dict | None) -> str:
+    """Serialize JSON safely for inline <script> embedding."""
+    if payload is None:
+        return "null"
+    # Prevent accidental script tag termination in HTML parser.
+    return (
+        json.dumps(payload, ensure_ascii=True)
+        .replace("</", "<\\/")
+        # Avoid breaking inline script parsing on JS line-separator chars.
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+
 
 # Flask app
 app = Flask(__name__)
@@ -28,9 +72,9 @@ HTML_TEMPLATE = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
-    <meta http-equiv="refresh" content="300">
+    <meta http-equiv="refresh" content="__INSIDER_REFRESH_META_SEC__">
     <title>🐋 PolymarketWhales Status</title>
-    <link rel="icon" type="image/png" href="/favicon.ico">
+    <link rel="icon" type="image/png" href="/favicon.png?v=4">
     <style>
         :root {
             --bg-primary: #0d1117;
@@ -242,10 +286,13 @@ HTML_TEMPLATE = """
         
         <footer>
             <div style="display: none;">Last updated: <span id="last-update">-</span></div>
-            <div class="refresh-info">Auto-refresh every 5 minutes</div>
+            <div class="refresh-info">Auto-refresh every __INSIDER_REFRESH_HUMAN__</div>
         </footer>
     </div>
     
+    <script>
+        window.__EMBEDDED_PATTERNS__ = __EMBEDDED_PATTERNS_JSON__;
+    </script>
     <script>
         function getProgressClass(percent) {
             if (percent < 60) return 'progress-green';
@@ -268,7 +315,7 @@ HTML_TEMPLATE = """
             const insider = data.insider;
             const files = data.files;
             
-            const memPercent = sys.system_memory?.percent || 0;
+            const memPercent = (sys.system_memory ? sys.system_memory.percent : 0) || 0;
             const memClass = getProgressClass(memPercent);
             
             let html = `
@@ -326,7 +373,7 @@ HTML_TEMPLATE = """
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">Languages</span>
-                        <span class="stat-value">EN: ${users.languages?.en || 0} | RU: ${users.languages?.ru || 0}</span>
+                        <span class="stat-value">EN: ${(users.languages ? users.languages.en : 0) || 0} | RU: ${(users.languages ? users.languages.ru : 0) || 0}</span>
                     </div>
                 </div>
                 
@@ -338,19 +385,19 @@ HTML_TEMPLATE = """
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">Process RSS</span>
-                        <span class="stat-value">${sys.memory?.rss_formatted || 'N/A'}</span>
+                        <span class="stat-value">${(sys.memory ? sys.memory.rss_formatted : 'N/A') || 'N/A'}</span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">Process %</span>
-                        <span class="stat-value">${sys.memory?.percent || 0}%</span>
+                        <span class="stat-value">${(sys.memory ? sys.memory.percent : 0) || 0}%</span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">System</span>
-                        <span class="stat-value">${sys.system_memory?.used_formatted || 'N/A'} / ${sys.system_memory?.total_formatted || 'N/A'}</span>
+                        <span class="stat-value">${(sys.system_memory ? sys.system_memory.used_formatted : 'N/A') || 'N/A'} / ${(sys.system_memory ? sys.system_memory.total_formatted : 'N/A') || 'N/A'}</span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">Available</span>
-                        <span class="stat-value">${sys.system_memory?.available_formatted || 'N/A'}</span>
+                        <span class="stat-value">${(sys.system_memory ? sys.system_memory.available_formatted : 'N/A') || 'N/A'}</span>
                     </div>
                     <div class="progress-bar">
                         <div class="progress-fill ${memClass}" style="width: ${memPercent}%"></div>
@@ -429,23 +476,23 @@ HTML_TEMPLATE = """
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">Saved Traders</span>
-                        <span class="stat-value">${db.saved_whales?.saved_count || 0}</span>
+                        <span class="stat-value">${(db.saved_whales ? db.saved_whales.saved_count : 0) || 0}</span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">Trader Keys</span>
-                        <span class="stat-value">${db.saved_whales?.keys_count || 0}</span>
+                        <span class="stat-value">${(db.saved_whales ? db.saved_whales.keys_count : 0) || 0}</span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">Users w/ Favorites</span>
-                        <span class="stat-value">${db.saved_whales?.users_with_favorites || 0}</span>
+                        <span class="stat-value">${(db.saved_whales ? db.saved_whales.users_with_favorites : 0) || 0}</span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">Seen Trades</span>
-                        <span class="stat-value">${formatNumber(db.trades?.count || 0)}</span>
+                        <span class="stat-value">${formatNumber((db.trades ? db.trades.count : 0) || 0)}</span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">Trades DB Size</span>
-                        <span class="stat-value">${db.trades?.size_formatted || 'N/A'}</span>
+                        <span class="stat-value">${(db.trades ? db.trades.size_formatted : 'N/A') || 'N/A'}</span>
                     </div>
                 </div>
                 
@@ -495,7 +542,7 @@ HTML_TEMPLATE = """
                     `).join('')}
                     <div class="stat-row" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-color);">
                         <span class="stat-label"><strong>Total</strong></span>
-                        <span class="stat-value"><strong>${files._total?.size_formatted || 'N/A'}</strong></span>
+                        <span class="stat-value"><strong>${(files._total ? files._total.size_formatted : 'N/A') || 'N/A'}</strong></span>
                     </div>
                 </div>
                 
@@ -517,42 +564,42 @@ HTML_TEMPLATE = """
                     <h3 style="font-size: 0.9rem; color: var(--text-secondary); margin: 20px 0 15px;">Categories Enabled</h3>
                     <div class="distribution-grid">
                         <div class="dist-item">
-                            <div class="dist-value">${users.categories?.crypto || 0}</div>
+                            <div class="dist-value">${(users.categories ? users.categories.crypto : 0) || 0}</div>
                             <div class="dist-label">💰 Crypto</div>
                         </div>
                         <div class="dist-item">
-                            <div class="dist-value">${users.categories?.sports || 0}</div>
+                            <div class="dist-value">${(users.categories ? users.categories.sports : 0) || 0}</div>
                             <div class="dist-label">⚽ Sports</div>
                         </div>
                         <div class="dist-item">
-                            <div class="dist-value">${users.categories?.other || 0}</div>
+                            <div class="dist-value">${(users.categories ? users.categories.other : 0) || 0}</div>
                             <div class="dist-label">📌 Other</div>
                         </div>
                         <div class="dist-item">
-                            <div class="dist-value">${users.categories?.all || 0}</div>
+                            <div class="dist-value">${(users.categories ? users.categories.all : 0) || 0}</div>
                             <div class="dist-label">🌐 All</div>
                         </div>
                     </div>
                     <h3 style="font-size: 0.9rem; color: var(--text-secondary); margin: 20px 0 15px;">Side Types Enabled</h3>
                     <div class="distribution-grid">
                         <div class="dist-item">
-                            <div class="dist-value">${users.side_types?.BUY || 0}</div>
+                            <div class="dist-value">${(users.side_types ? users.side_types.BUY : 0) || 0}</div>
                             <div class="dist-label">🟢 BUY</div>
                         </div>
                         <div class="dist-item">
-                            <div class="dist-value">${users.side_types?.SELL || 0}</div>
+                            <div class="dist-value">${(users.side_types ? users.side_types.SELL : 0) || 0}</div>
                             <div class="dist-label">🔵 SELL</div>
                         </div>
                         <div class="dist-item">
-                            <div class="dist-value">${users.side_types?.SPLIT || 0}</div>
+                            <div class="dist-value">${(users.side_types ? users.side_types.SPLIT : 0) || 0}</div>
                             <div class="dist-label">⚪ SPLIT</div>
                         </div>
                         <div class="dist-item">
-                            <div class="dist-value">${users.side_types?.MERGE || 0}</div>
+                            <div class="dist-value">${(users.side_types ? users.side_types.MERGE : 0) || 0}</div>
                             <div class="dist-label">↔️ MERGE</div>
                         </div>
                         <div class="dist-item">
-                            <div class="dist-value">${users.side_types?.REDEEM || 0}</div>
+                            <div class="dist-value">${(users.side_types ? users.side_types.REDEEM : 0) || 0}</div>
                             <div class="dist-label">🟣 REDEEM</div>
                         </div>
                     </div>
@@ -590,15 +637,15 @@ HTML_TEMPLATE = """
                     <div class="distribution-grid" style="margin-bottom: 20px; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));">
                         <div class="dist-item">
                             <div class="dist-value" style="font-size: 1.1rem;">CLUSTER</div>
-                            <div class="dist-label">${insider.scenarios?.CLUSTER?.enabled == 'true' ? '✅ On' : '❌ Off'}</div>
+                            <div class="dist-label">${((insider.scenarios && insider.scenarios.CLUSTER) ? insider.scenarios.CLUSTER.enabled : false) == 'true' ? '✅ On' : '❌ Off'}</div>
                         </div>
                         <div class="dist-item">
                              <div class="dist-value" style="font-size: 1.1rem;">ACCUMULATION</div>
-                            <div class="dist-label">${insider.scenarios?.ACCUMULATION?.enabled == 'true' ? '✅ On' : '❌ Off'}</div>
+                            <div class="dist-label">${((insider.scenarios && insider.scenarios.ACCUMULATION) ? insider.scenarios.ACCUMULATION.enabled : false) == 'true' ? '✅ On' : '❌ Off'}</div>
                         </div>
                         <div class="dist-item">
                              <div class="dist-value" style="font-size: 1.1rem;">BURST</div>
-                            <div class="dist-label">${insider.scenarios?.BURST?.enabled == 'true' ? '✅ On' : '❌ Off'}</div>
+                            <div class="dist-label">${((insider.scenarios && insider.scenarios.BURST) ? insider.scenarios.BURST.enabled : false) == 'true' ? '✅ On' : '❌ Off'}</div>
                         </div>
                     </div>
 
@@ -611,9 +658,9 @@ HTML_TEMPLATE = """
                             View Active Patterns →
                         </a>
                         <div style="margin-top: 15px; font-size: 0.85rem; color: var(--text-secondary);">
-                            CLUSTERS: ${insider.pending_patterns?.clusters?.length || 0} | 
-                            ACCUMULATIONS: ${insider.pending_patterns?.accumulations?.length || 0} | 
-                            BURSTS: ${insider.pending_patterns?.bursts?.length || 0}
+                            CLUSTERS: ${((insider.pending_patterns && insider.pending_patterns.clusters) ? insider.pending_patterns.clusters.length : 0) || 0} | 
+                            ACCUMULATIONS: ${((insider.pending_patterns && insider.pending_patterns.accumulations) ? insider.pending_patterns.accumulations.length : 0) || 0} | 
+                            BURSTS: ${((insider.pending_patterns && insider.pending_patterns.bursts) ? insider.pending_patterns.bursts.length : 0) || 0}
                         </div>
                     </div>
                 </div>
@@ -625,9 +672,21 @@ HTML_TEMPLATE = """
         
         async function loadData() {
             try {
+                // Try using pre-embedded data first
+                if (window.__EMBEDDED_STATUS__) {
+                    renderDashboard(window.__EMBEDDED_STATUS__);
+                    window.__EMBEDDED_STATUS__ = null;
+                    return;
+                }
                 const token = new URLSearchParams(window.location.search).get('token');
                 const apiUrl = token ? `/api/status?token=${encodeURIComponent(token)}` : '/api/status';
-                const response = await fetch(apiUrl);
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                const response = await fetch(apiUrl, { signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
                 const data = await response.json();
                 renderDashboard(data);
             } catch (error) {
@@ -652,9 +711,9 @@ PATTERNS_TEMPLATE = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
-    <meta http-equiv="refresh" content="300">
+    <meta http-equiv="refresh" content="__INSIDER_REFRESH_META_SEC__">
     <title>🕵️ Active Patterns - PolymarketWhales</title>
-    <link rel="icon" type="image/png" href="/favicon.ico">
+    <link rel="icon" type="image/png" href="/favicon.png?v=4">
     <style>
         :root {
             --bg-primary: #0d1117;
@@ -888,10 +947,13 @@ PATTERNS_TEMPLATE = """
         
         <footer>
             <div style="display: none;">Last updated: <span id="last-update">-</span></div>
-            <div style="margin-top: 5px;">Auto-refresh every 5 minutes</div>
+            <div style="margin-top: 5px;">Auto-refresh every __INSIDER_REFRESH_HUMAN__</div>
         </footer>
     </div>
     
+    <script>
+        window.__EMBEDDED_PATTERNS__ = __EMBEDDED_PATTERNS_JSON__;
+    </script>
     <script>
         function formatNumber(num) {
             if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
@@ -958,6 +1020,26 @@ PATTERNS_TEMPLATE = """
             
             return parts.length > 0 ? `<div class="section-settings">${parts.join(' | ')}</div>` : '';
         }
+
+        function toMinutesAgo(ts) {
+            if (!ts) return 'N/A';
+            const now = Date.now() / 1000;
+            const diffSec = Math.max(0, Math.floor(now - ts));
+            const min = 60;
+            const hour = 3600;
+            const day = 86400;
+            const week = 7 * day;
+            const month = 30 * day;
+
+            if (diffSec < hour) return Math.floor(diffSec / min) + 'm ago';
+            if (diffSec < day) return Math.floor(diffSec / hour) + 'h ago';
+            if (diffSec < week) return Math.floor(diffSec / day) + 'd ago';
+            if (diffSec < month) return Math.floor(diffSec / week) + 'w ago';
+
+            const d = new Date(ts * 1000);
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+        }
         
         function renderPatterns(data) {
             const insider = data.insider;
@@ -983,15 +1065,15 @@ PATTERNS_TEMPLATE = """
                         <div class="scenarios-grid">
                             <div class="scenario-item">
                                 <div class="scenario-name">CLUSTER</div>
-                                <div class="scenario-status">${scenarios.CLUSTER?.enabled == 'true' ? '✅ On' : '❌ Off'}</div>
+                                <div class="scenario-status">${((scenarios.CLUSTER) ? scenarios.CLUSTER.enabled : false) == 'true' ? '✅ On' : '❌ Off'}</div>
                             </div>
                             <div class="scenario-item">
                                 <div class="scenario-name">ACCUMULATION</div>
-                                <div class="scenario-status">${scenarios.ACCUMULATION?.enabled == 'true' ? '✅ On' : '❌ Off'}</div>
+                                <div class="scenario-status">${((scenarios.ACCUMULATION) ? scenarios.ACCUMULATION.enabled : false) == 'true' ? '✅ On' : '❌ Off'}</div>
                             </div>
                             <div class="scenario-item">
                                 <div class="scenario-name">BURST</div>
-                                <div class="scenario-status">${scenarios.BURST?.enabled == 'true' ? '✅ On' : '❌ Off'}</div>
+                                <div class="scenario-status">${((scenarios.BURST) ? scenarios.BURST.enabled : false) == 'true' ? '✅ On' : '❌ Off'}</div>
                             </div>
                         </div>
                     </div>
@@ -1039,7 +1121,7 @@ PATTERNS_TEMPLATE = """
                                             ).join(', ')}
                                         </td>
                                         <td style="color: var(--text-secondary);">
-                                            ${Math.floor((Date.now() / 1000 - p.last_ts)/60)}m ago
+                                            ${toMinutesAgo(p.last_ts)}
                                         </td>
                                         <td style="color: var(--text-secondary); font-size: 0.9rem;">
                                             ${p.blocked_reason || '—'}
@@ -1090,7 +1172,7 @@ PATTERNS_TEMPLATE = """
                                             ).join(', ')}
                                         </td>
                                         <td style="color: var(--text-secondary);">
-                                            ${Math.floor((Date.now() / 1000 - p.last_ts)/60)}m ago
+                                            ${toMinutesAgo(p.last_ts)}
                                         </td>
                                         <td style="color: var(--text-secondary); font-size: 0.9rem;">
                                             ${p.blocked_reason || '—'}
@@ -1145,7 +1227,7 @@ PATTERNS_TEMPLATE = """
                                             ).join(', ')}
                                         </td>
                                         <td style="color: var(--text-secondary);">
-                                            ${Math.floor((Date.now() / 1000 - p.last_ts)/60)}m ago
+                                            ${toMinutesAgo(p.last_ts)}
                                         </td>
                                         <td style="color: var(--text-secondary); font-size: 0.9rem;">
                                             ${p.blocked_reason || '—'}
@@ -1195,7 +1277,7 @@ PATTERNS_TEMPLATE = """
                                     ${currentItems.map(p => `
                                     <tr>
                                         <td style="color: var(--text-secondary);">
-                                            ${Math.floor((Date.now() / 1000 - p.timestamp)/60)}m ago
+                                            ${toMinutesAgo(p.timestamp)}
                                         </td>
                                         <td>
                                             <span class="status-badge status-online" style="font-size: 0.75rem;">${p.scenario}</span>
@@ -1236,10 +1318,10 @@ PATTERNS_TEMPLATE = """
                 html += `</div>`;
             }
             
-            if (!html || (html.includes('status-section') && !patterns.clusters?.length && !patterns.accumulations?.length && !patterns.bursts?.length && !insider?.published_history?.length)) {
+            if (!html || (html.includes('status-section') && !(patterns.clusters && patterns.clusters.length) && !(patterns.accumulations && patterns.accumulations.length) && !(patterns.bursts && patterns.bursts.length) && !(insider && insider.published_history && insider.published_history.length))) {
                 if (!html || !html.includes('status-section')) {
                     html = '<div class="empty-state">No emerging patterns detected currently.</div>';
-                } else if (!insider?.published_history?.length) {
+                } else if (!(insider && insider.published_history && insider.published_history.length)) {
                     html += '<div class="empty-state">No alerts published yet.</div>';
                 }
             }
@@ -1298,14 +1380,61 @@ PATTERNS_TEMPLATE = """
             return html;
         }
 
+        function normalizePatternsPayload(data) {
+            if (data && data.insider) {
+                return data;
+            }
+            return {
+                timestamp: data && data.timestamp ? data.timestamp : null,
+                insider: {
+                    enabled: data && data.enabled !== undefined ? data.enabled : true,
+                    pending_patterns: (data && data.patterns) || {},
+                    scenarios: (data && data.scenarios) || {},
+                    published_history: (data && data.recent_published) || []
+                }
+            };
+        }
+
+        function safeRenderPatterns(data) {
+            try {
+                renderPatterns(data);
+                return true;
+            } catch (err) {
+                console.error('renderPatterns failed:', err);
+                const insider = (data && data.insider) || {};
+                const pending = insider.pending_patterns || {};
+                const clusters = (pending.clusters || []).length;
+                const accumulations = (pending.accumulations || []).length;
+                const bursts = (pending.bursts || []).length;
+                document.getElementById('patterns-content').innerHTML =
+                    `<div class="empty-state" style="color: var(--accent-red);">
+                        Failed to render patterns (${(err && err.message) ? err.message : 'unknown error'}).
+                        <div style="margin-top:8px;color:var(--text-secondary);font-size:0.9rem;">
+                            Data snapshot: CLUSTERS ${clusters}, ACCUMULATIONS ${accumulations}, BURSTS ${bursts}
+                        </div>
+                    </div>`;
+                return false;
+            }
+        }
+
         async function loadData() {
             try {
-                const token = new URLSearchParams(window.location.search).get('token');
-                const apiUrl = token ? `/api/status?token=${encodeURIComponent(token)}` : '/api/status';
-                const response = await fetch(apiUrl);
+                if (window.__EMBEDDED_PATTERNS__) {
+                    const normalizedEmbedded = normalizePatternsPayload(window.__EMBEDDED_PATTERNS__);
+                    window.__EMBEDDED_PATTERNS__ = null;
+                    window.lastRenderDataAdmin = normalizedEmbedded;
+                    safeRenderPatterns(normalizedEmbedded);
+                    return;
+                }
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                const response = await fetch('/api/public_patterns', { signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
-                window.lastRenderDataAdmin = data;
-                renderPatterns(data);
+                const normalized = normalizePatternsPayload(data);
+                window.lastRenderDataAdmin = normalized;
+                safeRenderPatterns(normalized);
             } catch (error) {
                 console.error('Failed to load data:', error);
                 document.getElementById('patterns-content').innerHTML = 
@@ -1317,7 +1446,7 @@ PATTERNS_TEMPLATE = """
         window.changePubPageAdmin = function(delta) {
             window.currentPagePublishedAdmin += delta;
             if (window.lastRenderDataAdmin) {
-                renderPatterns(window.lastRenderDataAdmin);
+                safeRenderPatterns(window.lastRenderDataAdmin);
             }
         };
 
@@ -1325,7 +1454,7 @@ PATTERNS_TEMPLATE = """
         loadData();
         
         // Auto-refresh
-        setInterval(loadData, 300000);
+        setInterval(loadData, __INSIDER_JS_REFRESH_MS__);
     </script>
 </body>
 </html>
@@ -1340,7 +1469,7 @@ PUBLIC_PATTERNS_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="index, follow">
     <title>PolymarketWhales – Live Whale Signals &amp; Smart Money Alerts on Polymarket</title>
-    <link rel="icon" type="image/png" href="/favicon.ico">
+    <link rel="icon" type="image/png" href="/favicon.png?v=4">
     <meta name="description" content="PolymarketWhales — real-time intelligence feed tracking unusual positioning, accumulation patterns, and volume bursts on Polymarket. Free behavioral analytics for prediction market traders.">
     <link rel="canonical" href="https://polymarketwhales.online/public">
     <meta property="og:type" content="website">
@@ -1705,7 +1834,7 @@ PUBLIC_PATTERNS_TEMPLATE = """
             <p class="empty">Loading...</p>
         </div>
         <footer>
-            <span id="last-update" style="display: none;">-</span>Updated every 5 minutes
+            <span id="last-update" style="display: none;">-</span>Updated every __INSIDER_REFRESH_HUMAN__
         </footer>
     </div>
     <script>
@@ -1729,13 +1858,27 @@ PUBLIC_PATTERNS_TEMPLATE = """
         function withRef(url) {
             if (!url) return '';
             const sep = url.includes('?') ? '&' : '?';
-            return `${url}${sep}via=PmWhlAlertsWeb`;
+            return `${url}${sep}r=PolymarketWhaleAlrts`;
         }
 
         function toMinutesAgo(ts) {
             if (!ts) return 'N/A';
-            const diff = Math.max(0, Math.floor((Date.now() / 1000 - ts) / 60));
-            return diff + 'm ago';
+            const now = Date.now() / 1000;
+            const diffSec = Math.max(0, Math.floor(now - ts));
+            const min = 60;
+            const hour = 3600;
+            const day = 86400;
+            const week = 7 * day;
+            const month = 30 * day;
+
+            if (diffSec < hour) return Math.floor(diffSec / min) + 'm ago';
+            if (diffSec < day) return Math.floor(diffSec / hour) + 'h ago';
+            if (diffSec < week) return Math.floor(diffSec / day) + 'd ago';
+            if (diffSec < month) return Math.floor(diffSec / week) + 'w ago';
+
+            const d = new Date(ts * 1000);
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
         }
 
         function renderWalletsWithAppended(p) {
@@ -2014,7 +2157,7 @@ PUBLIC_PATTERNS_TEMPLATE = """
                     <p>The focus is not on predictions, but on participant behavior patterns that may indicate early information or high conviction positioning.</p>
                     <p>This is not financial advice. These are behavioral signals.</p>
                     <p class="note"><strong>Distribution:</strong> confirmed signals are published in Telegram: <a class="market-link" href="https://t.me/PMInsiderSignals" target="_blank" rel="noopener noreferrer">@PMInsiderSignals</a>.</p>
-                    <p class="note"><strong>Platform:</strong> data is sourced from <a class="market-link" href="https://polymarket.com?via=PmWhlAlertsWeb" target="_blank" rel="noopener noreferrer">Polymarket</a>.</p>
+                    <p class="note"><strong>Platform:</strong> data is sourced from <a class="market-link" href="https://polymarket.com/?r=PolymarketWhaleAlrts" target="_blank" rel="noopener noreferrer">Polymarket</a>.</p>
                     <p class="note"><strong>Signal engine:</strong> signals are formed by <a class="market-link" href="https://t.me/PolymarketWhales_bot" target="_blank" rel="noopener noreferrer">@PolymarketWhales_bot</a>.</p>
 
                     <p><strong>Signal Types</strong></p>
@@ -2105,7 +2248,13 @@ PUBLIC_PATTERNS_TEMPLATE = """
 
         async function loadData() {
             try {
-                const response = await fetch('/api/public_patterns');
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                const response = await fetch('/api/public_patterns', { signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
                 const data = await response.json();
                 renderPage(data);
             } catch (err) {
@@ -2122,7 +2271,7 @@ PUBLIC_PATTERNS_TEMPLATE = """
         };
 
         loadData();
-        setInterval(loadData, 300000);
+        setInterval(loadData, __INSIDER_JS_REFRESH_MS__);
     </script>
 </body>
 </html>
@@ -2137,7 +2286,7 @@ WHALE_TRADES_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="index, follow">
     <title>PolymarketWhales – Live Whale Trades on Polymarket | Real-Time $10K+ BUY Orders</title>
-    <link rel="icon" type="image/png" href="/favicon.ico">
+    <link rel="icon" type="image/png" href="/favicon.png?v=4">
     <meta name="description" content="PolymarketWhales — track large whale BUY orders over $10,000 on Polymarket in real-time. See trader PnL, open positions, wallet age, and entry prices as they happen.">
     <link rel="canonical" href="https://polymarketwhales.online/whale-trades">
     <meta property="og:type" content="website">
@@ -2657,7 +2806,7 @@ WHALE_TRADES_TEMPLATE = """
         function withRef(url) {
             if (!url) return '';
             const sep = url.includes('?') ? '&' : '?';
-            return url + sep + 'via=PmWhlAlertsWeb';
+            return url + sep + 'r=PolymarketWhaleAlrts';
         }
 
         // ========== FILTER & RENDER ==========
@@ -2769,8 +2918,16 @@ WHALE_TRADES_TEMPLATE = """
         }
 
         function fetchTrades() {
-            fetch('/api/whale_trades?limit=200')
-                .then(r => r.json())
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            fetch('/api/whale_trades?limit=200', { signal: controller.signal })
+                .then(r => {
+                    clearTimeout(timeoutId);
+                    if (!r.ok) {
+                        throw new Error(`HTTP ${r.status}`);
+                    }
+                    return r.json();
+                })
                 .then(data => {
                     allTrades = data.trades || [];
                     render();
@@ -2886,6 +3043,7 @@ def _public_patterns_payload() -> dict:
 
     return {
         "timestamp": status.get("timestamp"),
+        "enabled": insider.get("enabled"),
         "patterns": {
             "clusters": [sanitize_pattern(p) for p in pending.get("clusters", [])],
             "accumulations": [sanitize_pattern(p) for p in pending.get("accumulations", [])],
@@ -2905,7 +3063,11 @@ def index():
     """Serve the dashboard HTML page."""
     if not _is_admin_authorized():
         return jsonify({"error": "Forbidden"}), 403
-    return Response(HTML_TEMPLATE, mimetype='text/html')
+    status_payload = get_full_status()
+    html = _apply_insider_refresh_to_html(HTML_TEMPLATE).replace(
+        "__EMBEDDED_STATUS_JSON__", _safe_inline_json(status_payload)
+    )
+    return Response(html, mimetype='text/html')
 
 
 @app.route('/patterns')
@@ -2913,7 +3075,11 @@ def patterns():
     """Serve the active patterns page."""
     if not _is_admin_authorized():
         return jsonify({"error": "Forbidden"}), 403
-    return Response(PATTERNS_TEMPLATE, mimetype='text/html')
+    status_payload = _public_patterns_payload()
+    html = _apply_insider_refresh_to_html(PATTERNS_TEMPLATE).replace(
+        "__EMBEDDED_PATTERNS_JSON__", _safe_inline_json(status_payload)
+    )
+    return Response(html, mimetype='text/html')
 
 
 @app.route('/api/status')
@@ -2927,7 +3093,7 @@ def api_status():
 @app.route('/public')
 def public_patterns():
     """Serve public patterns page."""
-    return Response(PUBLIC_PATTERNS_TEMPLATE, mimetype='text/html')
+    return Response(_apply_insider_refresh_to_html(PUBLIC_PATTERNS_TEMPLATE), mimetype='text/html')
 
 
 @app.route('/whale-trades')
@@ -2996,7 +3162,11 @@ def sitemap_xml():
 def run_server(port=5000, host='0.0.0.0'):
     """Run Flask server in a separate thread."""
     def run():
-        app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)
+        try:
+            from waitress import serve
+            serve(app, host=host, port=port, _quiet=True, threads=8, channel_timeout=30, recv_bytes=65536, send_bytes=65536)
+        except ImportError:
+            app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)
     
     thread = threading.Thread(target=run, daemon=True)
     thread.start()

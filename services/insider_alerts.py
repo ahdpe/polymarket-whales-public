@@ -63,6 +63,11 @@ DEFAULT_SETTINGS = {
     'burst_min_direction_pct': '70',
     'burst_include_profiles': 'true',
     'burst_max_positions': '3',
+    
+    # Optional alternative mode: track full position while wallet is in buffer.
+    # Disabled by default to keep current bot behavior unchanged.
+    'position_tracker_enabled': 'false',
+    'position_tracker_drop_sold': 'true',
 }
 
 
@@ -414,19 +419,19 @@ class InsiderAlertsService:
 
         # Check CLUSTER
         if self.settings.get('cluster_enabled', 'false').lower() == 'true':
-            alert_data = self._check_cluster(market_id)
+            alert_data = await self._check_cluster(market_id)
             if alert_data:
                 self._publish_alert('CLUSTER', alert_data)
 
         # Check ACCUMULATION
         if self.settings.get('accumulation_enabled', 'false').lower() == 'true':
-            alert_data = self._check_accumulation(market_id)
+            alert_data = await self._check_accumulation(market_id)
             if alert_data:
                 self._publish_alert('ACCUMULATION', alert_data)
 
         # Check BURST
         if self.settings.get('burst_enabled', 'false').lower() == 'true':
-            alert_data = self._check_burst(market_id)
+            alert_data = await self._check_burst(market_id)
             if alert_data:
                 self._publish_alert('BURST', alert_data)
 
@@ -531,7 +536,7 @@ class InsiderAlertsService:
                             alerts_storage.mark_trades_consumed(trade_ids, 'APPENDED')
                             logger.info(f"Appended {len(trade_ids)} new trades ({len(new_wallets_set)} wallets) to active {scenario} alert for {market_id}")
 
-    def _check_cluster(self, market_id: str) -> Optional[Dict[str, Any]]:
+    async def _check_cluster(self, market_id: str) -> Optional[Dict[str, Any]]:
         try:
             interval = float(self.settings.get('cluster_interval_hours', '2'))
             max_age = float(self.settings.get('cluster_wallet_age_hours', '24'))
@@ -580,8 +585,13 @@ class InsiderAlertsService:
             if not trades:
                 return None
 
-            # Filter by min individual trade size for calculation
-            trades = [t for t in trades if t['trade_size_usd'] >= min_usd]
+            # Optional mode: while wallet is in buffer, use current position snapshot
+            # so clustered small orders are accounted in total position.
+            if self._is_position_tracker_enabled():
+                trades = await self._apply_position_tracking(market_id, trades, min_usd)
+            else:
+                # Legacy behavior: filter by min individual trade size for calculation
+                trades = [t for t in trades if t['trade_size_usd'] >= min_usd]
             if not trades:
                 return None
             
@@ -682,7 +692,7 @@ class InsiderAlertsService:
             logger.error(f"Error in CLUSTER check for {market_id}: {e}", exc_info=True)
             return None
 
-    def _check_accumulation(self, market_id: str) -> Optional[Dict[str, Any]]:
+    async def _check_accumulation(self, market_id: str) -> Optional[Dict[str, Any]]:
         """Check for slow multi-wallet accumulation pattern."""
         try:
             interval_days = float(self.settings.get('accumulation_interval_days', '14'))
@@ -713,7 +723,10 @@ class InsiderAlertsService:
                 if self.settings.get(cat_key, 'true').lower() != 'true':
                     return None
 
-            large_trades = [t for t in trades if t['trade_size_usd'] >= min_usd]
+            if self._is_position_tracker_enabled():
+                large_trades = await self._apply_position_tracking(market_id, trades, min_usd)
+            else:
+                large_trades = [t for t in trades if t['trade_size_usd'] >= min_usd]
             if not large_trades:
                 return None
             
@@ -826,7 +839,7 @@ class InsiderAlertsService:
             logger.error(f"Error in ACCUMULATION check for {market_id}: {e}", exc_info=True)
             return None
 
-    def _check_burst(self, market_id: str) -> Optional[Dict[str, Any]]:
+    async def _check_burst(self, market_id: str) -> Optional[Dict[str, Any]]:
         try:
             interval = float(self.settings.get('burst_interval_hours', '1'))
             max_age = float(self.settings.get('burst_wallet_age_hours', '72'))
@@ -858,7 +871,10 @@ class InsiderAlertsService:
                 if self.settings.get(cat_key, 'true').lower() != 'true':
                     return None
 
-            qualifying_trades = [t for t in trades if t['trade_size_usd'] >= min_usd]
+            if self._is_position_tracker_enabled():
+                qualifying_trades = await self._apply_position_tracking(market_id, trades, min_usd)
+            else:
+                qualifying_trades = [t for t in trades if t['trade_size_usd'] >= min_usd]
             if not qualifying_trades:
                 return None
             
@@ -956,6 +972,140 @@ class InsiderAlertsService:
         except Exception as e:
             logger.error(f"Error in BURST check for {market_id}: {e}", exc_info=True)
             return None
+
+    def _is_position_tracker_enabled(self) -> bool:
+        return self.settings.get('position_tracker_enabled', 'false').lower() == 'true'
+
+    async def _apply_position_tracking(
+        self,
+        market_id: str,
+        trades: List[Dict[str, Any]],
+        min_usd: float,
+    ) -> List[Dict[str, Any]]:
+        """
+        Optional alternative mode:
+        - wallets enter buffer by existing filters (>=500 raw trade already enforced upstream)
+        - while in buffer, poll current market position and use full position value
+        - if wallet sold out, remove its buffered trades
+        """
+        if not trades:
+            return []
+        if not self._poly_service:
+            # Graceful fallback: keep legacy minimum trade filtering
+            return [t for t in trades if t.get('trade_size_usd', 0) >= min_usd]
+
+        # Keep latest trade metadata per wallet+outcome to format alerts.
+        latest_meta: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        wallet_outcome_volume: Dict[Tuple[str, str], float] = defaultdict(float)
+        wallet_total_trade_volume: Dict[str, float] = defaultdict(float)
+        wallet_ids: Dict[str, List[int]] = defaultdict(list)
+        wallet_outcome_prices: Dict[Tuple[str, str], List[float]] = defaultdict(list)
+        wallet_outcome_shares: Dict[Tuple[str, str], float] = defaultdict(float)
+
+        for t in trades:
+            wallet = t.get('wallet')
+            outcome = (t.get('outcome') or '').upper()
+            if not wallet or not outcome:
+                continue
+            key = (wallet, outcome)
+            vol = float(t.get('trade_size_usd', 0) or 0)
+            wallet_outcome_volume[key] += vol
+            wallet_total_trade_volume[wallet] += vol
+            if t.get('id'):
+                wallet_ids[wallet].append(int(t['id']))
+
+            if t.get('price') is not None and float(t.get('price')) > 0:
+                p = float(t.get('price'))
+                wallet_outcome_prices[key].append(p)
+                wallet_outcome_shares[key] += (vol / p)
+
+            prev = latest_meta.get(key)
+            if not prev or int(t.get('timestamp') or 0) >= int(prev.get('timestamp') or 0):
+                latest_meta[key] = t
+
+        if not wallet_total_trade_volume:
+            return []
+
+        drop_sold = self.settings.get('position_tracker_drop_sold', 'true').lower() == 'true'
+        now_ts = int(time.time())
+        effective_trades: List[Dict[str, Any]] = []
+        confirm_rounds = max(1, int(os.getenv("INSIDER_POSITION_CONFIRM_ROUNDS", "3")))
+        confirm_pause = max(0.1, float(os.getenv("INSIDER_POSITION_CONFIRM_PAUSE_SEC", "1.5")))
+
+        for wallet in wallet_total_trade_volume.keys():
+            trade_sum_wallet = float(wallet_total_trade_volume[wallet] or 0.0)
+            try:
+                pos_val, pos_st = await self._poly_service.check_wallet_has_position_safe(wallet, market_id)
+            except Exception as e:
+                logger.debug(f"Position tracker check failed for {wallet[:10]}...: {e}")
+                pos_val, pos_st = (0.0, "error")
+
+            if pos_st == "error":
+                # API/timeout: never infer "sold" — keep trade-based volume in buffer
+                current_position_usd = trade_sum_wallet
+            elif float(pos_val or 0) > 0:
+                current_position_usd = float(pos_val or 0)
+            else:
+                # Reported zero / no row: require several matching empty reads before consuming
+                if drop_sold and wallet_ids.get(wallet):
+                    really_gone = await self._poly_service.confirm_wallet_has_no_position(
+                        wallet,
+                        market_id,
+                        rounds=confirm_rounds,
+                        pause_sec=confirm_pause,
+                    )
+                    if really_gone:
+                        try:
+                            alerts_storage.mark_trades_consumed(wallet_ids[wallet], "SOLD_FROM_BUFFER")
+                        except Exception as e:
+                            logger.debug(f"Failed to cleanup sold wallet {wallet[:10]}...: {e}")
+                        continue
+                current_position_usd = trade_sum_wallet
+
+            if current_position_usd <= 0:
+                continue
+
+            # Use the dominant wallet direction from buffered trades;
+            # distribute full position to that direction.
+            wallet_keys = [k for k in wallet_outcome_volume.keys() if k[0] == wallet]
+            if not wallet_keys:
+                continue
+            dominant_key = max(wallet_keys, key=lambda k: wallet_outcome_volume[k])
+            dominant_outcome = dominant_key[1]
+            trade_sum = wallet_outcome_volume[dominant_key]
+            effective_volume = max(trade_sum, current_position_usd)
+            if effective_volume < min_usd:
+                continue
+
+            prices = wallet_outcome_prices.get(dominant_key, [])
+            min_entry_price = min(prices) if prices else None
+            max_entry_price = max(prices) if prices else None
+
+            base = latest_meta.get(dominant_key, {})
+            effective_trades.append({
+                'id': base.get('id'),
+                'market_id': market_id,
+                'wallet': wallet,
+                'wallet_age_hours': base.get('wallet_age_hours'),
+                'outcome': dominant_outcome,
+                'trade_size_usd': effective_volume,
+                'cost_basis_usd': trade_sum,
+                'min_entry_price': min_entry_price,
+                'max_entry_price': max_entry_price,
+                'total_shares': wallet_outcome_shares.get(dominant_key, 0.0),
+                'trade_action': 'buy',
+                # Keep real last trade activity timestamp for dashboard "Last activity".
+                # Do not use polling time, otherwise every cycle looks like "0m ago".
+                'timestamp': int(base.get('timestamp') or now_ts),
+                'username': base.get('username'),
+                'market_title': base.get('market_title'),
+                'event_slug': base.get('event_slug'),
+                'category': base.get('category'),
+                'open_positions': base.get('open_positions'),
+                'price': base.get('price'),
+            })
+
+        return effective_trades
 
     def _calculate_directionality(self, trades: List[Dict]) -> Tuple[str, float]:
         if not trades:
@@ -1057,7 +1207,7 @@ class InsiderAlertsService:
                 w = t.get('wallet')
                 if not w: continue
                 if w not in wallet_data:
-                    # Get display name - shorten if it's a wallet address
+                    # Get display name
                     raw_name = t.get('username') or w
                     if raw_name.startswith('0x') and len(raw_name) > 20:
                         display_name = f"{raw_name[:5]}...{raw_name[-4:]}"
@@ -1065,32 +1215,50 @@ class InsiderAlertsService:
                         display_name = raw_name
                     
                     wallet_data[w] = {
-                        'volume': 0,
-                        'total_cost': 0,
-                        'volume_for_price': 0,
+                        'volume': 0.0,
+                        'cost_basis': 0.0,
+                        'total_shares': 0.0,
+                        'min_price': None,
+                        'max_price': None,
                         'name': display_name,
                         'open_positions': t.get('open_positions'),
                         'wallet_age_hours': t.get('wallet_age_hours')
                     }
-                wallet_data[w]['volume'] += t.get('trade_size_usd', 0)
                 
-                # Calculate weighted average entry price for the dominant outcome
+                vol = float(t.get('trade_size_usd', 0) or 0)
+                wallet_data[w]['volume'] += vol
+                wallet_data[w]['cost_basis'] += float(t.get('cost_basis_usd', vol))
+                
                 t_outcome = t.get('outcome', '').upper()
                 if t_outcome == outcome.upper():
-                    p = t.get('price')
-                    if p is not None:
-                        vol = t.get('trade_size_usd', 0)
-                        wallet_data[w]['total_cost'] += vol * p
-                        wallet_data[w]['volume_for_price'] += vol
+                    t_min = t.get('min_entry_price')
+                    t_max = t.get('max_entry_price')
+                    t_p = t.get('price')
+                    
+                    min_p = t_min if t_min is not None else t_p
+                    max_p = t_max if t_max is not None else t_p
+                    
+                    if min_p is not None:
+                        curr_min = wallet_data[w]['min_price']
+                        wallet_data[w]['min_price'] = min(curr_min, min_p) if curr_min is not None else min_p
+                    if max_p is not None:
+                        curr_max = wallet_data[w]['max_price']
+                        wallet_data[w]['max_price'] = max(curr_max, max_p) if curr_max is not None else max_p
+                        
+                    # Handle shares
+                    ts = t.get('total_shares')
+                    if ts is not None:
+                        wallet_data[w]['total_shares'] += ts
+                    elif t_p and t_p > 0:
+                        wallet_data[w]['total_shares'] += (vol / t_p)
             
-            # Sort by volume (show all participants)
             sorted_w = sorted(wallet_data.items(), key=lambda x: x[1]['volume'], reverse=True)
             
             for w, data in sorted_w:
                 n = data['name']
                 v = data['volume']
+                cb = data['cost_basis']
                 
-                # Format wallet age
                 age_str = ""
                 if data['wallet_age_hours'] is not None:
                     hours = data['wallet_age_hours']
@@ -1104,29 +1272,42 @@ class InsiderAlertsService:
                             months = days / 30
                             age_str = f"{months:.1f}mo"
                 
-                # Format positions
                 pos_str = ""
                 if data['open_positions'] is not None:
                     pos_str = f"{data['open_positions']} pos"
                 
-                # Build info string
+                # Format current position and cost basis percentages
+                curr_pct_str = ""
+                cost_pct_str = ""
                 
-                # Calculate average price
-                price_str = ""
-                if data['volume_for_price'] > 0:
-                    avg_price = (data['total_cost'] / data['volume_for_price']) * 100
-                    price_str = f"({outcome} {avg_price:.0f}%)"
+                if data['total_shares'] > 0:
+                    curr_price = v / data['total_shares']
+                    # Ensure it doesn't exceed 100% or go below 0% logically due to edge cases
+                    curr_price_pct = max(0, min(100, curr_price * 100))
+                    curr_pct_str = f" ({curr_price_pct:.0f}%)"
                 
-                info_parts = [f"*${v:,.0f}{price_str}*"]
-                if age_str:
-                    info_parts.append(age_str)
-                if pos_str:
-                    info_parts.append(pos_str)
-                info = " | ".join(info_parts)
+                min_p = data['min_price']
+                max_p = data['max_price']
+                if min_p is not None and max_p is not None:
+                    min_pct = min_p * 100
+                    max_pct = max_p * 100
+                    if max_pct - min_pct > 0.5:
+                        cost_pct_str = f" ({min_pct:.0f}-{max_pct:.0f}%)"
+                    elif min_pct >= 0:
+                        cost_pct_str = f" ({min_pct:.0f}%)"
+                        
+                header_parts = []
+                if age_str: header_parts.append(age_str)
+                if pos_str: header_parts.append(pos_str)
+                header_info = " | ".join(header_parts)
+                if header_info:
+                    header_info = f" | {header_info}"
                 
-                # Mark wallets with shared funding
                 shared_marker = "⚠️ " if shared_wallets and w.lower() in {sw.lower() for sw in shared_wallets} else ""
-                msg += f"• {shared_marker}[{n}](https://polymarket.com/profile/{w}) {info}\n"
+                
+                msg += f"• {shared_marker}[{n}](https://polymarket.com/profile/{w}){header_info}\n"
+                msg += f"  Hold: ${v:,.0f}{curr_pct_str}\n"
+                msg += f"  Cost: ${cb:,.0f}{cost_pct_str}\n\n"
 
 
         # Removed market ID display
@@ -1572,6 +1753,25 @@ class InsiderAlertsService:
             'min_dir': self.settings.get('accumulation_min_direction_pct', '70'),
             'profiles': self.settings.get('accumulation_include_profiles', 'true'),
             'max_pos': self.settings.get('accumulation_max_positions', '3')
+        }
+        
+        status['position_tracker'] = {
+            'enabled': self.settings.get('position_tracker_enabled', 'false'),
+            'drop_sold': self.settings.get('position_tracker_drop_sold', 'true'),
+        }
+        tracked_markets = set(self._active_clusters.keys()) | set(self._active_accumulations.keys()) | set(self._active_bursts.keys())
+        tracked_wallets = set()
+        for buf in (self._active_clusters, self._active_accumulations, self._active_bursts):
+            for data in buf.values():
+                for w in data.get('wallet_list', []) or []:
+                    if w:
+                        tracked_wallets.add(w)
+        status['position_tracker_stats'] = {
+            'tracked_markets': len(tracked_markets),
+            'tracked_wallets': len(tracked_wallets),
+            'markets_cluster': len(self._active_clusters),
+            'markets_accumulation': len(self._active_accumulations),
+            'markets_burst': len(self._active_bursts),
         }
 
         # Database stats

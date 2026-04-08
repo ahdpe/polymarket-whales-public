@@ -1,8 +1,10 @@
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
+from aiogram.dispatcher.middlewares.base import BaseMiddleware
 from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery,
-    ReplyKeyboardMarkup, KeyboardButton
+    ReplyKeyboardMarkup, KeyboardButton,
+    TelegramObject,
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -47,15 +49,15 @@ _poly_service = None
 
 def add_polymarket_ref(text: str) -> str:
     """
-    Add via=PolymarketWhaleAlerts to all polymarket.com URLs in text.
+    Add r=PolymarketWhaleAlrts to all polymarket.com URLs in text.
     
     Test cases:
-    1. "https://polymarket.com" → "https://polymarket.com?via=PolymarketWhaleAlerts"
-    2. "https://polymarket.com/event/slug" → "https://polymarket.com/event/slug?via=PolymarketWhaleAlerts"
-    3. "https://polymarket.com/profile/0x123?tab=history" → "https://polymarket.com/profile/0x123?tab=history&via=PolymarketWhaleAlerts"
-    4. "https://polymarket.com?via=PolymarketWhaleAlerts" → unchanged
+    1. "https://polymarket.com" → "https://polymarket.com/?r=PolymarketWhaleAlrts"
+    2. "https://polymarket.com/event/slug" → "https://polymarket.com/event/slug?r=PolymarketWhaleAlrts"
+    3. "https://polymarket.com/profile/0x123?tab=history" → "https://polymarket.com/profile/0x123?tab=history&r=PolymarketWhaleAlrts"
+    4. "https://polymarket.com/?r=PolymarketWhaleAlrts" → unchanged
     5. "https://google.com" → unchanged
-    6. "[Market](https://polymarket.com/event/x)" → "[Market](https://polymarket.com/event/x?via=PolymarketWhaleAlerts)"
+    6. "[Market](https://polymarket.com/event/x)" → "[Market](https://polymarket.com/event/x?r=PolymarketWhaleAlrts)"
     """
     # Fast path: skip if no polymarket.com in text
     if "polymarket.com" not in text:
@@ -64,8 +66,8 @@ def add_polymarket_ref(text: str) -> str:
     try:
         from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
         
-        REF_PARAM = "via"
-        REF_VALUE = "PolymarketWhaleAlerts"
+        REF_PARAM = "r"
+        REF_VALUE = "PolymarketWhaleAlrts"
         
         def transform_url(url: str) -> str:
             parsed = urlparse(url)
@@ -78,7 +80,8 @@ def add_polymarket_ref(text: str) -> str:
             
             query_params[REF_PARAM] = [REF_VALUE]
             new_query = urlencode(query_params, doseq=True)
-            new_parsed = parsed._replace(query=new_query)
+            normalized_path = parsed.path or "/"
+            new_parsed = parsed._replace(path=normalized_path, query=new_query)
             return urlunparse(new_parsed)
         
         # Match URLs in text (handles markdown links and plain URLs)
@@ -137,6 +140,117 @@ logger = logging.getLogger(__name__)
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()
+
+# ---------------------------------------------------------------------------
+# Telegram long-polling health (admin alerts)
+#
+# Когда «алерты уходят, а команды молчат», чаще всего:
+# 1) У того же BOT TOKEN где-то ещё крутится getUpdates (второй сервер/тест).
+# 2) На токене включён webhook — sendMessage работает, polling не получает апдейты.
+# 3) Реже: перегруз event loop / сеть (уже смягчено лимитом параллельных хендлеров).
+#
+# Следим: (a) каждый входящий update — middleware; (b) getWebhookInfo раз в N минут.
+# ---------------------------------------------------------------------------
+_last_telegram_incoming_ts: float = 0.0
+_prev_webhook_pending_count: int | None = None
+_telegram_health_boot_ts: float = 0.0
+_admin_health_alert_ts: dict[str, float] = {}
+_HEALTH_ALERT_COOLDOWN_SEC = 6 * 3600
+_HEALTH_WATCHDOG_INTERVAL_SEC = 600
+_HEALTH_WARMUP_SEC = 900
+_HEALTH_SILENCE_SEC = 20 * 60
+_HEALTH_PENDING_GROWTH_MIN = 18
+
+
+class _LastIncomingUpdateMiddleware(BaseMiddleware):
+    """Фиксирует время последнего update, дошедшего до диспетчера."""
+
+    async def __call__(
+        self,
+        handler,
+        event: TelegramObject,
+        data: dict,
+    ):
+        global _last_telegram_incoming_ts
+        _last_telegram_incoming_ts = time.time()
+        return await handler(event, data)
+
+
+dp.update.outer_middleware(_LastIncomingUpdateMiddleware())
+
+
+def _health_alert_ready(key: str) -> bool:
+    now = time.time()
+    if now - _admin_health_alert_ts.get(key, 0) < _HEALTH_ALERT_COOLDOWN_SEC:
+        return False
+    _admin_health_alert_ts[key] = now
+    return True
+
+
+async def _telegram_polling_health_watchdog():
+    """Периодически проверяет webhook/pending и при подозрении шлёт OWNER_ID."""
+    global _prev_webhook_pending_count
+    boot = _telegram_health_boot_ts or time.time()
+
+    await asyncio.sleep(90)
+
+    while True:
+        await asyncio.sleep(_HEALTH_WATCHDOG_INTERVAL_SEC)
+        try:
+            wh = await bot.get_webhook_info()
+            url = (wh.url or "").strip()
+            pending = int(wh.pending_update_count or 0)
+
+            if url and _health_alert_ready("webhook"):
+                await send_admin_notification(
+                    "🚨 <b>Telegram: у бота включён webhook</b>\n\n"
+                    "При работе через <b>long polling</b> входящие обновления обычно "
+                    "<b>не приходят</b>, а исходящие <code>sendMessage</code> могут "
+                    "продолжать работать.\n\n"
+                    "<b>Что сделать:</b> отключить webhook для этого токена "
+                    "(API <code>deleteWebHook</code>), убедиться, что нет второго "
+                    "сервиса с тем же токеном, который выставил webhook.\n\n"
+                    f"URL: <code>{html.escape(url[:500])}</code>",
+                    parse_mode="HTML",
+                )
+
+            now = time.time()
+            if now - boot < _HEALTH_WARMUP_SEC:
+                _prev_webhook_pending_count = pending
+                continue
+
+            silent = (
+                (now - _last_telegram_incoming_ts)
+                if _last_telegram_incoming_ts > 0
+                else (now - boot)
+            )
+            prev = _prev_webhook_pending_count
+            if (
+                prev is not None
+                and silent >= _HEALTH_SILENCE_SEC
+                and pending >= prev + _HEALTH_PENDING_GROWTH_MIN
+                and pending >= 25
+                and _health_alert_ready("pending_growth")
+            ):
+                await send_admin_notification(
+                    "⚠️ <b>Telegram: возможна потеря входящих</b>\n\n"
+                    "Очередь <code>pending_update_count</code> у API растёт, при этом "
+                    "в процесс <b>давно не приходил ни один update</b> (сообщения и callback).\n\n"
+                    "<b>Частые причины:</b>\n"
+                    "• Второй инстанс с тем же <code>TELEGRAM_BOT_TOKEN</code> забирает "
+                    "<code>getUpdates</code>.\n"
+                    "• Раньше был webhook / тестовый сервис с этим токеном.\n"
+                    "• Реже — сбой доставки; помогает перезапуск и поиск дубликатов.\n\n"
+                    f"pending: было <code>{prev}</code> → сейчас <code>{pending}</code>\n"
+                    f"нет входящих update уже <code>{int(silent)}</code> сек\n\n"
+                    "<b>Действия:</b> перезапустить бота; проверить, что везде один токен и "
+                    "один процесс; при сомнениях — сменить токен в BotFather.",
+                    parse_mode="HTML",
+                )
+
+            _prev_webhook_pending_count = pending
+        except Exception as e:
+            logger.warning("Telegram health watchdog error: %s", e)
 
 # Settings file path
 import os
@@ -3272,10 +3386,6 @@ def get_user_open_positions_filter(chat_id):
     """Get user's open positions filter. Returns dict with min_count and max_count (or None)."""
     return user_open_positions.get(chat_id, {'min_count': None, 'max_count': None})
 
-def is_user_active(chat_id):
-    """Check if user is active."""
-    return user_statuses.get(chat_id, True)
-
 
 # ============ ADMIN COMMANDS (Owner Only) ============
 
@@ -3334,6 +3444,8 @@ async def cmd_admin(message: types.Message):
         "/tlgrm_pending — ожидающие алерты",
         "/tlgrm_on / off — глобально вкл/выкл",
         "/tlgrm_channel -100... — ID канала",
+        "/tlgrm_position_tracker on/off — альтернативный режим учета полной позиции в буфере",
+        "/tlgrm_position_tracker_sold on/off — удалять из буфера кошельки, которые закрыли позицию",
         "",
         "=== Категории ===",
         "/tlgrm_cat crypto on",
@@ -4400,6 +4512,21 @@ Probability: `{prob_text}`
 **Database:**
   • Trades stored: {stats['trades_stored']}
   • Alerts published: {stats['alerts_published']}
+"""
+
+    # Optional position tracker status block
+    pt = status.get('position_tracker', {})
+    pt_stats = status.get('position_tracker_stats', {})
+    pt_enabled = "✅" if pt.get('enabled', 'false') == 'true' else "❌"
+    pt_drop_sold = "✅" if pt.get('drop_sold', 'true') == 'true' else "❌"
+    msg += f"""
+
+**Position Tracker (optional mode):**
+  • Enabled: {pt_enabled}
+  • Remove sold from buffer: {pt_drop_sold}
+  • Tracked markets now: {pt_stats.get('tracked_markets', 0)}
+  • Tracked wallets now: {pt_stats.get('tracked_wallets', 0)}
+  • Scenario markets: C={pt_stats.get('markets_cluster', 0)}, A={pt_stats.get('markets_accumulation', 0)}, B={pt_stats.get('markets_burst', 0)}
 
 **Commands:** `/admin` for full list
 """
@@ -5064,6 +5191,53 @@ async def cmd_tlgrm_cluster_profiles(message: types.Message):
     _insider_alerts_service.update_setting('cluster_include_profiles', val)
     await message.answer(f"✅ CLUSTER include profiles: {val}")
 
+@dp.message(Command("tlgrm_position_tracker"))
+async def cmd_tlgrm_position_tracker(message: types.Message):
+    """Enable/disable optional insider position tracker mode."""
+    if message.chat.id != OWNER_ID:
+        return
+    if not _insider_alerts_service:
+        return
+
+    parts = message.text.split()
+    if len(parts) < 2:
+        curr = _insider_alerts_service.settings.get('position_tracker_enabled', 'false')
+        await message.answer(
+            f"Current: {curr}\nUsage: `/tlgrm_position_tracker on|off`",
+            parse_mode="Markdown",
+        )
+        return
+
+    arg = parts[1].lower()
+    val = 'true' if arg in ['on', 'true', '1', 'yes'] else 'false'
+    _insider_alerts_service.update_setting('position_tracker_enabled', val)
+    await message.answer(
+        f"✅ Position tracker mode: {val}\n"
+        f"Checks current position for wallets in insider buffer every scan cycle."
+    )
+
+@dp.message(Command("tlgrm_position_tracker_sold"))
+async def cmd_tlgrm_position_tracker_sold(message: types.Message):
+    """Control removal of sold-out wallets from insider buffer."""
+    if message.chat.id != OWNER_ID:
+        return
+    if not _insider_alerts_service:
+        return
+
+    parts = message.text.split()
+    if len(parts) < 2:
+        curr = _insider_alerts_service.settings.get('position_tracker_drop_sold', 'true')
+        await message.answer(
+            f"Current: {curr}\nUsage: `/tlgrm_position_tracker_sold on|off`",
+            parse_mode="Markdown",
+        )
+        return
+
+    arg = parts[1].lower()
+    val = 'true' if arg in ['on', 'true', '1', 'yes'] else 'false'
+    _insider_alerts_service.update_setting('position_tracker_drop_sold', val)
+    await message.answer(f"✅ Sold-wallet cleanup in buffer: {val}")
+
 @dp.message(Command("tlgrm_cluster_show"))
 async def cmd_tlgrm_cluster_show(message: types.Message):
     """Show detailed CLUSTER settings."""
@@ -5312,6 +5486,19 @@ async def start_telegram():
         logger.info("Periodic cleanup task started")
         
         logger.info("Starting dp.start_polling()...")
+        # Ensure long-polling mode (aiogram does not call delete_webhook automatically).
+        # If a webhook was set elsewhere, outgoing sendMessage still works but getUpdates does not.
+        try:
+            wh = await bot.get_webhook_info()
+            logger.info(
+                "Telegram webhook_info before polling: url=%r pending_update_count=%s",
+                wh.url or "",
+                wh.pending_update_count,
+            )
+            await bot.delete_webhook(drop_pending_updates=False)
+        except Exception as e:
+            logger.warning("Could not reset webhook before polling (continuing): %s", e)
+
         # Add heartbeat task to monitor polling health
         async def polling_heartbeat():
             """Log heartbeat every 5 minutes to confirm polling is alive."""
@@ -5319,8 +5506,14 @@ async def start_telegram():
                 await asyncio.sleep(300)  # 5 minutes
                 logger.info("💓 Telegram polling heartbeat - still alive")
         asyncio.create_task(polling_heartbeat())
+
+        global _telegram_health_boot_ts
+        _telegram_health_boot_ts = time.time()
+        asyncio.create_task(_telegram_polling_health_watchdog())
+        logger.info("Telegram polling health watchdog started")
         
-        await dp.start_polling(bot)
+        # Cap concurrent update handlers so trade/send load cannot starve getUpdates completions.
+        await dp.start_polling(bot, polling_timeout=30, tasks_concurrency_limit=64)
         logger.info("dp.start_polling() completed (should not happen normally)")
     except Exception as e:
         logger.error(f"CRITICAL: Error in start_telegram(): {e}", exc_info=True)

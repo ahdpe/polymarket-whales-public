@@ -1221,6 +1221,10 @@ async def update_published_alert_results():
                                 "UPDATE alerts_published SET result_status = ? WHERE scenario = ? AND market_id = ? AND outcome = ?",
                                 (new_status, scenario, market_id, target_outcome)
                             )
+                            conn.execute(
+                                "UPDATE alerts_published_events SET result_status = ? WHERE scenario = ? AND market_id = ? AND outcome = ?",
+                                (new_status, scenario, market_id, target_outcome)
+                            )
                             logger.debug(f"Updated alert {market_id} status: {current_status} -> {new_status} (Price: {current_price:.3f}, Entry: {entry_price if entry_price is not None else -1:.3f})")
                             
                 except asyncio.TimeoutError:

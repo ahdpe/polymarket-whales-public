@@ -717,7 +717,8 @@ async def daily_report_scheduler():
             await asyncio.sleep(3600)
 
 async def check_insider_scenarios_periodically():
-    """Check for insider patterns every 5 minutes."""
+    """Check for insider patterns on configurable interval."""
+    interval_sec = max(60, int(os.getenv("INSIDER_SCENARIO_CHECK_INTERVAL_SEC", "900")))
     while True:
         try:
             if insider_alerts_service:
@@ -725,7 +726,7 @@ async def check_insider_scenarios_periodically():
         except Exception as e:
             logger.error(f"Error checking insider scenarios: {e}")
         
-        await asyncio.sleep(300)  # 5 minutes
+        await asyncio.sleep(interval_sec)
 
 async def update_alert_results_periodically():
     """Periodically check Polymarket for final outcome prices of recent alerts."""
