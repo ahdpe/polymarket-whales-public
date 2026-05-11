@@ -160,6 +160,7 @@ _HEALTH_WATCHDOG_INTERVAL_SEC = 600
 _HEALTH_WARMUP_SEC = 900
 _HEALTH_SILENCE_SEC = 20 * 60
 _HEALTH_PENDING_GROWTH_MIN = 18
+_queue_zero_sent_streak: int = 0
 
 
 class _LastIncomingUpdateMiddleware(BaseMiddleware):
@@ -6035,12 +6036,14 @@ async def _get_queue_age_stats():
 
 async def _log_queue_stats():
     """Periodically log queue statistics."""
-    global _queue_stats_reset_time, _queue_lag_warn_count
+    global _queue_stats_reset_time, _queue_lag_warn_count, _queue_zero_sent_streak
     
     while True:
         await asyncio.sleep(60)  # Every minute
         
         try:
+            admin_alert_message = None
+
             async with _queue_stats_lock:
                 queue_size = alert_queue.qsize() if alert_queue else 0
                 oldest_age_sec, avg_age_sec = await _get_queue_age_stats()
@@ -6074,17 +6077,49 @@ async def _log_queue_stats():
                 skipped_prequeue_per_min = queue_stats.get('skipped_prequeue_per_min', 0)
                 skipped_worker_gate_per_min = queue_stats.get('skipped_worker_gate_per_min', 0)
                 requeued_per_min = queue_stats.get('requeued_per_min', 0)
+                sent_per_min = queue_stats.get('sent_per_min', 0)
+                dropped_per_min = queue_stats.get('dropped_per_min', 0)
                 
                 logger.info(
                     f"📊 Queue stats: queue_size={queue_size}{age_info}, "
-                    f"sent_per_min={queue_stats.get('sent_per_min', 0)}, "
-                    f"dropped_per_min={queue_stats.get('dropped_per_min', 0)}, "
+                    f"sent_per_min={sent_per_min}, "
+                    f"dropped_per_min={dropped_per_min}, "
                     f"requeued_per_min={requeued_per_min}, "
                     f"skipped_prequeue_per_min={skipped_prequeue_per_min}, "
                     f"skipped_worker_gate_per_min={skipped_worker_gate_per_min}, "
                     f"retryafter_per_min={retryafter_count}, "
                     f"worker_count={len(worker_tasks)}{warn_info}"
                 )
+
+                # Queue-stall health check: there is incoming flow, but nothing is sent.
+                incoming_flow_per_min = (
+                    requeued_per_min
+                    + skipped_prequeue_per_min
+                    + skipped_worker_gate_per_min
+                    + retryafter_count
+                    + dropped_per_min
+                )
+                if incoming_flow_per_min > 0 and sent_per_min == 0:
+                    _queue_zero_sent_streak += 1
+                else:
+                    _queue_zero_sent_streak = 0
+
+                if _queue_zero_sent_streak >= 3 and _health_alert_ready("queue_zero_sent_with_flow"):
+                    admin_alert_message = (
+                        "🚨 <b>Telegram queue stall suspected</b>\n\n"
+                        "3+ minutes in a row queue has <b>incoming flow</b>, "
+                        "but <b>no successful sends</b>.\n\n"
+                        f"queue_size: <code>{queue_size}</code>\n"
+                        f"sent_per_min: <code>{sent_per_min}</code>\n"
+                        f"incoming_flow_per_min: <code>{incoming_flow_per_min}</code>\n"
+                        f"requeued_per_min: <code>{requeued_per_min}</code>\n"
+                        f"skipped_prequeue_per_min: <code>{skipped_prequeue_per_min}</code>\n"
+                        f"skipped_worker_gate_per_min: <code>{skipped_worker_gate_per_min}</code>\n"
+                        f"retryafter_per_min: <code>{retryafter_count}</code>\n"
+                        f"dropped_per_min: <code>{dropped_per_min}</code>\n"
+                        f"oldest_age_sec: <code>{int(oldest_age_sec) if oldest_age_sec is not None else 'n/a'}</code>\n\n"
+                        "Check worker health, token conflicts, and recent Telegram API errors."
+                    )
                 
                 # Reset per-minute counters
                 queue_stats['sent_per_min'] = 0
@@ -6094,6 +6129,9 @@ async def _log_queue_stats():
                 queue_stats['skipped_worker_gate_per_min'] = 0
                 queue_stats['retryafter_min'] = 0
                 _queue_stats_reset_time = time.time()
+
+            if admin_alert_message:
+                await send_admin_notification(admin_alert_message, parse_mode="HTML")
         except Exception as e:
             import traceback
             logger.error(f"❌ Error in _log_queue_stats(): {e}\n{traceback.format_exc()}")

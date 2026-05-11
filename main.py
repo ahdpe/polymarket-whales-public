@@ -836,7 +836,7 @@ async def main():
     status_port = int(os.getenv("STATUS_PORT", "5000"))
     if os.getenv("STATUS_ENABLED", "true").lower() != "false":
         start_status_server(port=status_port)
-        logger.info(f"Status dashboard available at http://0.0.0.0:{status_port}")
+        logger.info(f"Status dashboard available at http://127.0.0.1:{status_port}")
 
     # Start all background tasks
     tasks = await start_insider_collector()

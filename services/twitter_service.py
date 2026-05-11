@@ -564,9 +564,12 @@ class TwitterService:
         
         if self.is_configured:
             self._init_client()
-            self._load_queue()  # Load queue from disk
-            self._load_delayed_queue()  # Load delayed queue from disk
-            logger.info(f"TwitterService initialized successfully (queue size: {len(self.pending_queue)})")
+            if self.is_configured and self.client:
+                self._load_queue()  # Load queue from disk
+                self._load_delayed_queue()  # Load delayed queue from disk
+                logger.info(f"TwitterService initialized successfully (queue size: {len(self.pending_queue)})")
+            else:
+                logger.warning("TwitterService disabled after client init failure")
         else:
             logger.warning("TwitterService not configured - missing API keys")
     

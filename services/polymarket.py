@@ -7,6 +7,7 @@ import os
 import random
 from decimal import Decimal
 from collections import OrderedDict
+from typing import Optional, Tuple
 
 from config import POLYGONSCAN_API_KEY
 
@@ -571,6 +572,79 @@ class PolymarketService:
         except Exception as e:
             logger.debug(f"Error checking position: {e}")
             return (0.0, "error")
+
+    async def get_wallet_market_position_financials(
+        self,
+        proxy_wallet: str,
+        condition_id: str,
+        outcome: Optional[str] = None,
+    ) -> Tuple[float, float, str]:
+        """
+        Sum currentValue (mark-to-market) and initialValue (cost basis / amount invested)
+        for positions matching condition_id and optional outcome (YES/NO, case-insensitive).
+
+        Returns:
+            (current_value_usd, initial_value_usd, status)
+            status: 'found' if at least one matching row exists, else 'empty' or 'error'.
+        """
+        if not proxy_wallet or not condition_id:
+            return (0.0, 0.0, "error")
+
+        want = (condition_id or "").strip().lower()
+        want_out = (outcome or "").strip().upper() if outcome else None
+        if not want:
+            return (0.0, 0.0, "error")
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                offset = 0
+                limit = 1000
+                max_offset = 5000
+                cur_sum = 0.0
+                init_sum = 0.0
+                matched = False
+
+                while offset <= max_offset:
+                    url = f"{DATA_API_URL}/positions?user={proxy_wallet}&limit={limit}&offset={offset}"
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status != 200:
+                            return (0.0, 0.0, "error")
+
+                        positions = await resp.json()
+                        if not isinstance(positions, list):
+                            return (0.0, 0.0, "error")
+
+                        for pos in positions:
+                            pos_condition = (
+                                pos.get("conditionId", "") or pos.get("condition_id", "") or ""
+                            ).strip().lower()
+                            if not pos_condition or pos_condition != want:
+                                continue
+                            if want_out:
+                                po = str(pos.get("outcome") or "").strip().upper()
+                                if po != want_out:
+                                    continue
+                            matched = True
+                            cur_sum += float(pos.get("currentValue", 0) or 0)
+                            init_sum += float(pos.get("initialValue", 0) or 0)
+
+                        if len(positions) < limit:
+                            break
+
+                        offset += len(positions)
+                        if offset >= max_offset:
+                            break
+
+                if matched:
+                    return (cur_sum, init_sum, "found")
+                return (0.0, 0.0, "empty")
+
+        except asyncio.TimeoutError:
+            logger.debug(f"Timeout fetching position financials for {proxy_wallet[:10]}...")
+            return (0.0, 0.0, "error")
+        except Exception as e:
+            logger.debug(f"Error fetching position financials: {e}")
+            return (0.0, 0.0, "error")
 
     async def confirm_wallet_has_no_position(
         self,

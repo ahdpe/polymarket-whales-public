@@ -154,6 +154,10 @@ async def republish_alert(market_id: str, scenario: str = 'BURST'):
         
         # Add shared_sources to alert_data (method expects it there)
         verified_data['shared_sources'] = shared_sources
+
+        event_slug = (verified_data.get('trades') or [{}])[0].get('event_slug', '') or ''
+        raw_px = await service._fetch_gamma_outcome_price(market_id, event_slug, outcome)
+        verified_data['signal_market_price_pct'] = raw_px * 100.0 if raw_px is not None else None
         
         # Format message
         message = service._format_alert_message(scenario, verified_data, shared_wallets=shared_wallets)

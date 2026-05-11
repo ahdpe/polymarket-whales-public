@@ -1468,17 +1468,17 @@ PUBLIC_PATTERNS_TEMPLATE = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="index, follow">
-    <title>PolymarketWhales – Live Whale Signals &amp; Smart Money Alerts on Polymarket</title>
+    <title>PolymarketWhales – Public Market Observations on Polymarket</title>
     <link rel="icon" type="image/png" href="/favicon.png?v=4">
-    <meta name="description" content="PolymarketWhales — real-time intelligence feed tracking unusual positioning, accumulation patterns, and volume bursts on Polymarket. Free behavioral analytics for prediction market traders.">
+    <meta name="description" content="PolymarketWhales is a read-only public data dashboard showing timestamped observations of large Polymarket market activity. No betting, wallet connection, deposits, or recommendations.">
     <link rel="canonical" href="https://polymarketwhales.online/public">
     <meta property="og:type" content="website">
-    <meta property="og:title" content="PolymarketWhales – Live Whale Signals & Smart Money Alerts">
-    <meta property="og:description" content="PolymarketWhales — real-time intelligence feed tracking unusual positioning, accumulation patterns, and volume bursts on Polymarket.">
+    <meta property="og:title" content="PolymarketWhales – Public Market Observations">
+    <meta property="og:description" content="Read-only public data dashboard showing timestamped observations of large Polymarket market activity.">
     <meta property="og:url" content="https://polymarketwhales.online/public">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="PolymarketWhales – Live Whale Signals & Smart Money Alerts">
-    <meta name="twitter:description" content="PolymarketWhales — real-time intelligence feed tracking unusual positioning, accumulation patterns, and volume bursts on Polymarket.">
+    <meta name="twitter:title" content="PolymarketWhales – Public Market Observations">
+    <meta name="twitter:description" content="Read-only public data dashboard showing timestamped observations of large Polymarket market activity.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1575,6 +1575,14 @@ PUBLIC_PATTERNS_TEMPLATE = """
         .hero .note {
             color: var(--text-soft);
             font-size: 0.9rem;
+        }
+        .hero .safety-note {
+            border: 1px solid rgba(45, 212, 191, 0.35);
+            background: rgba(13, 148, 136, 0.10);
+            color: var(--text-main);
+            border-radius: 10px;
+            padding: 10px 12px;
+            margin: 10px 0 12px;
         }
         .signal-grid {
             display: grid;
@@ -1817,24 +1825,25 @@ PUBLIC_PATTERNS_TEMPLATE = """
     <div class="container">
         <header>
             <div class="brand">
-                <h1>PolymarketWhales Signals</h1>
-                <p>Behavioral intelligence feed for unusual market positioning</p>
+                <h1>PolymarketWhales Observations</h1>
+                <p>Public data patterns from large Polymarket market activity</p>
             </div>
             <div class="top-actions">
-                <a href="/whale-trades" class="whale-nav-btn"><span class="whale-live-badge"><span class="whale-live-dot"></span>LIVE</span>🐋 Whale Trades<span class="whale-nav-sub">Live feed of whale buys over $10K</span></a>
+                <a href="/whale-trades" class="whale-nav-btn"><span class="whale-live-badge"><span class="whale-live-dot"></span>LIVE</span>Large Trades<span class="whale-nav-sub">Read-only feed of observed trades over $10K</span></a>
             </div>
         </header>
 
         <div style="font-size: 0.85rem; color: var(--text-soft); padding: 0 10px 15px; line-height: 1.4;">
-            <p style="margin: 0 0 5px 0;">Real-time intelligence feed tracking atypical behavior and fresh wallets on Polymarket. <em>Not financial advice.</em></p>
-            <p style="margin: 0;">Signal types: <strong>CLUSTER</strong> (coordinated activity), <strong>ACCUMULATION</strong> (steady buildup), <strong>BURST</strong> (sudden volume spikes).</p>
+            <p style="margin: 0 0 5px 0;">Independent read-only public data dashboard for timestamped Polymarket market activity. <em>Informational only.</em></p>
+            <p style="margin: 0 0 5px 0;">Not affiliated with, endorsed by, or operated by Polymarket. This site does not provide login, wallet connection, betting, trading, deposit, or payment functionality.</p>
+            <p style="margin: 0;">Observation types: <strong>CLUSTER</strong> (coordinated activity), <strong>ACCUMULATION</strong> (steady buildup), <strong>BURST</strong> (sudden volume spikes).</p>
         </div>
 
         <div id="content">
             <p class="empty">Loading...</p>
         </div>
         <footer>
-            <span id="last-update" style="display: none;">-</span>Updated every __INSIDER_REFRESH_HUMAN__
+            <span id="last-update" style="display: none;">-</span>Updated every __INSIDER_REFRESH_HUMAN__ · Contact: <a class="market-link" href="mailto:oauri4@gmail.com">oauri4@gmail.com</a>
         </footer>
     </div>
     <script>
@@ -1906,7 +1915,7 @@ PUBLIC_PATTERNS_TEMPLATE = """
                 if (yesCount > 0) stats.push(`<span style="color: var(--c-good)">${yesCount} YES</span>`);
                 if (noCount > 0) stats.push(`<span style="color: var(--c-burst)">${noCount} NO</span>`);
                 
-                html += `<div style="font-size: 0.72rem; margin-bottom: 4px; color: var(--text-soft);">+${appendedWallets.length} since signal (${stats.join(' / ')})</div>`;
+                html += `<div style="font-size: 0.72rem; margin-bottom: 4px; color: var(--text-soft);">+${appendedWallets.length} since observation (${stats.join(' / ')})</div>`;
             }
 
             const originalWallets = allWallets.filter(w => originalSet.has(w));
@@ -1985,8 +1994,8 @@ PUBLIC_PATTERNS_TEMPLATE = """
             const makeSlug = (value) => (value || '')
                 .toLowerCase()
                 .normalize('NFKD')
-                .replace(/['".,!?()[\]{}:;\\/|+*&^%$#@`~]/g, '')
-                .replace(/\s+/g, '-')
+                .replace(/['".,!?()[\\]{}:;\\/|+*&^%$#@`~]/g, '')
+                .replace(/\\s+/g, '-')
                 .replace(/-+/g, '-')
                 .replace(/^-|-$/g, '');
 
@@ -2072,7 +2081,7 @@ PUBLIC_PATTERNS_TEMPLATE = """
 
         function renderPublishedTable(items) {
             if (!items || items.length === 0) {
-                return '<div class="empty">No published alerts yet.</div>';
+                return '<div class="empty">No published observations yet.</div>';
             }
             
             const totalPages = Math.ceil(items.length / itemsPerPagePublic);
@@ -2147,33 +2156,32 @@ PUBLIC_PATTERNS_TEMPLATE = """
             const bursts = patterns.bursts || [];
             const published = data.recent_published || [];
 
-            const totalSignals = clusters.length + accumulations.length + bursts.length;
+            const totalObservations = clusters.length + accumulations.length + bursts.length;
             const trackedVolume = sumVolume(clusters) + sumVolume(accumulations) + sumVolume(bursts);
 
             const html = `
                 <div class="hero">
-                    <h2>About These Signals</h2>
-                    <p>This page publishes signals of unusual trading behavior on Polymarket.</p>
-                    <p>The focus is not on predictions, but on participant behavior patterns that may indicate early information or high conviction positioning.</p>
-                    <p>This is not financial advice. These are behavioral signals.</p>
-                    <p class="note"><strong>Distribution:</strong> confirmed signals are published in Telegram: <a class="market-link" href="https://t.me/PMInsiderSignals" target="_blank" rel="noopener noreferrer">@PMInsiderSignals</a>.</p>
-                    <p class="note"><strong>Platform:</strong> data is sourced from <a class="market-link" href="https://polymarket.com/?r=PolymarketWhaleAlrts" target="_blank" rel="noopener noreferrer">Polymarket</a>.</p>
-                    <p class="note"><strong>Signal engine:</strong> signals are formed by <a class="market-link" href="https://t.me/PolymarketWhales_bot" target="_blank" rel="noopener noreferrer">@PolymarketWhales_bot</a>.</p>
-
-                    <p><strong>Signal Types</strong></p>
+                    <h2>About This Feed</h2>
+                    <p>This page displays timestamped observations of public market activity on Polymarket.</p>
+                    <p>The focus is on public data patterns such as coordinated activity, accumulation, and volume bursts.</p>
+                    <p>This is not financial advice, betting advice, or a recommendation to take any action.</p>
+                    <p class="safety-note"><strong>Safety notice:</strong> this is an independent read-only analytics site, not affiliated with or endorsed by Polymarket. It does not ask users to sign in, connect a wallet, enter a seed phrase/private key, deposit funds, place bets, or execute trades.</p>
+                    <p class="note"><strong>Platform:</strong> data is sourced from the public Polymarket Data API and links out to <a class="market-link" href="https://polymarket.com/?r=PolymarketWhaleAlrts" target="_blank" rel="noopener noreferrer">Polymarket</a> market pages.</p>
+                    <p class="note"><strong>Method:</strong> observations are formed from public market data using fixed time, size, direction, and wallet-history filters.</p>
+                    <p><strong>Observation Types</strong></p>
                     <ul>
                         <li><strong>CLUSTER:</strong> Several new wallets enter the same market, same direction, almost at the same time, with meaningful size.</li>
                         <li><strong>ACCUMULATION:</strong> Several new wallets steadily and significantly build a position in one market over multiple days.</li>
                         <li><strong>BURST:</strong> Sharp spike of activity from multiple young wallets in a short time window.</li>
                     </ul>
-                    <p class="note">Why this can be useful: signals can appear before news and public consensus, and strict time/size/direction filters are applied.</p>
-                    <p class="note">Sports and crypto-related events are intentionally excluded due to high noise, emotion, arbitrage, and automated strategies that can hide real behavioral patterns.</p>
+                    <p class="note">Why this can be useful: the feed provides a timestamped view of public market activity with strict time, size, and direction filters.</p>
+                    <p class="note">Sports and crypto-related events are intentionally excluded due to high noise, arbitrage, and automated strategies.</p>
                 </div>
 
                 <div class="signal-grid">
                     <div class="signal-card">
-                        <h3>Total Active Signals</h3>
-                        <div class="signal-value v-total">${totalSignals}</div>
+                        <h3>Total Active Observations</h3>
+                        <div class="signal-value v-total">${totalObservations}</div>
                         <div class="signal-sub">across all pattern types</div>
                     </div>
                     <div class="signal-card">
@@ -2192,9 +2200,9 @@ PUBLIC_PATTERNS_TEMPLATE = """
                         <div class="signal-sub">$${formatNumber(sumVolume(bursts))} tracked volume</div>
                     </div>
                     <div class="signal-card">
-                        <h3>Recent Alerts</h3>
+                        <h3>Recent Observations</h3>
                         <div class="signal-value v-total">${published.length}</div>
-                        <div class="signal-sub">last published pattern alerts</div>
+                        <div class="signal-sub">last published activity observations</div>
                     </div>
                 </div>
 
@@ -2234,8 +2242,8 @@ PUBLIC_PATTERNS_TEMPLATE = """
                 <div class="section">
                     <div class="section-head">
                         <div>
-                            <h2>Recently Published Alerts</h2>
-                            <div class="section-count">last ${published.length} alerts</div>
+                            <h2>Recently Published Observations</h2>
+                            <div class="section-count">last ${published.length} observations</div>
                         </div>
                     </div>
                     ${renderPublishedTable(published)}
@@ -2285,17 +2293,17 @@ WHALE_TRADES_TEMPLATE = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="index, follow">
-    <title>PolymarketWhales – Live Whale Trades on Polymarket | Real-Time $10K+ BUY Orders</title>
+    <title>PolymarketWhales – Large Polymarket Trades | Read-Only Public Data Feed</title>
     <link rel="icon" type="image/png" href="/favicon.png?v=4">
-    <meta name="description" content="PolymarketWhales — track large whale BUY orders over $10,000 on Polymarket in real-time. See trader PnL, open positions, wallet age, and entry prices as they happen.">
+    <meta name="description" content="PolymarketWhales is a read-only public data feed showing observed large Polymarket trades over $10,000 with wallet age, open positions, and public activity context.">
     <link rel="canonical" href="https://polymarketwhales.online/whale-trades">
     <meta property="og:type" content="website">
-    <meta property="og:title" content="PolymarketWhales – Live Whale Trades | Real-Time $10K+ Orders">
-    <meta property="og:description" content="PolymarketWhales — track large whale BUY orders over $10,000 on Polymarket in real-time. Trader PnL, positions, wallet age, and entry prices.">
+    <meta property="og:title" content="PolymarketWhales – Large Polymarket Trades">
+    <meta property="og:description" content="Read-only public data feed showing observed large Polymarket trades over $10,000 with wallet age, open positions, and activity context.">
     <meta property="og:url" content="https://polymarketwhales.online/whale-trades">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="PolymarketWhales – Live Whale Trades | Real-Time $10K+ Orders">
-    <meta name="twitter:description" content="PolymarketWhales — track large whale BUY orders over $10,000 on Polymarket in real-time. Trader PnL, positions, wallet age, and entry prices.">
+    <meta name="twitter:title" content="PolymarketWhales – Large Polymarket Trades">
+    <meta name="twitter:description" content="Read-only public data feed showing observed large Polymarket trades over $10,000 with wallet age, open positions, and activity context.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -2718,11 +2726,11 @@ WHALE_TRADES_TEMPLATE = """
     <div class="container">
         <header>
             <div class="brand">
-                <h1>🐋 Whale Trades</h1>
-                <p>Live feed of large BUY trades over $10,000 on Polymarket</p>
+                <h1>Large Trades</h1>
+                <p>Read-only feed of observed large Polymarket trades over $10,000</p>
             </div>
             <div class="top-actions">
-                <a href="/public" class="back-btn">← Signals & Patterns</a>
+                <a href="/public" class="back-btn">← Observations & Patterns</a>
                 <span class="tag"><span class="live-dot"></span>Live · 60s refresh</span>
             </div>
         </header>
@@ -2745,11 +2753,11 @@ WHALE_TRADES_TEMPLATE = """
         </div>
 
         <div style="font-size: 0.85rem; color: var(--text-soft); padding: 0 10px 15px; line-height: 1.4;">
-            <p style="margin: 0;">Live whale trades feed monitoring large Polymarket positions. Minimum trade threshold is $10,000 USD. Data updates automatically in real-time.</p>
+            <p style="margin: 0;">Read-only public data feed of observed large Polymarket trades. Minimum observed trade threshold is $10,000 USD. No betting, wallet connection, deposits, or recommendations.</p>
         </div>
 
         <div id="content">
-            <p class="empty">Loading whale trades…</p>
+            <p class="empty">Loading large trade observations...</p>
         </div>
         <footer>
             <span id="last-update" style="display: none;">-</span>
@@ -2823,7 +2831,7 @@ WHALE_TRADES_TEMPLATE = """
 
         function renderTable(trades) {
             if (!trades.length) {
-                return '<div class="empty">No whale trades yet. Trades will appear as they happen in real-time.</div>';
+                return '<div class="empty">No large trade observations yet. New observations will appear as public data updates.</div>';
             }
 
             const traderDisplay = (t) => {
@@ -2914,7 +2922,8 @@ WHALE_TRADES_TEMPLATE = """
         function render() {
             const filtered = filterTrades(allTrades);
             document.getElementById('content').innerHTML = renderTable(filtered);
-            document.getElementById('trade-count').textContent = filtered.length;
+            const tradeCount = document.getElementById('trade-count');
+            if (tradeCount) tradeCount.textContent = filtered.length;
         }
 
         function fetchTrades() {
@@ -3159,7 +3168,7 @@ def sitemap_xml():
     return Response(xml, mimetype='application/xml')
 
 
-def run_server(port=5000, host='0.0.0.0'):
+def run_server(port=5000, host='127.0.0.1'):
     """Run Flask server in a separate thread."""
     def run():
         try:

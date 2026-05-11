@@ -3,15 +3,20 @@ Insider Alerts Detection Service.
 Analyzes trading patterns to detect coordinated activity by fresh wallets.
 """
 import asyncio
+import json
 import logging
 import os
 import time
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timedelta
 from collections import defaultdict
+from urllib.parse import quote
+
+import aiohttp
 from storage import alerts_storage
 from core.categories import detect_category
 from services.telegram_service import add_polymarket_ref
+from config import OWNER_ID
 logger = logging.getLogger(__name__)
 
 # Default configuration
@@ -1034,17 +1039,26 @@ class InsiderAlertsService:
 
         for wallet in wallet_total_trade_volume.keys():
             trade_sum_wallet = float(wallet_total_trade_volume[wallet] or 0.0)
+            wallet_keys = [k for k in wallet_outcome_volume.keys() if k[0] == wallet]
+            if not wallet_keys:
+                continue
+            dominant_key = max(wallet_keys, key=lambda k: wallet_outcome_volume[k])
+            dominant_outcome = dominant_key[1]
+            trade_sum = wallet_outcome_volume[dominant_key]
+
             try:
-                pos_val, pos_st = await self._poly_service.check_wallet_has_position_safe(wallet, market_id)
+                pos_cur, pos_init, pos_st = await self._poly_service.get_wallet_market_position_financials(
+                    wallet, market_id, dominant_outcome
+                )
             except Exception as e:
                 logger.debug(f"Position tracker check failed for {wallet[:10]}...: {e}")
-                pos_val, pos_st = (0.0, "error")
+                pos_cur, pos_init, pos_st = (0.0, 0.0, "error")
 
             if pos_st == "error":
                 # API/timeout: never infer "sold" — keep trade-based volume in buffer
                 current_position_usd = trade_sum_wallet
-            elif float(pos_val or 0) > 0:
-                current_position_usd = float(pos_val or 0)
+            elif float(pos_cur or 0) > 0:
+                current_position_usd = float(pos_cur or 0)
             else:
                 # Reported zero / no row: require several matching empty reads before consuming
                 if drop_sold and wallet_ids.get(wallet):
@@ -1065,17 +1079,16 @@ class InsiderAlertsService:
             if current_position_usd <= 0:
                 continue
 
-            # Use the dominant wallet direction from buffered trades;
-            # distribute full position to that direction.
-            wallet_keys = [k for k in wallet_outcome_volume.keys() if k[0] == wallet]
-            if not wallet_keys:
-                continue
-            dominant_key = max(wallet_keys, key=lambda k: wallet_outcome_volume[k])
-            dominant_outcome = dominant_key[1]
-            trade_sum = wallet_outcome_volume[dominant_key]
             effective_volume = max(trade_sum, current_position_usd)
             if effective_volume < min_usd:
                 continue
+
+            # Cost = amount invested (Polymarket initialValue) when API returns it; else buffer trade sum
+            cost_basis_usd = (
+                float(pos_init)
+                if pos_st == "found" and float(pos_init or 0) > 0
+                else trade_sum
+            )
 
             prices = wallet_outcome_prices.get(dominant_key, [])
             min_entry_price = min(prices) if prices else None
@@ -1089,7 +1102,7 @@ class InsiderAlertsService:
                 'wallet_age_hours': base.get('wallet_age_hours'),
                 'outcome': dominant_outcome,
                 'trade_size_usd': effective_volume,
-                'cost_basis_usd': trade_sum,
+                'cost_basis_usd': cost_basis_usd,
                 'min_entry_price': min_entry_price,
                 'max_entry_price': max_entry_price,
                 'total_shares': wallet_outcome_shares.get(dominant_key, 0.0),
@@ -1131,6 +1144,48 @@ class InsiderAlertsService:
 
         return (dominant_outcome[0], directionality)
 
+    async def _fetch_gamma_outcome_price(
+        self, market_id: str, event_slug: str, outcome: str
+    ) -> Optional[float]:
+        """
+        Polymarket Gamma: current outcome price in 0.0–1.0 (same scale as on-site probability).
+        One value for the whole market/outcome at fetch time — used in the alert header.
+        """
+        if not market_id or not event_slug or not outcome:
+            return None
+        slug_q = quote(event_slug.strip(), safe="")
+        url = f"https://gamma-api.polymarket.com/events?slug={slug_q}"
+        want_mid = (market_id or "").strip().lower()
+        want_out = (outcome or "").strip().upper()
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                    if resp.status != 200:
+                        return None
+                    data = await resp.json()
+            if not data or not isinstance(data, list):
+                return None
+            event = data[0]
+            markets = event.get("markets") or []
+            market = None
+            for m in markets:
+                cid = (m.get("conditionId") or m.get("condition_id") or "").strip().lower()
+                if cid == want_mid:
+                    market = m
+                    break
+            if market is None and markets:
+                market = markets[0]
+            if not market:
+                return None
+            outcomes = json.loads(market.get("outcomes", "[]"))
+            prices = json.loads(market.get("outcomePrices", "[]"))
+            for i, name in enumerate(outcomes):
+                if str(name).strip().upper() == want_out and i < len(prices):
+                    return max(0.0, min(1.0, float(prices[i])))
+        except Exception as e:
+            logger.debug("Gamma outcome price fetch failed: %s", e)
+        return None
+
     def _format_alert_message(self, scenario: str, alert_data: Dict[str, Any], shared_wallets: set = None) -> str:
         market_id = alert_data.get('market_id') or ''
         outcome = alert_data.get('outcome', 'UNKNOWN')
@@ -1170,14 +1225,19 @@ class InsiderAlertsService:
         else:
             details = "Custom Pattern"
 
+        smp = alert_data.get("signal_market_price_pct")
+        vol_line = f"Volume: *${total_volume:,.0f}* ({directionality:.0f}% {outcome})"
+        if smp is not None:
+            vol_line += f" @ {float(smp):.1f}¢ at signal"
+
         msg = (
             f"🚨 *Potential Insider ({scenario})*\n\n"
             f"Market: [{market_title[:80]}]({market_url})\n"
             f"Outcome: *{outcome}*\n\n"
             f"{details}\n"
-            f"Volume: *${total_volume:,.0f}* ({directionality:.0f}% {outcome})\n"
+            f"{vol_line}\n"
         )
-        
+
         # Add shared funding warning if detected
         if shared_wallets:
             msg += "⚠️ Shared funding detected"
@@ -1217,7 +1277,6 @@ class InsiderAlertsService:
                     wallet_data[w] = {
                         'volume': 0.0,
                         'cost_basis': 0.0,
-                        'total_shares': 0.0,
                         'min_price': None,
                         'max_price': None,
                         'name': display_name,
@@ -1244,16 +1303,9 @@ class InsiderAlertsService:
                     if max_p is not None:
                         curr_max = wallet_data[w]['max_price']
                         wallet_data[w]['max_price'] = max(curr_max, max_p) if curr_max is not None else max_p
-                        
-                    # Handle shares
-                    ts = t.get('total_shares')
-                    if ts is not None:
-                        wallet_data[w]['total_shares'] += ts
-                    elif t_p and t_p > 0:
-                        wallet_data[w]['total_shares'] += (vol / t_p)
             
             sorted_w = sorted(wallet_data.items(), key=lambda x: x[1]['volume'], reverse=True)
-            
+
             for w, data in sorted_w:
                 n = data['name']
                 v = data['volume']
@@ -1276,25 +1328,16 @@ class InsiderAlertsService:
                 if data['open_positions'] is not None:
                     pos_str = f"{data['open_positions']} pos"
                 
-                # Format current position and cost basis percentages
-                curr_pct_str = ""
-                cost_pct_str = ""
-                
-                if data['total_shares'] > 0:
-                    curr_price = v / data['total_shares']
-                    # Ensure it doesn't exceed 100% or go below 0% logically due to edge cases
-                    curr_price_pct = max(0, min(100, curr_price * 100))
-                    curr_pct_str = f" ({curr_price_pct:.0f}%)"
-                
+                cost_entry_str = ""
                 min_p = data['min_price']
                 max_p = data['max_price']
                 if min_p is not None and max_p is not None:
-                    min_pct = min_p * 100
-                    max_pct = max_p * 100
-                    if max_pct - min_pct > 0.5:
-                        cost_pct_str = f" ({min_pct:.0f}-{max_pct:.0f}%)"
-                    elif min_pct >= 0:
-                        cost_pct_str = f" ({min_pct:.0f}%)"
+                    min_cents = min_p * 100
+                    max_cents = max_p * 100
+                    if max_cents - min_cents > 0.5:
+                        cost_entry_str = f" (entry *{min_cents:.0f}–{max_cents:.0f}¢*)"
+                    elif min_cents >= 0:
+                        cost_entry_str = f" (entry *{min_cents:.0f}¢*)"
                         
                 header_parts = []
                 if age_str: header_parts.append(age_str)
@@ -1306,8 +1349,9 @@ class InsiderAlertsService:
                 shared_marker = "⚠️ " if shared_wallets and w.lower() in {sw.lower() for sw in shared_wallets} else ""
                 
                 msg += f"• {shared_marker}[{n}](https://polymarket.com/profile/{w}){header_info}\n"
-                msg += f"  Hold: ${v:,.0f}{curr_pct_str}\n"
-                msg += f"  Cost: ${cb:,.0f}{cost_pct_str}\n\n"
+                msg += (
+                    f"  Hold: ${v:,.0f} | Cost: *${cb:,.0f}*{cost_entry_str}\n"
+                )
 
 
         # Removed market ID display
@@ -1316,6 +1360,28 @@ class InsiderAlertsService:
 
     def _publish_alert(self, scenario: str, alert_data: Dict[str, Any]) -> None:
         try:
+            async def notify_admin_failure(reason: str):
+                """Best-effort admin alert when insider publish fails."""
+                try:
+                    if not self._bot or not OWNER_ID:
+                        return
+                    market_id = alert_data.get("market_id", "unknown")
+                    outcome = alert_data.get("outcome", "?")
+                    await self._bot.send_message(
+                        chat_id=OWNER_ID,
+                        text=(
+                            "🚨 <b>Insider publish failed</b>\n\n"
+                            f"scenario: <code>{scenario}</code>\n"
+                            f"market_id: <code>{market_id}</code>\n"
+                            f"outcome: <code>{outcome}</code>\n"
+                            f"reason: <code>{str(reason)[:300]}</code>"
+                        ),
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                except Exception as admin_err:
+                    logger.error(f"Failed to send insider admin alert: {admin_err}")
+
             channel_id = self.get_channel_id()
             if not channel_id:
                 logger.warning(f"Cannot publish {scenario} alert: no channel_id configured")
@@ -1327,6 +1393,9 @@ class InsiderAlertsService:
                         code="NO_CHANNEL_ID",
                         reason="no channel_id configured",
                     )
+                if self._bot and OWNER_ID:
+                    import asyncio
+                    asyncio.create_task(notify_admin_failure("no channel_id configured"))
                 return
 
             if not self._bot:
@@ -1454,6 +1523,13 @@ class InsiderAlertsService:
                     
                     # Add shared_sources to verified_data so _format_alert_message can access it
                     verified_data['shared_sources'] = shared_sources
+
+                    raw_px = await self._fetch_gamma_outcome_price(
+                        market_id, event_slug, verified_data.get("outcome", "")
+                    )
+                    verified_data["signal_market_price_pct"] = (
+                        raw_px * 100.0 if raw_px is not None else None
+                    )
                     
                     message = self._format_alert_message(scenario, verified_data, shared_wallets=shared_wallets)
                     
@@ -1487,6 +1563,7 @@ class InsiderAlertsService:
                             code="PUBLISH_ERROR",
                             reason=str(e)[:180],
                         )
+                    await notify_admin_failure(f"verify_and_send: {e}")
             
             asyncio.create_task(verify_and_send())
 
@@ -1500,6 +1577,9 @@ class InsiderAlertsService:
                     code="PUBLISH_ERROR",
                     reason=str(e)[:180],
                 )
+            if self._bot and OWNER_ID:
+                import asyncio
+                asyncio.create_task(notify_admin_failure(f"_publish_alert outer: {e}"))
 
     async def _cleanup_invalid_trades(self, market_id: str) -> None:
         """
