@@ -8,7 +8,9 @@ import os
 import random
 from decimal import Decimal
 from collections import OrderedDict
+from typing import Optional, Tuple
 from config import POLYGONSCAN_API_KEY
+from core.utils import polymarket_event_url
 logger = logging.getLogger(__name__)
 DATA_API_URL = 'https://data-api.polymarket.com'
 POLL_INTERVAL = 3
@@ -121,6 +123,40 @@ class PolymarketService:
         pass
 
     async def get_trader_positions(self, proxy_wallet, retries=3, use_stale_cache=False):
+        pass
+
+    async def check_wallet_has_position_safe(self, proxy_wallet: str, condition_id: str) -> tuple[float, str]:
+        """
+        Check position with explicit status (for insider buffer / sold detection).
+
+        Returns:
+            (value_usd, status)
+            status:
+              'found'    — matching conditionId present (value may be 0 in edge cases)
+              'empty'    — HTTP OK, full paginated scan completed, no matching position
+              'error'    — timeout, non-200, or invalid payload (do NOT treat as "sold")
+        """
+        pass
+
+    async def get_wallet_market_position_financials(self, proxy_wallet: str, condition_id: str, outcome: Optional[str]=None) -> Tuple[float, float, str]:
+        """
+        Sum currentValue (mark-to-market) and initialValue (cost basis / amount invested)
+        for positions matching condition_id and optional outcome (YES/NO, case-insensitive).
+
+        Returns:
+            (current_value_usd, initial_value_usd, status)
+            status: 'found' if at least one matching row exists, else 'empty' or 'error'.
+        """
+        pass
+
+    async def confirm_wallet_has_no_position(self, proxy_wallet: str, condition_id: str, *, rounds: int=3, pause_sec: float=0.65) -> bool:
+        """
+        Return True only if every round reports status 'empty' with value 0.
+        False if any round errors, finds value > 0, or returns 'found' with value > 0.
+
+        Used before marking insider buffer trades as sold — avoids false positives
+        from transient API issues.
+        """
         pass
 
     async def check_wallet_has_position(self, proxy_wallet: str, condition_id: str) -> float:

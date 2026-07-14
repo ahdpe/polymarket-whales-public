@@ -17,7 +17,7 @@ import asyncio
 import time
 import random
 from typing import Optional
-from services.telegram_service import add_polymarket_ref
+from core.utils import add_polymarket_ref, polymarket_profile_url, polymarket_url
 logger = logging.getLogger(__name__)
 TWITTER_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), '..', 'twitter_settings.json')
 TWITTER_QUEUE_FILE = os.path.join(os.path.dirname(__file__), '..', 'twitter_queue.json')
@@ -38,7 +38,7 @@ def _trim_tweet_body_to_limit(body_text: str, max_body_len: int) -> str:
     pass
 
 def _add_twitter_ref(text: str) -> str:
-    """Add ?via=PmWhlAlerts to all polymarket.com URLs in tweet text."""
+    """Normalize Polymarket links and add the bot ref parameter."""
     pass
 
 def _finalize_tweet_text(tweet_text: str) -> str:

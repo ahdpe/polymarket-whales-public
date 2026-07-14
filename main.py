@@ -8,12 +8,13 @@ import time
 import psutil
 from datetime import datetime, time as dt_time, timedelta
 from services.polymarket import PolymarketService
-from services.telegram_service import start_telegram, enqueue_trade_alert, user_filters, get_user_categories, get_default_categories, get_user_lang, get_user_probability_filter, get_user_side_types, get_user_wallet_age_filter, get_user_open_positions_filter, send_admin_notification, set_poly_service, set_insider_alerts_service, stop_queue_workers
+from services.telegram_service import start_telegram, enqueue_trade_alert, user_filters, get_user_categories, get_default_categories, get_user_lang, get_user_probability_filter, get_user_side_types, get_user_wallet_age_filter, get_user_open_positions_filter, get_user_min_market_timeframe, send_admin_notification, set_poly_service, set_insider_alerts_service, stop_queue_workers
 from services.report_service import generate_report
 from core.filters import get_alert_level
 from core.categories import detect_category, should_show_trade
 from core.localization import get_trade_level_emoji, get_trade_level_icon
-from core.utils import shorten_trader_name
+from core.utils import polymarket_event_url, polymarket_profile_url, shorten_trader_name
+from services.market_timeframe import should_block_market_timeframe
 from storage import saved_whales
 from storage import saved_markets
 from services.twitter_service import get_twitter_service
@@ -59,7 +60,7 @@ async def daily_report_scheduler():
     pass
 
 async def check_insider_scenarios_periodically():
-    """Check for insider patterns every 5 minutes."""
+    """Check for insider patterns on configurable interval."""
     pass
 
 async def update_alert_results_periodically():

@@ -1,7 +1,8 @@
 # PUBLIC SHELL VERSION
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.dispatcher.middlewares.base import BaseMiddleware
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, TelegramObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.exceptions import TelegramRetryAfter, TelegramForbiddenError
@@ -25,26 +26,13 @@ except ImportError:
     _aiolimiter_version = None
 from config import TELEGRAM_BOT_TOKEN, FILTERS, OWNER_ID, RETRY_SHORT_MAX, MUTE_DURATIONS, FAIL_STREAK_MUTE_THRESHOLD, HOTFIX_CHAT_ID, HOTFIX_THRESHOLD, HOTFIX_MUTE, QUEUE_MAX_SIZE, WORKER_COUNT, GLOBAL_RATE, PER_CHAT_RATE
 from core.localization import get_text
-from core.utils import shorten_trader_name
+from core.utils import add_polymarket_ref, extract_polymarket_event_slug, extract_polymarket_profile_id, polymarket_event_url, polymarket_profile_url, shorten_trader_name
 from storage import saved_whales
 from storage import saved_markets
 from services.report_service import generate_report
+from services.market_timeframe import TIMEFRAME_FILTER_OPTIONS
 DATA_API_URL = 'https://data-api.polymarket.com'
 _poly_service = None
-
-def add_polymarket_ref(text: str) -> str:
-    """
-    Add via=PolymarketWhaleAlerts to all polymarket.com URLs in text.
-    
-    Test cases:
-    1. "https://polymarket.com" → "https://polymarket.com?via=PolymarketWhaleAlerts"
-    2. "https://polymarket.com/event/slug" → "https://polymarket.com/event/slug?via=PolymarketWhaleAlerts"
-    3. "https://polymarket.com/profile/0x123?tab=history" → "https://polymarket.com/profile/0x123?tab=history&via=PolymarketWhaleAlerts"
-    4. "https://polymarket.com?via=PolymarketWhaleAlerts" → unchanged
-    5. "https://google.com" → unchanged
-    6. "[Market](https://polymarket.com/event/x)" → "[Market](https://polymarket.com/event/x?via=PolymarketWhaleAlerts)"
-    """
-    pass
 
 def set_poly_service(service):
     """Store reference to PolymarketService for report generation."""
@@ -73,12 +61,43 @@ class PositionsFilterState(StatesGroup):
 class ProbabilityFilterState(StatesGroup):
     waiting_for_range = State()
 MAX_COMMENT_LEN = 240
+DEFAULT_MIN_MARKET_TIMEFRAME_MINUTES = 15
 logger = logging.getLogger(__name__)
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()
+_last_telegram_incoming_ts: float = 0.0
+_prev_webhook_pending_count: int | None = None
+_telegram_health_boot_ts: float = 0.0
+_admin_health_alert_ts: dict[str, float] = {}
+_HEALTH_ALERT_COOLDOWN_SEC = 6 * 3600
+_HEALTH_WATCHDOG_INTERVAL_SEC = 600
+_HEALTH_WARMUP_SEC = 900
+_HEALTH_SILENCE_SEC = 20 * 60
+_HEALTH_PENDING_GROWTH_MIN = 18
+_queue_zero_sent_streak: int = 0
+
+class _LastIncomingUpdateMiddleware(BaseMiddleware):
+    """Фиксирует время последнего update, дошедшего до диспетчера."""
+
+    async def __call__(self, handler, event: TelegramObject, data: dict):
+        pass
+dp.update.outer_middleware(_LastIncomingUpdateMiddleware())
+
+def _health_alert_ready(key: str) -> bool:
+    pass
+
+async def _telegram_polling_health_watchdog():
+    """Периодически проверяет webhook/pending и при подозрении шлёт OWNER_ID."""
+    pass
 import os
 import json
+import shutil
 SETTINGS_FILE = os.path.join(os.path.dirname(__file__), '..', 'user_settings.json')
+SETTINGS_BACKUP_FILE = SETTINGS_FILE + '.bak'
+
+def _decode_settings(data):
+    """Convert persisted JSON settings into the in-memory representation."""
+    pass
 
 def load_settings():
     """Load user settings from file."""
@@ -87,7 +106,12 @@ def load_settings():
 def save_settings():
     """Save user settings to file."""
     pass
-(user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types, user_wallet_ages, user_open_positions, blocked_users, bot_enabled) = load_settings()
+user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types, user_wallet_ages, user_open_positions, user_min_market_timeframes, blocked_users, bot_enabled = load_settings()
+
+def apply_default_market_timeframe_filter() -> None:
+    """Backfill the default timeframe filter for users created before the setting existed."""
+    pass
+apply_default_market_timeframe_filter()
 user_menu_state = {}
 
 def set_menu_state(chat_id: int, state: str) -> None:
@@ -193,6 +217,14 @@ def get_positions_keyboard(chat_id):
     """Create inline keyboard for open positions filter selection."""
     pass
 
+def format_market_timeframe_filter(value: int | None, lang: str) -> str:
+    """Format market timeframe filter for display."""
+    pass
+
+def get_market_timeframe_keyboard(chat_id):
+    """Create inline keyboard for minimum market timeframe selection."""
+    pass
+
 def format_age_range(age_filter, lang):
     """Format age filter range for display."""
     pass
@@ -273,6 +305,11 @@ async def btn_age(message: types.Message):
 @dp.message(F.text.in_(['💼 Позиции', '💼 Positions']))
 async def btn_positions(message: types.Message):
     """Handle Positions button press - show positions filter menu."""
+    pass
+
+@dp.message(F.text.in_(['⏱ Длительность рынка', '⏱ Market Duration']))
+async def btn_market_timeframe(message: types.Message):
+    """Handle market timeframe filter button press."""
     pass
 
 @dp.message(F.text.in_(['🔄 Типы событий', '🔄 Event Types']))
@@ -639,6 +676,11 @@ async def process_positions_range(message: types.Message, state: FSMContext):
     """Process positions range input from user."""
     pass
 
+@dp.callback_query(F.data.startswith('tf_'))
+async def callback_market_timeframe(callback: CallbackQuery):
+    """Handle minimum market timeframe selection."""
+    pass
+
 @dp.callback_query(F.data.startswith('cat_'))
 async def callback_category(callback: CallbackQuery):
     """Handle category toggle callback."""
@@ -678,8 +720,8 @@ def get_user_open_positions_filter(chat_id):
     """Get user's open positions filter. Returns dict with min_count and max_count (or None)."""
     pass
 
-def is_user_active(chat_id):
-    """Check if user is active."""
+def get_user_min_market_timeframe(chat_id):
+    """Get user's minimum market timeframe filter in minutes, or None if off."""
     pass
 
 @dp.message(Command('admin'))
@@ -962,6 +1004,16 @@ async def cmd_tlgrm_cluster_profiles(message: types.Message):
     """Toggle displaying profiles in CLUSTER alerts."""
     pass
 
+@dp.message(Command('tlgrm_position_tracker'))
+async def cmd_tlgrm_position_tracker(message: types.Message):
+    """Enable/disable optional insider position tracker mode."""
+    pass
+
+@dp.message(Command('tlgrm_position_tracker_sold'))
+async def cmd_tlgrm_position_tracker_sold(message: types.Message):
+    """Control removal of sold-out wallets from insider buffer."""
+    pass
+
 @dp.message(Command('tlgrm_cluster_show'))
 async def cmd_tlgrm_cluster_show(message: types.Message):
     """Show detailed CLUSTER settings."""
@@ -1114,7 +1166,7 @@ async def stop_queue_workers():
     """Stop queue workers gracefully."""
     pass
 
-async def send_trade_alert(chat_id, message_text, whale_key: str=None, is_saved: bool=False, level_icon: str='🦐', market_key: str | None=None, is_market_saved: bool=False, value_usd: float | None=None, bypass_filters: bool=False):
+async def send_trade_alert(chat_id, message_text, whale_key: str=None, is_saved: bool=False, level_icon: str='🦐', market_key: str | None=None, is_market_saved: bool=False, value_usd: float | None=None, bypass_filters: bool=False) -> bool:
     """
     Send trade alert with robust error handling (RetryAfter) and auto-mute for problematic users.
     """

@@ -44,5 +44,8 @@
       "max_count": null
     }
   },
+  "min_market_timeframe_minutes": {
+    "example_user_id": 15
+  },
   "bot_enabled": true
 }

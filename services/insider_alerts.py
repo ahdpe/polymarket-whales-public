@@ -4,17 +4,21 @@ Insider Alerts Detection Service.
 Analyzes trading patterns to detect coordinated activity by fresh wallets.
 """
 import asyncio
+import json
 import logging
 import os
 import time
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timedelta
 from collections import defaultdict
+from urllib.parse import quote
+import aiohttp
 from storage import alerts_storage
 from core.categories import detect_category
-from services.telegram_service import add_polymarket_ref
+from core.utils import add_polymarket_ref, polymarket_event_url, polymarket_profile_url
+from config import OWNER_ID
 logger = logging.getLogger(__name__)
-DEFAULT_SETTINGS = {'enabled': 'false', 'channel_id': '', 'cooldown_hours': '24', 'cat_sports_enabled': 'true', 'cat_crypto_enabled': 'true', 'cat_other_enabled': 'true', 'probability_min': '0', 'probability_max': '100', 'cluster_enabled': 'false', 'cluster_interval_hours': '2', 'cluster_wallet_age_hours': '24', 'cluster_min_usd': '5000', 'cluster_min_total_usd': '10000', 'cluster_min_wallets': '4', 'cluster_min_direction_pct': '75', 'cluster_side': 'both', 'cluster_include_profiles': 'true', 'cluster_max_positions': '3', 'accumulation_enabled': 'false', 'accumulation_interval_days': '14', 'accumulation_min_usd': '10000', 'accumulation_min_total_usd': '50000', 'accumulation_min_wallets': '3', 'accumulation_wallet_age_hours': '48', 'accumulation_min_direction_pct': '70', 'accumulation_include_profiles': 'true', 'accumulation_max_positions': '3', 'burst_enabled': 'false', 'burst_interval_hours': '1', 'burst_wallet_age_hours': '72', 'burst_min_usd': '1000', 'burst_min_total_usd': '5000', 'burst_min_wallets': '8', 'burst_min_direction_pct': '70', 'burst_include_profiles': 'true', 'burst_max_positions': '3'}
+DEFAULT_SETTINGS = {'enabled': 'false', 'channel_id': '', 'cooldown_hours': '24', 'cat_sports_enabled': 'true', 'cat_crypto_enabled': 'true', 'cat_other_enabled': 'true', 'probability_min': '0', 'probability_max': '100', 'cluster_enabled': 'false', 'cluster_interval_hours': '2', 'cluster_wallet_age_hours': '24', 'cluster_min_usd': '5000', 'cluster_min_total_usd': '10000', 'cluster_min_wallets': '4', 'cluster_min_direction_pct': '75', 'cluster_side': 'both', 'cluster_include_profiles': 'true', 'cluster_max_positions': '3', 'accumulation_enabled': 'false', 'accumulation_interval_days': '14', 'accumulation_min_usd': '10000', 'accumulation_min_total_usd': '50000', 'accumulation_min_wallets': '3', 'accumulation_wallet_age_hours': '48', 'accumulation_min_direction_pct': '70', 'accumulation_include_profiles': 'true', 'accumulation_max_positions': '3', 'burst_enabled': 'false', 'burst_interval_hours': '1', 'burst_wallet_age_hours': '72', 'burst_min_usd': '1000', 'burst_min_total_usd': '5000', 'burst_min_wallets': '8', 'burst_min_direction_pct': '70', 'burst_include_profiles': 'true', 'burst_max_positions': '3', 'position_tracker_enabled': 'false', 'position_tracker_drop_sold': 'true'}
 
 class InsiderAlertsService:
     """Service for detecting and publishing insider trading alerts."""
@@ -97,17 +101,36 @@ class InsiderAlertsService:
         """
         pass
 
-    def _check_cluster(self, market_id: str) -> Optional[Dict[str, Any]]:
+    async def _check_cluster(self, market_id: str) -> Optional[Dict[str, Any]]:
         pass
 
-    def _check_accumulation(self, market_id: str) -> Optional[Dict[str, Any]]:
+    async def _check_accumulation(self, market_id: str) -> Optional[Dict[str, Any]]:
         """Check for slow multi-wallet accumulation pattern."""
         pass
 
-    def _check_burst(self, market_id: str) -> Optional[Dict[str, Any]]:
+    async def _check_burst(self, market_id: str) -> Optional[Dict[str, Any]]:
+        pass
+
+    def _is_position_tracker_enabled(self) -> bool:
+        pass
+
+    async def _apply_position_tracking(self, market_id: str, trades: List[Dict[str, Any]], min_usd: float) -> List[Dict[str, Any]]:
+        """
+        Optional alternative mode:
+        - wallets enter buffer by existing filters (>=500 raw trade already enforced upstream)
+        - while in buffer, poll current market position and use full position value
+        - if wallet sold out, remove its buffered trades
+        """
         pass
 
     def _calculate_directionality(self, trades: List[Dict]) -> Tuple[str, float]:
+        pass
+
+    async def _fetch_gamma_outcome_price(self, market_id: str, event_slug: str, outcome: str) -> Optional[float]:
+        """
+        Polymarket Gamma: current outcome price in 0.0–1.0 (same scale as on-site probability).
+        One value for the whole market/outcome at fetch time — used in the alert header.
+        """
         pass
 
     def _format_alert_message(self, scenario: str, alert_data: Dict[str, Any], shared_wallets: set=None) -> str:

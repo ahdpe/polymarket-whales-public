@@ -3,7 +3,7 @@
 TRANSLATIONS = {
     'ru': {
         # Start message
-        'welcome': "🐋 *Polymarket Whale Alerts*\n\nКрупные сделки на [Polymarket](https://polymarket.com?via=PolymarketWhaleAlerts) — в реальном времени.\n\n*Что умеет бот:*\n• 🔔 Уведомления от $500 до $100,000+\n• 🎯 Фильтры: сумма, категории, вероятность, типы, возраст, позиции\n• 📊 Аналитика: PnL, возраст кошелька, открытые позиции\n• 🔗 Быстрые ссылки на профили\n• ⭐ Трейдеры — сохранённые трейдеры, заметки и уведомления об их сделках ($500+)\n• ⭐ Маркеты — сохранённые маркеты с отдельными уведомлениями ($500+)\n• 🚫 Игнор — скрытие сигналов от выбранных трейдеров или маркетов\n\nДля настройки уведомлений нажми кнопку ⚙️ **Фильтры** в меню ниже.\n\n🌐 Live-лента крупных сделок BUY от $10,000 на Polymarket:\n[polymarketwhales.online/whale-trades](https://polymarketwhales.online/whale-trades)",
+        'welcome': "🐋 *Polymarket Whale Alerts*\n\nКрупные сделки на [Polymarket](https://polymarket.com/en/?r=PolymarketWhaleAlrts) — в реальном времени.\n\n*Что умеет бот:*\n• 🔔 Уведомления от $500 до $100,000+\n• 🎯 Фильтры: сумма, категории, вероятность, типы, длительность рынка, возраст, позиции\n• 📊 Аналитика: PnL, возраст кошелька, открытые позиции\n• 🔗 Быстрые ссылки на профили\n• ⭐ Трейдеры — сохранённые трейдеры, заметки и уведомления об их сделках ($500+)\n• ⭐ Маркеты — сохранённые маркеты с отдельными уведомлениями ($500+)\n• 🚫 Игнор — скрытие сигналов от выбранных трейдеров или маркетов\n\nДля настройки уведомлений нажми кнопку ⚙️ **Фильтры** в меню ниже.\n\n🌐 Live-лента крупных сделок BUY от $10,000 на Polymarket:\n[polymarketwhales.online/whale-trades](https://polymarketwhales.online/whale-trades)",
         
         # Buttons
         'btn_filters': "⚙️ Фильтры",
@@ -100,7 +100,7 @@ TRANSLATIONS = {
         
         # About
         'about': """*Polymarket Whale Alerts* 🐋
-Мониторинг крупных сделок на [Polymarket](https://polymarket.com?via=PolymarketWhaleAlerts) в реальном времени.
+Мониторинг крупных сделок на [Polymarket](https://polymarket.com/en/?r=PolymarketWhaleAlrts) в реальном времени.
 
 *Функционал:*
 • 🔔 Уведомления о сделках от $500 до $100,000+
@@ -108,10 +108,15 @@ TRANSLATIONS = {
 • 📂 Выбор категорий (Крипто, Спорт, Остальное)
 • ⚖️ Фильтр вероятности (исключает почти решённые рынки)
 • 🔄 Фильтр типов событий (BUY, SELL, SPLIT, MERGE, REDEEM)
+• ⏱ Фильтр минимальной длительности рынка: по умолчанию ≥15m; варианты Off, ≥15m, ≥30m, ≥60m, ≥240m
+  Помогает скрывать короткие шумные рынки, например 5M crypto up/down.
 • 🕐 Фильтр возраста кошелька (по дням, мин-макс)
 • 💼 Фильтр количества позиций (мин-макс)
 • ⭐ Трейдеры (сохранять, уведомлять, игнорировать)
 • ⭐ Маркеты (сохранять, уведомлять, игнорировать)
+
+*Скорость алертов:*
+Бот использует Polymarket Data API. Иногда сделки появляются в API с задержкой в несколько минут, поэтому алерты могут приходить не мгновенно — это ограничение источника данных, а не ошибка бота.
 
 *Классификация объемов:*
 🔥 МЕГА КИТ — >$100,000
@@ -120,6 +125,7 @@ TRANSLATIONS = {
 🦈 АКУЛА — >$10,000
 🐬 ДЕЛЬФИН — >$5,000
 🐟 РЫБА — >$2,000
+🐙 ОСЬМИНОГ — >$1,000
 🦐 КРЕВЕТКА — >$500
 
 *Типы событий:*
@@ -200,15 +206,15 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
         'market_notif_enabled': "🔔 Уведомления включены (все сделки $500+, с учётом типов)",
         'market_notif_disabled': "🔕 Уведомления выключены (по общим фильтрам)",
         'market_manual_add_btn': "➕ Добавить",
-        'market_manual_add_prompt': "✍️ Отправьте ссылку на маркет Polymarket:\n\nПример:\n• `https://polymarket.com/event/...`",
-        'market_manual_add_invalid': "❌ Неверный формат. Отправьте ссылку на маркет вида `https://polymarket.com/event/...`\n\nНажмите ➕ снова, чтобы повторить.",
+        'market_manual_add_prompt': "✍️ Отправьте ссылку на маркет Polymarket:\n\nПример:\n• `https://polymarket.com/en/event/...`",
+        'market_manual_add_invalid': "❌ Неверный формат. Отправьте ссылку на маркет вида `https://polymarket.com/en/event/...`\n\nНажмите ➕ снова, чтобы повторить.",
         'market_manual_add_exists': "ℹ️ Этот маркет уже в списке.",
         'market_manual_add_success': "✅ Маркет добавлен!",
         'market_manual_add_cancel': "❌ Отмена",
         
         # Manual add
         'manual_add_btn': "➕ Добавить",
-        'manual_add_prompt': "✍️ Отправьте ссылку на профиль Polymarket или адрес кошелька трейдера:\n\nПример:\n• `https://polymarket.com/profile/0x123...`\n• `0x1234567890abcdef...`",
+        'manual_add_prompt': "✍️ Отправьте ссылку на профиль Polymarket или адрес кошелька трейдера:\n\nПример:\n• `https://polymarket.com/en/profile/0x123...`\n• `0x1234567890abcdef...`",
         'manual_add_invalid': "❌ Неверный формат. Отправьте ссылку на профиль или адрес кошелька (0x...)\n\nНажмите ➕ снова, чтобы повторить.",
         'manual_add_exists': "ℹ️ Этот трейдер уже в списке.",
         'manual_add_success': "✅ Трейдер добавлен в список!",
@@ -218,7 +224,7 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
     
     'en': {
         # Start message
-        'welcome': "🐋 *Polymarket Whale Alerts*\n\nLarge trades on [Polymarket](https://polymarket.com?via=PolymarketWhaleAlerts) — in real-time.\n\n*What the bot can do:*\n• 🔔 Alerts from $500 to $100,000+\n• 🎯 Filters: amount, categories, probability, types, age, positions\n• 📊 Analytics: PnL, wallet age, open positions\n• 🔗 Quick links to profiles\n• ⭐ Traders — saved traders, notes and notifications about their trades ($500+)\n• ⭐ Markets — saved markets with personal notifications ($500+)\n• 🚫 Ignore traders/markets — hide signals from selected traders or markets\n\nTo configure alerts, press the ⚙️ **Filters** button in the menu below.\n\n🌐 Live feed of large BUY trades over $10,000 on Polymarket:\n[polymarketwhales.online/whale-trades](https://polymarketwhales.online/whale-trades)",
+        'welcome': "🐋 *Polymarket Whale Alerts*\n\nLarge trades on [Polymarket](https://polymarket.com/en/?r=PolymarketWhaleAlrts) — in real-time.\n\n*What the bot can do:*\n• 🔔 Alerts from $500 to $100,000+\n• 🎯 Filters: amount, categories, probability, types, market duration, age, positions\n• 📊 Analytics: PnL, wallet age, open positions\n• 🔗 Quick links to profiles\n• ⭐ Traders — saved traders, notes and notifications about their trades ($500+)\n• ⭐ Markets — saved markets with personal notifications ($500+)\n• 🚫 Ignore traders/markets — hide signals from selected traders or markets\n\nTo configure alerts, press the ⚙️ **Filters** button in the menu below.\n\n🌐 Live feed of large BUY trades over $10,000 on Polymarket:\n[polymarketwhales.online/whale-trades](https://polymarketwhales.online/whale-trades)",
         
         # Buttons
         'btn_filters': "⚙️ Filters",
@@ -315,7 +321,7 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
         
         # About
         'about': """*Polymarket Whale Alerts* 🐋
-Real-time monitoring of large trades on [Polymarket](https://polymarket.com?via=PolymarketWhaleAlerts).
+Real-time monitoring of large trades on [Polymarket](https://polymarket.com/en/?r=PolymarketWhaleAlrts).
 
 *Functionality:*
 • 🔔 Trade alerts from $500 to $100,000+
@@ -323,10 +329,15 @@ Real-time monitoring of large trades on [Polymarket](https://polymarket.com?via=
 • 📂 Category selection (Crypto, Sports, Other)
 • ⚖️ Probability filter (excludes near-resolved markets)
 • 🔄 Event type filter (BUY, SELL, SPLIT, MERGE, REDEEM)
+• ⏱ Minimum market duration filter: default ≥15m; options Off, ≥15m, ≥30m, ≥60m, ≥240m
+  Helps hide short noisy markets, for example 5M crypto up/down.
 • 🕐 Wallet age filter (in days, min-max range)
 • 💼 Open positions filter (min-max range)
 • ⭐ Traders (Save traders, notify, ignore)
 • ⭐ Markets (Save markets, notify, ignore)
+
+*Alert speed:*
+The bot uses the Polymarket Data API. Sometimes trades appear in the API with a delay of a few minutes, so alerts may not be instant — this is a data-source limitation, not a bot error.
 
 *Volume classification:*
 🔥 MEGA WHALE — >$100,000
@@ -335,6 +346,7 @@ Real-time monitoring of large trades on [Polymarket](https://polymarket.com?via=
 🦈 SHARK — >$10,000
 🐬 DOLPHIN — >$5,000
 🐟 FISH — >$2,000
+🐙 OCTOPUS — >$1,000
 🦐 SHRIMP — >$500
 
 *Event types:*
@@ -415,15 +427,15 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
         'market_notif_enabled': "🔔 Notifications enabled (all trades $500+, event types applied)",
         'market_notif_disabled': "🔕 Notifications disabled (general filters only)",
         'market_manual_add_btn': "➕ Add",
-        'market_manual_add_prompt': "✍️ Send a Polymarket market link:\n\nExample:\n• `https://polymarket.com/event/...`",
-        'market_manual_add_invalid': "❌ Invalid format. Send a link like `https://polymarket.com/event/...`\n\nPress ➕ again to retry.",
+        'market_manual_add_prompt': "✍️ Send a Polymarket market link:\n\nExample:\n• `https://polymarket.com/en/event/...`",
+        'market_manual_add_invalid': "❌ Invalid format. Send a link like `https://polymarket.com/en/event/...`\n\nPress ➕ again to retry.",
         'market_manual_add_exists': "ℹ️ This market is already in the list.",
         'market_manual_add_success': "✅ Market added!",
         'market_manual_add_cancel': "❌ Cancel",
         
         # Manual add
         'manual_add_btn': "➕ Add",
-        'manual_add_prompt': "✍️ Send a Polymarket profile link or trader wallet address:\n\nExample:\n• `https://polymarket.com/profile/0x123...`\n• `0x1234567890abcdef...`",
+        'manual_add_prompt': "✍️ Send a Polymarket profile link or trader wallet address:\n\nExample:\n• `https://polymarket.com/en/profile/0x123...`\n• `0x1234567890abcdef...`",
         'manual_add_invalid': "❌ Invalid format. Send a profile link or wallet address (0x...)\n\nPress ➕ again to retry.",
         'manual_add_exists': "ℹ️ This trader is already in the list.",
         'manual_add_success': "✅ Trader added to the list!",
@@ -438,15 +450,17 @@ TRADE_LEVELS = {
         20000: "Кит",
         10000: "Акула",
         5000: "Дельфин",
-        1000: "Рыба",
-        100: "Креветка",
+        2000: "Рыба",
+        1000: "Осьминог",
+        500: "Креветка",
     },
     'en': {
         20000: "Whale",
         10000: "Shark",
         5000: "Dolphin",
-        1000: "Fish",
-        100: "Shrimp",
+        2000: "Fish",
+        1000: "Octopus",
+        500: "Shrimp",
     }
 }
 
@@ -459,6 +473,7 @@ TRADE_LEVEL_EMOJIS = {
         10000: "🦈 АКУЛА",
         5000: "🐬 ДЕЛЬФИН",
         2000: "🐟 РЫБА",
+        1000: "🐙 ОСЬМИНОГ",
         500: "🦐 КРЕВЕТКА",
     },
     'en': {
@@ -468,6 +483,7 @@ TRADE_LEVEL_EMOJIS = {
         10000: "🦈 SHARK",
         5000: "🐬 DOLPHIN",
         2000: "🐟 FISH",
+        1000: "🐙 OCTOPUS",
         500: "🦐 SHRIMP",
     }
 }
@@ -499,6 +515,7 @@ def get_trade_level_icon(min_value: int) -> str:
         10000: "🦈",
         5000: "🐬",
         2000: "🐟",
+        1000: "🐙",
         500: "🦐",
     }
     return icons.get(min_value, "🦐")

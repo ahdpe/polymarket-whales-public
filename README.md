@@ -24,6 +24,7 @@ Telegram-бот для отслеживания крупных сделок ("к
 - 📂 **Фильтр по категориям** — Крипто, Спорт, Остальное
 - ⚖️ **Фильтр вероятности** — исключает почти решённые рынки (99.9%)
 - 🔄 **Фильтр типов событий** — выбирай какие сделки отслеживать: BUY, SELL, SPLIT, MERGE, REDEEM
+- ⏱ **Фильтр длительности рынка** — скрывает короткие рынки, если в названии или slug удаётся распознать таймфрейм
 - 🕐 **Фильтр возраста кошелька** — фильтр по возрасту кошелька трейдера (в днях, мин-макс)
 - 💼 **Фильтр количества позиций** — фильтр по количеству открытых позиций (мин-макс)
 - 🌐 **Двуязычный интерфейс** — Русский / English
@@ -50,6 +51,7 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
 | 🦈 | Акула | >$10,000 |
 | 🐬 | Дельфин | >$5,000 |
 | 🐟 | Рыба | >$2,000 |
+| 🐙 | Осьминог | >$1,000 |
 | 🦐 | Креветка | >$500 |
 
 ### Новые метрики и точность данных
@@ -72,6 +74,7 @@ Polymarket API часто обрезает историю сделок для а
 - **Источник:** Бот использует публичный **Polymarket Data API** (`data-api.polymarket.com`).
 - **Метод:** Бот **опрашивает (polling)** API каждые **3 секунды**.
 - **Фильтрация на входе:** Запрашиваются только сделки типа `CASH` на сумму от **$10** (чтобы захватить даже мелкие части крупных ордеров).
+- **Задержка источника:** Polymarket Data API иногда публикует сделки с задержкой в несколько минут. В такие моменты алерты тоже могут приходить не мгновенно — это ограничение источника данных, а не ошибка бота.
 
 #### 2. Обработка и Агрегация (Aggregation)
 Одна крупная сделка на Polymarket часто разбивается на множество мелких исполнений (fills). Чтобы не спамить уведомлениями о каждой части, бот собирает их в серии.
@@ -102,6 +105,7 @@ Polymarket API часто обрезает историю сделок для а
   - **Категории:** Крипто, Спорт, Остальное (определяются по ключевым словам)
   - **Вероятность:** Любая, 1%-99%, 5%-95%, или **свой диапазон** (20-80%)
   - **Типы событий:** BUY, SELL, SPLIT, MERGE, REDEEM
+  - **Длительность рынка:** по умолчанию ≥15m; варианты Off, ≥15m, ≥30m, ≥60m, ≥240m. Если длительность не распознана, алерт не скрывается
   - **Возраст кошелька:** Фильтр по возрасту кошелька трейдера в днях (мин-макс диапазон, по умолчанию неограничено). ⚠️ Тестовый режим — возможны неточности.
   - **Количество позиций:** Фильтр по количеству открытых позиций (мин-макс диапазон, по умолчанию неограничено)
   - **Язык:** Русский или Английский
@@ -109,7 +113,7 @@ Polymarket API часто обрезает историю сделок для а
   - `⚙️ Фильтры` — подменю со всеми настройками фильтров:
     - **Строка 1:** `💰 Сумма сделки`, `📂 Категории`, `⚖️ Вероятность`
     - **Строка 2:** `🔄 Типы событий`, `🕐 Возраст`, `💼 Позиции`
-    - **Строка 3:** `⬅️ Назад`
+    - **Строка 3:** `⏱ Длительность рынка`, `▶️ Запустить / ⏸️ Остановить`, `⬅️ Назад`
   - **Настройка фильтров:**
     - Для **вероятности**, **возраста** и **позиций** доступен ввод произвольного диапазона нажатием "📝 Настроить интервал".
     - Формат: `мин-макс` (например: `7-365`), `мин-` (от минимума), `-макс` (до максимума), или `0` (сбросить)
@@ -218,6 +222,7 @@ Telegram bot for real-time tracking of large trades ("whales") on [Polymarket](h
 - 📂 **Category filter** — Crypto, Sports, Other
 - ⚖️ **Probability filter** — excludes near-resolved markets (99.9%)
 - 🔄 **Event type filter** — choose which trades to track: BUY, SELL, SPLIT, MERGE, REDEEM
+- ⏱ **Market duration filter** — hides short markets when a timeframe can be recognized in the title or slug
 - 🕐 **Wallet age filter** — filter by trader wallet age (in days, min-max range)
 - 💼 **Open positions filter** — filter by number of open positions (min-max range)
 - 🌐 **Bilingual interface** — Russian / English
@@ -244,6 +249,7 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
 | 🦈 | Shark | >$10,000 |
 | 🐬 | Dolphin | >$5,000 |
 | 🐟 | Fish | >$2,000 |
+| 🐙 | Octopus | >$1,000 |
 | 🦐 | Shrimp | >$500 |
 
 ### New Metrics & Data Accuracy
@@ -266,6 +272,7 @@ Polymarket API often truncates activity history for high-frequency traders. For 
 - **Source:** Uses public **Polymarket Data API** (`data-api.polymarket.com`).
 - **Method:** Polls the API every **3 seconds**.
 - **Input filtering:** Only `CASH` type trades from **$10** are requested.
+- **Source delay:** The Polymarket Data API can publish trades with a delay of a few minutes. When this happens, alerts may not be instant — this is a data-source limitation, not a bot error.
 
 #### 9. Processing and Aggregation
 A single large trade is often split into multiple fills. To avoid spam, the bot groups them:
@@ -285,13 +292,14 @@ A single large trade is often split into multiple fills. To avoid spam, the bot 
 - **Cleanup:** Records > 72h are deleted.
 
 #### 11. Telegram Bot (TelegramService)
-- **Filters:** Amount, Category, Probability (Presets or Custom Range), Event Types, Wallet Age, Open Positions, Language.
+- **Filters:** Amount, Category, Probability (Presets or Custom Range), Event Types, Market Duration, Wallet Age, Open Positions, Language.
 - **Interface:** Compact menu with "⚙️ Filters" submenu for all filter settings:
   - **Row 1:** Amount, Categories, Probability
   - **Row 2:** Event Types, Wallet Age, Open Positions
-  - **Row 3:** Back
+  - **Row 3:** Market Duration, Start/Stop, Back
   - **Buttons:** Start/Stop, ⭐ Traders, ⭐ Markets
 - **Filter Details:**
+  - **Market Duration:** default ≥15m; options Off, ≥15m, ≥30m, ≥60m, ≥240m. If the duration is not recognized, the alert is not hidden.
   - **Wallet Age:** Filter by trader wallet age in days (min-max range, default: unlimited). ⚠️ Beta mode - may have inaccuracies.
     - Format: `min-max` (e.g., `7-365`), `min-` (from minimum), `-max` (up to maximum), or `0` (reset)
   - **Open Positions:** Filter by number of open positions (min-max range, default: unlimited).
