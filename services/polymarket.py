@@ -6,6 +6,7 @@ import time
 import sqlite3
 import os
 import random
+from datetime import datetime, timezone
 from decimal import Decimal
 from collections import OrderedDict
 from typing import Optional, Tuple
@@ -13,6 +14,9 @@ from config import POLYGONSCAN_API_KEY
 from core.utils import polymarket_event_url
 logger = logging.getLogger(__name__)
 DATA_API_URL = 'https://data-api.polymarket.com'
+GAMMA_PUBLIC_PROFILE_URL = 'https://gamma-api.polymarket.com/public-profile'
+DATA_API_ACTIVITY_LIMIT = 500
+DATA_API_ACTIVITY_MAX_OFFSET = 5000
 POLL_INTERVAL = 3
 MAX_LRU_SIZE = 10000
 DB_PATH = 'data/trades.db'
@@ -30,6 +34,7 @@ _positions_cache = {}
 WALLET_AGE_CACHE_TTL = 7 * 24 * 60 * 60
 WALLET_AGE_FALLBACK_TTL = 600
 _wallet_age_cache = {}
+_WALLET_AGE_STABLE_SOURCES = {'etherscan', 'gamma_profile', 'polymarket_full'}
 
 def norm_ts(x, default=0.0) -> float:
     """Normalize timestamp to seconds (handle ms)."""
@@ -37,6 +42,14 @@ def norm_ts(x, default=0.0) -> float:
 
 def norm_ts_int(x, default=0) -> int:
     """Normalize timestamp to integer seconds (handle ms)."""
+    pass
+
+def parse_profile_created_at(value, now=None) -> Optional[float]:
+    """Parse Gamma profile creation time, rejecting invalid or future values."""
+    pass
+
+def oldest_activity_timestamp(activities) -> Optional[float]:
+    """Return the oldest valid timestamp without assuming API sort order."""
     pass
 
 class TradePersistence:

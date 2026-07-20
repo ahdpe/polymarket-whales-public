@@ -8,13 +8,14 @@ import time
 import psutil
 from datetime import datetime, time as dt_time, timedelta
 from services.polymarket import PolymarketService
-from services.telegram_service import start_telegram, enqueue_trade_alert, user_filters, get_user_categories, get_default_categories, get_user_lang, get_user_probability_filter, get_user_side_types, get_user_wallet_age_filter, get_user_open_positions_filter, get_user_min_market_timeframe, send_admin_notification, set_poly_service, set_insider_alerts_service, stop_queue_workers
+from services.telegram_service import start_telegram, enqueue_trade_alert, user_filters, get_user_categories, get_default_categories, get_user_lang, get_user_probability_filter, get_user_side_types, get_user_wallet_age_filter, get_user_open_positions_filter, get_user_min_market_timeframe, get_user_category_refinements, send_admin_notification, set_poly_service, set_insider_alerts_service, stop_queue_workers
 from services.report_service import generate_report
 from core.filters import get_alert_level
-from core.categories import detect_category, should_show_trade
+from core.categories import detect_category, detect_category_from_official_tags, detect_combo_sports_categories, detect_detailed_categories, get_category_emoji, should_show_detailed_trade, should_show_trade
 from core.localization import get_trade_level_emoji, get_trade_level_icon
-from core.utils import polymarket_event_url, polymarket_profile_url, shorten_trader_name
+from core.utils import format_trade_age, format_trade_money, is_polymarket_combo_trade, polymarket_event_url, polymarket_profile_url, shorten_trader_name, summarize_polymarket_combo_title, truncate_with_ellipsis
 from services.market_timeframe import should_block_market_timeframe
+from services.market_categories import get_market_category_cache
 from storage import saved_whales
 from storage import saved_markets
 from services.twitter_service import get_twitter_service
@@ -28,16 +29,24 @@ logging.basicConfig(level=logging.INFO, format=log_format, handlers=[file_handle
 logger = logging.getLogger(__name__)
 poly_service = None
 insider_alerts_service = None
+market_category_cache = get_market_category_cache()
+DETAILED_CATEGORIES_SHADOW_ONLY = os.getenv('DETAILED_CATEGORIES_SHADOW_ONLY', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 MEMORY_WARNING_THRESHOLD = 85.0
 MEMORY_CRITICAL_THRESHOLD = 95.0
 MEMORY_CHECK_INTERVAL = 300
 _last_memory_warning_time = {}
 
-def format_position_stats(pos_data, side=None):
+def _is_russian(lang):
+    pass
+
+def _russian_position_word(count):
+    pass
+
+def format_position_stats(pos_data, side=None, lang='en'):
     """Format position stats line for whale message."""
     pass
 
-def format_wallet_age(first_activity_ts):
+def format_wallet_age(first_activity_ts, lang='en', now=None):
     """Format wallet age from first activity timestamp."""
     pass
 

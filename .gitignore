@@ -6,7 +6,6 @@ __pycache__/
 .env.production
 .env.backup
 user_settings.json*
-!user_settings.json
 twitter_settings.json
 *.png
 data/*.db
@@ -38,3 +37,5 @@ private_archive/
 
 *.db-wal
 *.db-shm
+!.env.example
+!user_settings.json

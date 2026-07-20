@@ -21,14 +21,14 @@ alerts_storage.init_db()
 service = InsiderAlertsService()
 print('⚙️  Insider Alerts Settings:')
 print(f'   Enabled: {service.is_enabled()}')
-print(f"   Probability min: {service.settings.get('probability_min', '0')}%")
-print(f"   Probability max: {service.settings.get('probability_max', '100')}%")
-print(f"   BURST enabled: {service.settings.get('burst_enabled', 'false')}")
-print(f"   BURST min wallets: {service.settings.get('burst_min_wallets', '8')}")
-print(f"   BURST interval: {service.settings.get('burst_interval_hours', '1')}h")
-print(f"   BURST max wallet age: {service.settings.get('burst_wallet_age_hours', '72')}h")
-print(f"   BURST max positions: {service.settings.get('burst_max_positions', '3')}")
-print(f"   BURST min USD: ${service.settings.get('burst_min_usd', '1000')}")
+print(f'   Probability min: {service.settings.get('probability_min', '0')}%')
+print(f'   Probability max: {service.settings.get('probability_max', '100')}%')
+print(f'   BURST enabled: {service.settings.get('burst_enabled', 'false')}')
+print(f'   BURST min wallets: {service.settings.get('burst_min_wallets', '8')}')
+print(f'   BURST interval: {service.settings.get('burst_interval_hours', '1')}h')
+print(f'   BURST max wallet age: {service.settings.get('burst_wallet_age_hours', '72')}h')
+print(f'   BURST max positions: {service.settings.get('burst_max_positions', '3')}')
+print(f'   BURST min USD: ${service.settings.get('burst_min_usd', '1000')}')
 prob_min = float(service.settings.get('probability_min', '0'))
 prob_max = float(service.settings.get('probability_max', '100'))
 print(f'\n📊 Probability Filter Check:')
@@ -44,14 +44,14 @@ try:
     rows = conn.execute('\n        SELECT * FROM alerts_raw_trades \n        WHERE wallet LIKE ?\n        ORDER BY timestamp DESC\n        LIMIT 10\n    ', (f'%{wallet[-10:]}%',)).fetchall()
     if rows:
         print(f'\n📋 Found {len(rows)} trades for this wallet (partial match):')
-        for (i, row) in enumerate(rows, 1):
+        for i, row in enumerate(rows, 1):
             row_dict = dict(row)
             age_h = (int(time.time()) - row_dict['timestamp']) / 3600
-            print(f"   {i}. Market: {row_dict.get('market_title', '')[:60]}")
-            print(f"      Size: ${row_dict.get('trade_size_usd', 0):.2f}")
-            print(f"      Price: {(row_dict.get('price', 0) * 100 if row_dict.get('price') else 'N/A')}%")
+            print(f'   {i}. Market: {row_dict.get('market_title', '')[:60]}')
+            print(f'      Size: ${row_dict.get('trade_size_usd', 0):.2f}')
+            print(f'      Price: {(row_dict.get('price', 0) * 100 if row_dict.get('price') else 'N/A')}%')
             print(f'      Age: {age_h:.1f}h ago')
-            print(f"      Consumed: {row_dict.get('consumed_by_scenario', 'No')}")
+            print(f'      Consumed: {row_dict.get('consumed_by_scenario', 'No')}')
     else:
         print(f'\n❌ No trades found in database for wallet ending in ...{wallet[-10:]}')
         print(f'   This confirms the trade was never stored.')
@@ -66,7 +66,7 @@ finally:
 print(f'\n📊 Active BURSTS in buffer:')
 active_bursts = service._active_bursts
 if active_bursts:
-    for (market_id, burst) in list(active_bursts.items())[:5]:
+    for market_id, burst in list(active_bursts.items())[:5]:
         title = burst.get('title', '')[:60]
         wallets = burst.get('wallets', 0)
         min_wallets = burst.get('min_wallets', 0)

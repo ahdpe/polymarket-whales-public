@@ -35,3 +35,48 @@ def should_show_trade(category: str, user_prefs: dict) -> bool:
     }
     """
     pass
+DETAILED_CATEGORY_OPTIONS = {'sports': ('sports.combo', 'sports.esports', 'sports.soccer', 'sports.basketball', 'sports.american_football', 'sports.baseball', 'sports.hockey', 'sports.tennis', 'sports.combat', 'sports.motorsport', 'sports.golf', 'sports.cricket', 'sports.other'), 'crypto': ('crypto.bitcoin', 'crypto.ethereum', 'crypto.solana', 'crypto.other_assets', 'crypto.prices', 'crypto.launches', 'crypto.regulation', 'crypto.defi_nft', 'crypto.other'), 'other': ('other.politics', 'other.geopolitics', 'other.economy', 'other.entertainment', 'other.science_tech', 'other.weather', 'other.business', 'other.other')}
+_OFFICIAL_TAG_GROUPS = {'sports.esports': {'esports', 'counter-strike-2', 'cs2', 'valorant', 'league-of-legends', 'lol', 'dota-2', 'overwatch', 'rainbow-six', 'rocket-league'}, 'sports.soccer': {'soccer', 'association-football', 'fifa', 'fifa-world-cup', 'world-cup', '2026-fifa-world-cup', 'uefa', 'champions-league', 'premier-league'}, 'sports.basketball': {'basketball', 'nba', 'wnba', 'euroleague'}, 'sports.american_football': {'american-football', 'nfl', 'college-football', 'cfb'}, 'sports.baseball': {'baseball', 'mlb'}, 'sports.hockey': {'hockey', 'nhl'}, 'sports.tennis': {'tennis', 'atp', 'wta'}, 'sports.combat': {'mma', 'ufc', 'boxing', 'combat-sports'}, 'sports.motorsport': {'motorsport', 'formula1', 'formula-1', 'f1', 'nascar'}, 'sports.golf': {'golf', 'pga', 'pga-tour'}, 'sports.cricket': {'cricket', 'ipl'}, 'crypto.bitcoin': {'bitcoin', 'btc'}, 'crypto.ethereum': {'ethereum', 'eth'}, 'crypto.solana': {'solana', 'sol'}, 'crypto.other_assets': {'xrp', 'ripple', 'dogecoin', 'doge', 'cardano', 'ada', 'altcoins', 'memecoins', 'memecoin'}, 'crypto.prices': {'crypto-prices', 'hit-price', 'up-or-down', 'daily-close', 'multi-strikes', 'price-prediction'}, 'crypto.launches': {'pre-market', 'fdv', 'token-launch', 'airdrops'}, 'crypto.regulation': {'crypto-legal', 'crypto-regulation', 'regulation', 'sec', 'crypto-law'}, 'crypto.defi_nft': {'defi', 'nft', 'protocols', 'blockchain'}, 'other.politics': {'politics', 'elections', 'global-elections', 'world-elections', 'main-election', 'primaries', 'primary-elections', 'us-presidential-election', 'international-election-props'}, 'other.geopolitics': {'geopolitics', 'war', 'conflict', 'diplomacy-ceasefire', 'peace-deal', 'middle-east', 'ukraine', 'russia', 'iran', 'israel', 'china'}, 'other.economy': {'economy', 'economic-policy', 'fed', 'fed-rates', 'fomc', 'finance', 'macro-indicators', 'cpi', 'cpi-release', 'inflation', 'interest-rates', 'global-rates'}, 'other.entertainment': {'pop-culture', 'movies', 'music', 'celebrities', 'box-office', 'netflix', 'awards', 'television'}, 'other.science_tech': {'science', 'tech', 'big-tech', 'space', 'spacex', 'openai', 'artificial-intelligence', 'ai', 'earthquakes', 'natural-disaster'}, 'other.weather': {'weather', 'climate', 'climate-science', 'weather-science', 'daily-temperature', 'highest-temperature', 'lowest-temperature', 'air-quality', 'wildfire'}, 'other.business': {'business', 'ipo', 'ipos', 'companies', 'earnings'}}
+_OFFICIAL_PARENT_TAGS = {'sports': {'sports'}, 'crypto': {'crypto'}}
+_DETAIL_FALLBACK_KEYWORDS = {'sports.esports': ESPORTS_KEYWORDS, 'sports.soccer': ['soccer', 'association football', 'fifa', 'uefa', 'premier league', 'champions league', 'world cup'], 'sports.basketball': ['basketball', 'nba', 'wnba'], 'sports.american_football': ['nfl', 'super bowl', 'touchdown'], 'sports.baseball': ['baseball', 'mlb', 'home run'], 'sports.hockey': ['hockey', 'nhl'], 'sports.tennis': ['tennis', 'atp', 'wta'], 'sports.combat': ['mma', 'ufc', 'boxing'], 'sports.motorsport': ['formula 1', 'f1', 'nascar', 'motorsport'], 'sports.golf': ['golf', 'pga'], 'sports.cricket': ['cricket', 'ipl'], 'crypto.bitcoin': ['bitcoin', 'btc'], 'crypto.ethereum': ['ethereum', ' eth '], 'crypto.solana': ['solana', ' sol '], 'crypto.other_assets': ['xrp', 'ripple', 'dogecoin', 'doge', 'cardano', 'altcoin', 'memecoin'], 'crypto.prices': ['up or down', 'above', 'below', 'price', 'hit in'], 'crypto.launches': ['fdv', 'token launch', 'airdrop', 'pre-market'], 'crypto.regulation': ['crypto law', 'crypto regulation', 'clarity act', 'sec'], 'crypto.defi_nft': ['defi', 'nft', 'protocol', 'blockchain'], 'other.politics': ['election', 'president', 'prime minister', 'parliament', 'senate', 'congress', 'governor', 'mayor', 'nominee', 'primary', 'ballot'], 'other.geopolitics': ['war', 'invasion', 'ceasefire', 'peace deal', 'military', 'sanctions', 'airstrike', 'missile', 'treaty', 'diplomacy'], 'other.economy': ECONOMICS_KEYWORDS, 'other.entertainment': ['oscar', 'emmy', 'grammy', 'box office', 'movie', 'film', 'album', 'netflix', 'celebrity'], 'other.science_tech': ['spacex', 'starship', 'openai', 'artificial intelligence', 'earthquake', 'science', 'technology', 'ipo'], 'other.weather': ['temperature', 'weather', 'rainfall', 'snowfall', 'hurricane', 'wildfire', 'air quality', 'climate'], 'other.business': ['company', 'earnings', 'ipo', 'acquisition', 'merger']}
+DETAILED_CATEGORY_EMOJIS = {'sports.combo': '🎟', 'sports.esports': '🎮', 'sports.soccer': '⚽', 'sports.basketball': '🏀', 'sports.american_football': '🏈', 'sports.baseball': '⚾', 'sports.hockey': '🏒', 'sports.tennis': '🎾', 'sports.combat': '🥊', 'sports.motorsport': '🏎️', 'sports.golf': '⛳', 'sports.cricket': '🏏', 'sports.other': '🏅', 'crypto.bitcoin': '🟠', 'crypto.ethereum': '🔷', 'crypto.solana': '🟣', 'crypto.other_assets': '🪙', 'crypto.prices': '📈', 'crypto.launches': '🚀', 'crypto.regulation': '⚖️', 'crypto.defi_nft': '🧩', 'crypto.other': '💠', 'other.politics': '🗳️', 'other.geopolitics': '🌍', 'other.economy': '📊', 'other.entertainment': '🎬', 'other.science_tech': '🔬', 'other.weather': '🌦️', 'other.business': '💼', 'other.other': '🗂️'}
+_LEGACY_CATEGORY_EMOJIS = {'crypto': '💰', 'sports': '🏆', 'other': '📌'}
+
+def get_category_emoji(legacy_category: str, detailed_categories=None) -> str:
+    """Choose one deterministic card emoji from the recognized subcategories."""
+    pass
+
+def _normalize_official_tags(official_tags) -> set[str]:
+    """Return normalized Gamma tag slugs from strings or tag dictionaries."""
+    pass
+
+def _matches_any_keyword(text: str, keywords) -> bool:
+    pass
+
+def _official_alias_matches(source: str, alias: str) -> bool:
+    """Match exact tags and typed series prefixes such as soccer-fifwc."""
+    pass
+
+def _official_detailed_categories(official_tags) -> set[str]:
+    pass
+
+def detect_category_from_official_tags(official_tags) -> str | None:
+    """Return a parent category only when Gamma metadata is unambiguous."""
+    pass
+
+def detect_detailed_categories(title: str, slug: str='', official_tags=None, legacy_category: str | None=None) -> frozenset[str]:
+    """Return optional multi-label categories without changing legacy routing."""
+    pass
+_COMBO_LEG_SEPARATOR_RE = re.compile('\\s+AND\\s+', re.IGNORECASE)
+
+def detect_combo_sports_categories(combo_title: str, leg_official_tags=None) -> frozenset[str]:
+    """Classify every leg of a sports Combo and mark its format separately."""
+    pass
+
+def get_allowed_detailed_categories(parent: str, refinements: dict) -> set[str]:
+    """Resolve effective allowed children; missing settings mean all."""
+    pass
+
+def should_show_detailed_trade(legacy_category: str, detailed_categories, refinements: dict) -> bool:
+    """Apply an optional child filter after the unchanged legacy category gate."""
+    pass

@@ -86,10 +86,10 @@ TRANSLATIONS = {
         
         # Settings
         'settings_title': "⚙️ **Настройки категорий**\n\nВыбери какие рынки отслеживать:",
-        'settings_all': "Все сделки",
-        'settings_other': "Всё кроме крипты и спорта",
+        'settings_all': "Все категории",
+        'settings_other': "🗂 Остальное",
         'settings_crypto': "💰 Крипто",
-        'settings_sports': "⚽ Спорт",
+        'settings_sports': "🏆 Спорт",
         'settings_done': "✔️ Готово",
         'settings_saved': "✅ **Настройки сохранены!**\n\nАктивные категории: {categories}",
         'settings_toast': "Настройки сохранены!",
@@ -105,7 +105,7 @@ TRANSLATIONS = {
 *Функционал:*
 • 🔔 Уведомления о сделках от $500 до $100,000+
 • 💰 Фильтр минимальной суммы (настраивается пользователем)
-• 📂 Выбор категорий (Крипто, Спорт, Остальное)
+• 📂 Категории и детальные фильтры: крипто, спорт, политика, экономика и другие темы
 • ⚖️ Фильтр вероятности (исключает почти решённые рынки)
 • 🔄 Фильтр типов событий (BUY, SELL, SPLIT, MERGE, REDEEM)
 • ⏱ Фильтр минимальной длительности рынка: по умолчанию ≥15m; варианты Off, ≥15m, ≥30m, ≥60m, ≥240m
@@ -136,16 +136,26 @@ TRANSLATIONS = {
 🟣 REDEEM — выкуп при разрешении рынка
 
 *Метрики в уведомлениях:*
-📊 *Open PnL* — PnL открытых позиций (нереализованный)
-💼 *Open Positions* — Количество активных позиций (не закрытых)
-💵 *Val* — Текущая стоимость всех позиций
-🕐 *Wallet Age* — Возраст кошелька (с первой сделки)
+💵 *Paid → Max payout* — Сумма покупки и максимальная выплата при выигрыше
+💵 *Received* — Сумма, полученная при продаже
+📊 *Portfolio PnL* — Нереализованный PnL всех открытых позиций кошелька
+💼 *Portfolio* — Количество и текущая стоимость всех открытых позиций
+🕐 *Wallet Age* — Возраст профиля Polymarket; при недоступности — с первой известной активности
+🕐 *Trade* — Сколько времени прошло с момента сделки (показывается от 1 минуты)
 
 *Как определяются категории:*
-1. 💰 *Крипто (Crypto)*
-Если в названии есть: bitcoin, btc, ethereum, eth, solana, doge, pepe, binance, nft, airdrop и др.
-2. ⚽ *Спорт (Sports)*
-Если в названии есть: nfl, nba, football, soccer, ufc, f1, lakers, goal и др.
+
+Бот сначала использует официальные категории, теги и серии Polymarket. Если этих данных недостаточно, он анализирует название и ссылку рынка. Ключевые слова используются только как дополнительный способ распознавания.
+
+*Доступные категории:*
+
+💰 *Крипто* — Bitcoin, Ethereum, Solana, другие активы, цены, запуски токенов, регулирование и DeFi/NFT.
+
+🏆 *Спорт* — Combo, Esports, футбол, баскетбол, американский футбол, бейсбол, хоккей, теннис, единоборства, автоспорт, гольф и крикет.
+
+🗂 *Остальное* — политика, геополитика, экономика, развлечения, наука и технологии, погода и бизнес.
+
+В детальных фильтрах можно выбрать отдельные темы внутри каждой категории. Combo включается отдельно и проходит, только если выбраны все распознанные виды спорта внутри него. При частичном выборе нераспознанные события относятся к пункту «Другой».
 
 💬 Обратная связь: @Andrey\_Os
 📢 @PMInsiderSignals — сигналы о нетипичной скоординированной активности свежих кошельков на Polymarket.
@@ -307,10 +317,10 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
         
         # Settings
         'settings_title': "⚙️ **Category Settings**\n\nSelect which markets to track:",
-        'settings_all': "All trades",
-        'settings_other': "All except crypto & sports",
+        'settings_all': "All categories",
+        'settings_other': "🗂 Other",
         'settings_crypto': "💰 Crypto",
-        'settings_sports': "⚽ Sports",
+        'settings_sports': "🏆 Sports",
         'settings_done': "✔️ Done",
         'settings_saved': "✅ **Settings saved!**\n\nActive categories: {categories}",
         'settings_toast': "Settings saved!",
@@ -326,7 +336,7 @@ Real-time monitoring of large trades on [Polymarket](https://polymarket.com/en/?
 *Functionality:*
 • 🔔 Trade alerts from $500 to $100,000+
 • 💰 Customizable amount threshold
-• 📂 Category selection (Crypto, Sports, Other)
+• 📂 Categories and detailed filters: crypto, sports, politics, economy, and more
 • ⚖️ Probability filter (excludes near-resolved markets)
 • 🔄 Event type filter (BUY, SELL, SPLIT, MERGE, REDEEM)
 • ⏱ Minimum market duration filter: default ≥15m; options Off, ≥15m, ≥30m, ≥60m, ≥240m
@@ -357,16 +367,26 @@ The bot uses the Polymarket Data API. Sometimes trades appear in the API with a 
 🟣 REDEEM — redeem on market resolution
 
 *Metric definitions:*
-📊 *Open PnL* — PnL of open positions (Unrealized)
-💼 *Open Positions* — Count of active positions (not closed)
-💵 *Val* — Current value of open positions
-🕐 *Wallet Age* — Time since first activity
+💵 *Paid → Max payout* — Purchase cost and maximum payout if the outcome wins
+💵 *Received* — Amount received from a sale
+📊 *Portfolio PnL* — Unrealized PnL across all open wallet positions
+💼 *Portfolio* — Count and current value of all open positions
+🕐 *Wallet Age* — Time since the Polymarket profile was created; falls back to first known activity
+🕐 *Trade* — Time elapsed since the trade (shown from 1 minute)
 
-*Category definitions:*
-1. 💰 *Crypto*
-Keywords: bitcoin, btc, ethereum, eth, solana, doge, pepe, binance, nft, airdrop, etc.
-2. ⚽ *Sports*
-Keywords: nfl, nba, football, soccer, ufc, f1, lakers, goal, etc.
+*How categories are determined:*
+
+The bot first uses Polymarket's official categories, tags, and series. When that data is insufficient, it analyzes the market title and link. Keywords are used only as an additional fallback.
+
+*Available categories:*
+
+💰 *Crypto* — Bitcoin, Ethereum, Solana, other assets, prices, token launches, regulation, and DeFi/NFT.
+
+🏆 *Sports* — Combo, Esports, soccer, basketball, American football, baseball, hockey, tennis, combat sports, motorsport, golf, and cricket.
+
+🗂 *Other* — politics, geopolitics, economy, entertainment, science and technology, weather, and business.
+
+Detailed filters let you select individual topics within each category. Combo has a separate switch and passes only when every recognized sport inside it is selected. Under a partial selection, unrecognized events belong to the relevant Other option.
 
 💬 Feedback: @Andrey\_Os
 📢 @PMInsiderSignals — signals of atypical coordinated activity of fresh wallets on Polymarket.

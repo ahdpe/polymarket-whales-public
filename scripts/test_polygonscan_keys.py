@@ -17,7 +17,7 @@ else:
     keys = [keys_str.strip()] if keys_str.strip() else []
 print(f'\n📊 Found {len(keys)} API key(s)\n')
 test_wallet = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
-for (i, key) in enumerate(keys, 1):
+for i, key in enumerate(keys, 1):
     url = f'https://api.etherscan.io/v2/api?chainid=137&module=account&action=txlist&address={test_wallet}&startblock=0&endblock=99999999&page=1&offset=1&sort=asc&apikey={key}'
     try:
         resp = requests.get(url, timeout=10)

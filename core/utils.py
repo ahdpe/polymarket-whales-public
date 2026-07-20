@@ -1,6 +1,7 @@
 # PUBLIC SHELL VERSION
 """Common utility functions for PolyWhales bot."""
 import re
+import time
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 POLYMARKET_HOSTS = {'polymarket.com', 'www.polymarket.com'}
 POLYMARKET_REF_PARAM = 'r'
@@ -31,6 +32,26 @@ def polymarket_url(path: str='', *, add_ref: bool=True) -> str:
 
 def polymarket_event_url(event_slug_or_id: str | None) -> str:
     """Build a normalized Polymarket market/event URL."""
+    pass
+
+def is_polymarket_combo_trade(trade_data: dict | None) -> bool:
+    """Recognize Combos even when the trades endpoint omits ``isCombo``."""
+    pass
+
+def summarize_polymarket_combo_title(combo_title: str) -> tuple[int, str]:
+    """Return the pick count and unique parent event names for a Combo."""
+    pass
+
+def truncate_with_ellipsis(value: str, max_length: int=80) -> str:
+    """Truncate display text while making the truncation explicit."""
+    pass
+
+def format_trade_age(trade_timestamp: int | float | str | None, *, now: int | float | None=None, min_seconds: int=60, lang: str='en') -> str:
+    """Format elapsed time since a trade, hiding fresh or invalid timestamps."""
+    pass
+
+def format_trade_money(value_usd: int | float, size: int | float, side: str, *, is_split: bool=False, is_merge: bool=False, is_redeem: bool=False, lang: str='en') -> str:
+    """Format the card amount while preserving special activity semantics."""
     pass
 
 def polymarket_profile_url(profile_id: str | None) -> str:

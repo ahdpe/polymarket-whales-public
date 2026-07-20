@@ -47,5 +47,16 @@
   "min_market_timeframe_minutes": {
     "example_user_id": 15
   },
+  "category_refinements": {
+    "example_user_id": {
+      "sports": {
+        "mode": "selected",
+        "allowed": [
+          "sports.esports",
+          "sports.combo"
+        ]
+      }
+    }
+  },
   "bot_enabled": true
 }

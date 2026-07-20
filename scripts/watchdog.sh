@@ -1,32 +1,43 @@
 #!/bin/bash
-# Watchdog script for PolymarketWhales bot
-# Checks if bot is responsive (logs are being written)
-# If logs are stale for more than 10 minutes, restarts the bot
+# Watchdog for PolymarketWhales.
+# Keep process ownership inside systemd; never start main.py directly.
 
+SERVICE="polywhales.service"
 BOT_DIR="/root/PolymarketWhales"
 LOG_FILE="$BOT_DIR/bot_output.log"
-PID_CHECK="python.*main.py"
-MAX_STALE_SECONDS=600  # 10 minutes
+MAX_STALE_SECONDS=900
 
-# Get current time and log file modification time
-CURRENT_TIME=$(date +%s)
-LOG_MTIME=$(stat -c %Y "$LOG_FILE" 2>/dev/null || echo 0)
-STALE_SECONDS=$((CURRENT_TIME - LOG_MTIME))
+now() {
+    date '+%Y-%m-%d %H:%M:%S %Z'
+}
 
-# Check if process is running
-if ! pgrep -f "$PID_CHECK" > /dev/null; then
-    echo "[$(date)] Bot process not found. Starting..."
-    cd "$BOT_DIR" && nohup ./run.sh >> /dev/null 2>&1 &
+restart_service() {
+    echo "[$(now)] Restarting $SERVICE via systemd..."
+    timeout 35 systemctl restart "$SERVICE"
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "[$(now)] Normal restart failed/timed out (rc=$rc). Killing unit and starting cleanly..."
+        systemctl kill -s SIGKILL "$SERVICE" 2>/dev/null || true
+        sleep 3
+        systemctl reset-failed "$SERVICE" 2>/dev/null || true
+        systemctl start "$SERVICE"
+    fi
+}
+
+if ! systemctl is-active --quiet "$SERVICE"; then
+    echo "[$(now)] $SERVICE is not active. Starting..."
+    systemctl reset-failed "$SERVICE" 2>/dev/null || true
+    systemctl start "$SERVICE"
     exit 0
 fi
 
-# Check if logs are stale
-if [ "$STALE_SECONDS" -gt "$MAX_STALE_SECONDS" ]; then
-    echo "[$(date)] Bot logs stale for ${STALE_SECONDS}s (>${MAX_STALE_SECONDS}s). Restarting..."
-    pkill -9 -f "$PID_CHECK"
-    sleep 3
-    cd "$BOT_DIR" && nohup ./run.sh >> /dev/null 2>&1 &
-    echo "[$(date)] Bot restarted."
+current_time=$(date +%s)
+log_mtime=$(stat -c %Y "$LOG_FILE" 2>/dev/null || echo 0)
+stale_seconds=$((current_time - log_mtime))
+
+if [ "$stale_seconds" -gt "$MAX_STALE_SECONDS" ]; then
+    echo "[$(now)] Bot log is stale for ${stale_seconds}s (>${MAX_STALE_SECONDS}s)."
+    restart_service
 else
-    echo "[$(date)] Bot healthy. Logs updated ${STALE_SECONDS}s ago."
+    echo "[$(now)] Bot healthy. Log updated ${stale_seconds}s ago."
 fi

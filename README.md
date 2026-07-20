@@ -21,7 +21,7 @@ Telegram-бот для отслеживания крупных сделок ("к
 
 - 📊 **Мониторинг сделок** от $500 до $100,000+
 - 💰 **Фильтр по сумме** — выбери минимальный порог
-- 📂 **Фильтр по категориям** — Крипто, Спорт, Остальное
+- 📂 **Категории и подкатегории** — общий выбор Крипто, Спорт, Остальное и детальная настройка отдельных типов рынков
 - ⚖️ **Фильтр вероятности** — исключает почти решённые рынки (99.9%)
 - 🔄 **Фильтр типов событий** — выбирай какие сделки отслеживать: BUY, SELL, SPLIT, MERGE, REDEEM
 - ⏱ **Фильтр длительности рынка** — скрывает короткие рынки, если в названии или slug удаётся распознать таймфрейм
@@ -29,14 +29,14 @@ Telegram-бот для отслеживания крупных сделок ("к
 - 💼 **Фильтр количества позиций** — фильтр по количеству открытых позиций (мин-макс)
 - 🌐 **Двуязычный интерфейс** — Русский / English
 - 🔗 **Ссылки на профиль трейдера** и рынок
-- 📈 **Расширенная аналитика:** Open PnL, активные позиции, возраст кошелька
+- 📈 **Расширенная аналитика:** Portfolio PnL, портфель, возраст кошелька и сделки
 - ⭐ **Трейдеры:** Сохранение трейдеров с их текущим "уровнем" (🦐-🔥) + **🔔 Уведомления** и **🚫 Игнор** (персональная подписка или скрытие сигналов)
 - ⭐ **Маркеты:** Сохранение маркетов + **🔔 Уведомления** и **🚫 Игнор** по маркету (все сделки $500+, с учётом фильтра типов событий)
 - 🐦 **Twitter интеграция** — автоматическая публикация крупных сделок в Twitter/X
 
 ### Обратная связь и поддержка
 
-📢 [Feedback](https://t.me/polymarketwhales_feedback) | 💻 [GitHub](https://github.com/ahdpe/PolymarketWhales) | 🐦 [Twitter](https://x.com/polywhales_bot)
+📢 [Feedback](https://t.me/polymarketwhales_feedback) | 💻 [GitHub](https://github.com/ahdpe/polymarket-whales-public) | 🐦 [Twitter](https://x.com/polywhales_bot)
 
 💝 **Поддержать проект:**  
 ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
@@ -58,15 +58,19 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
 
 #### Аналитика трейдера
 В каждом уведомлении теперь доступна статистика:
-- 📊 **Open PnL**: Нереализованная прибыль/убыток по открытым позициям.
-- 💼 **Open Positions**: Количество и стоимость активных (не закрытых) позиций.
+- 💵 **Paid → Max payout**: Сумма покупки и максимальная выплата при выигрыше.
+- 💵 **Received**: Сумма, полученная при продаже.
+- 📊 **Portfolio PnL**: Нереализованная прибыль/убыток по всем открытым позициям кошелька.
+- 💼 **Portfolio**: Количество и стоимость активных (не закрытых) позиций.
 - 🕐 **Wallet Age**: Возраст кошелька с момента первой активности.
+- 🕐 **Trade**: Сколько времени прошло с момента сделки (показывается от 1 минуты).
 
-#### Точный возраст кошелька (PolygonScan + Proxy)
-Polymarket API часто обрезает историю сделок для активных трейдеров. Чтобы возраст определялся точно:
-1. **Интеграция с блокчейном:** Если история короткая, бот проверяет данные напрямую в PolygonScan (требуется API Key).
-2. **Поддержка Proxy-кошельков:** Бот умеет определять возраст даже для смарт-кошельков (Gnosis Safe / Proxy), проверяя переводы токенов ERC20/ERC1155.
-3. **Кэширование:** Найденный возраст запоминается на **7 дней**, чтобы экономить лимиты API.
+#### Точный возраст кошелька
+Polymarket Data API часто обрезает историю активных трейдеров. Поэтому бот:
+1. **Сначала использует дату создания публичного профиля Polymarket** из Gamma API.
+2. **Проверяет полную историю активности и PolygonScan как резервные источники**, когда это возможно.
+3. **Не показывает ложный молодой возраст**, если доступная история явно обрезана.
+4. **Кэширует подтверждённый результат на 7 дней**, чтобы уменьшить нагрузку на API.
 
 ### Принцип работы
 
@@ -176,18 +180,6 @@ Polymarket API часто обрезает историю сделок для а
 3. **Персональные уведомления по рынку:**
    - При включении (🔔) приходят **все сделки $500+** на этом рынке, с учётом фильтра типов событий пользователя.
 
-### Установка
-
-```bash
-git clone https://github.com/ahdpe/PolymarketWhales.git
-cd PolymarketWhales
-pip install -r requirements.txt
-```
-
-Создайте `.env` файл:
-```
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
 # Опционально (для точного возраста кошельков)
 POLYGONSCAN_API_KEY=your_polygonscan_key
 # Опционально (для Twitter интеграции)
@@ -219,7 +211,7 @@ Telegram bot for real-time tracking of large trades ("whales") on [Polymarket](h
 
 - 📊 **Trade monitoring** from $500 to $100,000+
 - 💰 **Amount filter** — choose minimum threshold
-- 📂 **Category filter** — Crypto, Sports, Other
+- 📂 **Categories and subcategories** — broad Crypto, Sports, Other selection plus detailed market-type controls
 - ⚖️ **Probability filter** — excludes near-resolved markets (99.9%)
 - 🔄 **Event type filter** — choose which trades to track: BUY, SELL, SPLIT, MERGE, REDEEM
 - ⏱ **Market duration filter** — hides short markets when a timeframe can be recognized in the title or slug
@@ -227,14 +219,14 @@ Telegram bot for real-time tracking of large trades ("whales") on [Polymarket](h
 - 💼 **Open positions filter** — filter by number of open positions (min-max range)
 - 🌐 **Bilingual interface** — Russian / English
 - 🔗 **Links to trader profile** and market
-- 📈 **Advanced Analytics:** Open PnL, Active Positions, Wallet Age
+- 📈 **Advanced Analytics:** Portfolio PnL, Portfolio, Wallet Age, Trade Age
 - ⭐ **Traders:** Save traders with their current "level" (🦐-🔥) + **🔔 Notifications** and **🚫 Ignore** (subscribe to or hide signals)
 - ⭐ **Markets:** Save markets + **🔔 Notifications** and **🚫 Ignore** per market (all trades $500+, event types filter applied)
 - 🐦 **Twitter integration** — automatic posting of large trades to Twitter/X
 
 ### Feedback and Support
 
-📢 [Feedback](https://t.me/polymarketwhales_feedback) | 💻 [GitHub](https://github.com/ahdpe/PolymarketWhales) | 🐦 [Twitter](https://x.com/polywhales_bot)
+📢 [Feedback](https://t.me/polymarketwhales_feedback) | 💻 [GitHub](https://github.com/ahdpe/polymarket-whales-public) | 🐦 [Twitter](https://x.com/polywhales_bot)
 
 💝 **Support the project:**  
 ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
@@ -256,15 +248,19 @@ ERC-20: `0x53676559a4ac7fd8e19c79eef51e27622791bd45`
 
 #### Trader Analytics
 Every alert includes detailed stats:
-- 📊 **Open PnL**: Floating profit/loss on open positions.
-- 💼 **Open Positions**: Count and total value of active positions.
+- 💵 **Paid → Max payout**: Purchase cost and maximum payout if the outcome wins.
+- 💵 **Received**: Amount received from a sale.
+- 📊 **Portfolio PnL**: Unrealized profit/loss across all open wallet positions.
+- 💼 **Portfolio**: Count and total value of active positions.
 - 🕐 **Wallet Age**: Time since the very first activity.
+- 🕐 **Trade**: Time elapsed since the trade (shown from 1 minute).
 
-#### Accurate Wallet Age (PolygonScan + Proxy)
-Polymarket API often truncates activity history for high-frequency traders. For accuracy:
-1. **Blockchain Integration:** If history seems short, the bot queries PolygonScan directly (requires API Key).
-2. **Proxy Wallet Support:** Correctly identifies age even for Smart Wallets (Gnosis/Proxy) by checking ERC20/ERC1155 transfers.
-3. **Caching:** Wallet age is cached for **7 days** to minimize API usage.
+#### Accurate Wallet Age
+The Polymarket Data API often truncates active traders' history. The bot therefore:
+1. **Uses the public Polymarket profile creation date** from the Gamma API first.
+2. **Checks complete activity history and PolygonScan as fallbacks** when available.
+3. **Leaves age unknown instead of showing a falsely young wallet** when history is clearly truncated.
+4. **Caches confirmed results for 7 days** to reduce API load.
 
 ### How It Works
 
@@ -355,18 +351,6 @@ Saved markets implementation:
 3. **Market Notifications:**
    - When enabled (🔔), all trades **$500+** on that market are delivered, with user event-type filter applied.
 
-### Installation
-
-```bash
-git clone https://github.com/ahdpe/PolymarketWhales.git
-cd PolymarketWhales
-pip install -r requirements.txt
-```
-
-Create `.env` file:
-```
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
 # Optional (for accurate wallet age)
 POLYGONSCAN_API_KEY=your_polygonscan_key
 # Optional (for Twitter integration)

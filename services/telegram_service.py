@@ -26,6 +26,7 @@ except ImportError:
     _aiolimiter_version = None
 from config import TELEGRAM_BOT_TOKEN, FILTERS, OWNER_ID, RETRY_SHORT_MAX, MUTE_DURATIONS, FAIL_STREAK_MUTE_THRESHOLD, HOTFIX_CHAT_ID, HOTFIX_THRESHOLD, HOTFIX_MUTE, QUEUE_MAX_SIZE, WORKER_COUNT, GLOBAL_RATE, PER_CHAT_RATE
 from core.localization import get_text
+from core.categories import DETAILED_CATEGORY_OPTIONS, get_allowed_detailed_categories
 from core.utils import add_polymarket_ref, extract_polymarket_event_slug, extract_polymarket_profile_id, polymarket_event_url, polymarket_profile_url, shorten_trader_name
 from storage import saved_whales
 from storage import saved_markets
@@ -94,6 +95,7 @@ import json
 import shutil
 SETTINGS_FILE = os.path.join(os.path.dirname(__file__), '..', 'user_settings.json')
 SETTINGS_BACKUP_FILE = SETTINGS_FILE + '.bak'
+DETAILED_CATEGORIES_ENABLED = os.getenv('DETAILED_CATEGORIES_ENABLED', 'true').strip().lower() in {'1', 'true', 'yes', 'on'}
 
 def _decode_settings(data):
     """Convert persisted JSON settings into the in-memory representation."""
@@ -106,7 +108,7 @@ def load_settings():
 def save_settings():
     """Save user settings to file."""
     pass
-user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types, user_wallet_ages, user_open_positions, user_min_market_timeframes, blocked_users, bot_enabled = load_settings()
+user_filters, user_categories, user_languages, user_statuses, user_usernames, user_probabilities, user_side_types, user_wallet_ages, user_open_positions, user_min_market_timeframes, user_category_refinements, blocked_users, bot_enabled = load_settings()
 
 def apply_default_market_timeframe_filter() -> None:
     """Backfill the default timeframe filter for users created before the setting existed."""
@@ -233,8 +235,43 @@ def format_positions_range(pos_filter, lang):
     """Format positions filter range for display."""
     pass
 
+def _get_category_parent_state(chat_id, parent):
+    """Return off/full/partial plus the effective child count."""
+    pass
+
+def _format_category_selection(chat_id, lang):
+    """Format every category with a distinct icon and tri-state selection."""
+    pass
+
 def get_categories_keyboard(chat_id):
     """Create inline keyboard for category selection."""
+    pass
+_DETAILED_PARENT_LABELS = {'sports': {'ru': '🏆 Спорт', 'en': '🏆 Sports'}, 'crypto': {'ru': '💰 Крипто', 'en': '💰 Crypto'}, 'other': {'ru': '🗂 Остальное', 'en': '🗂 Other'}}
+_DETAILED_CATEGORY_LABELS = {'sports.combo': {'ru': '🎟 Combo', 'en': '🎟 Combo'}, 'sports.esports': {'ru': '🎮 Esports', 'en': '🎮 Esports'}, 'sports.soccer': {'ru': '⚽ Футбол', 'en': '⚽ Soccer'}, 'sports.basketball': {'ru': '🏀 Баскетбол', 'en': '🏀 Basketball'}, 'sports.american_football': {'ru': '🏈 Амер. футбол', 'en': '🏈 American football'}, 'sports.baseball': {'ru': '⚾ Бейсбол', 'en': '⚾ Baseball'}, 'sports.hockey': {'ru': '🏒 Хоккей', 'en': '🏒 Hockey'}, 'sports.tennis': {'ru': '🎾 Теннис', 'en': '🎾 Tennis'}, 'sports.combat': {'ru': '🥊 Единоборства', 'en': '🥊 Combat sports'}, 'sports.motorsport': {'ru': '🏎️ Автоспорт', 'en': '🏎️ Motorsport'}, 'sports.golf': {'ru': '⛳ Гольф', 'en': '⛳ Golf'}, 'sports.cricket': {'ru': '🏏 Крикет', 'en': '🏏 Cricket'}, 'sports.other': {'ru': '🏅 Другой спорт', 'en': '🏅 Other sports'}, 'crypto.bitcoin': {'ru': '🟠 Bitcoin', 'en': '🟠 Bitcoin'}, 'crypto.ethereum': {'ru': '🔷 Ethereum', 'en': '🔷 Ethereum'}, 'crypto.solana': {'ru': '🟣 Solana', 'en': '🟣 Solana'}, 'crypto.other_assets': {'ru': '🪙 Другие активы', 'en': '🪙 Other assets'}, 'crypto.prices': {'ru': '📈 Цены и Up/Down', 'en': '📈 Prices and Up/Down'}, 'crypto.launches': {'ru': '🚀 Запуски и FDV', 'en': '🚀 Launches and FDV'}, 'crypto.regulation': {'ru': '⚖️ Регулирование', 'en': '⚖️ Regulation'}, 'crypto.defi_nft': {'ru': '🧩 DeFi и NFT', 'en': '🧩 DeFi and NFT'}, 'crypto.other': {'ru': '💠 Другое крипто', 'en': '💠 Other crypto'}, 'other.politics': {'ru': '🗳️ Политика', 'en': '🗳️ Politics'}, 'other.geopolitics': {'ru': '🌍 Геополитика', 'en': '🌍 Geopolitics'}, 'other.economy': {'ru': '📊 Экономика', 'en': '📊 Economy'}, 'other.entertainment': {'ru': '🎬 Развлечения', 'en': '🎬 Entertainment'}, 'other.science_tech': {'ru': '🔬 Наука и технологии', 'en': '🔬 Science and tech'}, 'other.weather': {'ru': '🌦️ Погода', 'en': '🌦️ Weather'}, 'other.business': {'ru': '💼 Бизнес', 'en': '💼 Business'}, 'other.other': {'ru': '🗂️ Остальное', 'en': '🗂️ Everything else'}}
+
+def _detail_label(detail_id, lang):
+    pass
+
+def _parent_label(parent, lang):
+    pass
+
+def _get_chat_refinements(chat_id):
+    pass
+
+def _get_saved_detailed_selection(chat_id, parent):
+    """Return a meaningful saved subset, including one parked while full/off."""
+    pass
+
+def _get_detailed_editor_selection(chat_id, parent):
+    """Resolve the checkboxes shown when editing a detailed category."""
+    pass
+
+def get_detailed_categories_menu_keyboard(chat_id):
+    """Create the compact top-level detailed category menu."""
+    pass
+
+def get_detailed_parent_keyboard(chat_id, parent):
+    """Create a two-column selector for one detailed category parent."""
     pass
 
 def get_side_types_keyboard(chat_id):
@@ -686,6 +723,15 @@ async def callback_category(callback: CallbackQuery):
     """Handle category toggle callback."""
     pass
 
+def _save_parent_refinement(chat_id, parent, allowed):
+    """Persist a detailed subset; all/none collapse back to binary mode."""
+    pass
+
+@dp.callback_query(F.data.startswith('dcat_'))
+async def callback_detailed_category(callback: CallbackQuery):
+    """Handle optional detailed category navigation and selections."""
+    pass
+
 @dp.callback_query(F.data.startswith('side_'))
 async def callback_side_type(callback: CallbackQuery):
     """Handle side type toggle callback."""
@@ -702,6 +748,10 @@ def get_user_min_threshold(chat_id):
 
 def get_user_categories(chat_id):
     """Get user's category preferences."""
+    pass
+
+def get_user_category_refinements(chat_id):
+    """Get optional detailed category preferences without mutating defaults."""
     pass
 
 def get_user_probability_filter(chat_id):
