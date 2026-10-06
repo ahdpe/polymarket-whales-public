@@ -1,0 +1,2 @@
+🆕 Update: 
+⚖️ Probability Filter: You can now set a custom range (e.g., 1-80%). Settings: ⚙️ Filters → ⚖️ Probability → 📝 Set interval

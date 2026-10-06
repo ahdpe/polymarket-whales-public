@@ -1,0 +1,62 @@
+{
+  "filters": {
+    "example_user_id": 50000
+  },
+  "categories": {
+    "example_user_id": {
+      "all": true,
+      "other": true,
+      "crypto": true,
+      "sports": true
+    }
+  },
+  "languages": {
+    "example_user_id": "en"
+  },
+  "statuses": {
+    "example_user_id": true
+  },
+  "usernames": {
+    "example_user_id": "example_username"
+  },
+  "probabilities": {
+    "example_user_id": "1_99"
+  },
+  "side_types": {
+    "example_user_id": {
+      "all": false,
+      "BUY": true,
+      "SELL": true,
+      "SPLIT": false,
+      "MERGE": false,
+      "REDEEM": false
+    }
+  },
+  "wallet_ages": {
+    "example_user_id": {
+      "min_days": null,
+      "max_days": null
+    }
+  },
+  "open_positions": {
+    "example_user_id": {
+      "min_count": null,
+      "max_count": null
+    }
+  },
+  "min_market_timeframe_minutes": {
+    "example_user_id": 15
+  },
+  "category_refinements": {
+    "example_user_id": {
+      "sports": {
+        "mode": "selected",
+        "allowed": [
+          "sports.esports",
+          "sports.combo"
+        ]
+      }
+    }
+  },
+  "bot_enabled": true
+}
