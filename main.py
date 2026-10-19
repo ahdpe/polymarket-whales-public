@@ -6,10 +6,11 @@ import sys
 import fcntl
 import time
 import psutil
+from collections import Counter
 from datetime import datetime, time as dt_time, timedelta
 from services.polymarket import PolymarketService
 from services.telegram_service import start_telegram, enqueue_trade_alert, user_filters, get_user_categories, get_default_categories, get_user_lang, get_user_probability_filter, get_user_side_types, get_user_wallet_age_filter, get_user_open_positions_filter, get_user_min_market_timeframe, get_user_category_refinements, send_admin_notification, set_poly_service, set_insider_alerts_service, stop_queue_workers
-from services.report_service import generate_report
+from services.report_service import generate_report_async
 from core.filters import get_alert_level
 from core.categories import detect_category, detect_category_from_official_tags, detect_combo_sports_categories, detect_detailed_categories, get_category_emoji, should_show_detailed_trade, should_show_trade
 from core.localization import get_trade_level_emoji, get_trade_level_icon
@@ -35,6 +36,16 @@ MEMORY_WARNING_THRESHOLD = 85.0
 MEMORY_CRITICAL_THRESHOLD = 95.0
 MEMORY_CHECK_INTERVAL = 300
 _last_memory_warning_time = {}
+try:
+    LOG_SUMMARY_INTERVAL_SEC = max(60, int(os.getenv('LOG_SUMMARY_INTERVAL_SEC', '600')))
+except (TypeError, ValueError):
+    LOG_SUMMARY_INTERVAL_SEC = 600
+_routine_counts = Counter()
+_routine_counts_since = time.time()
+
+def _count_routine(event: str) -> None:
+    """Count a routine per-trade event and emit an INFO summary periodically."""
+    pass
 
 def _is_russian(lang):
     pass

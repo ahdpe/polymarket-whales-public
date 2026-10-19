@@ -5,7 +5,7 @@ from aiogram.dispatcher.middlewares.base import BaseMiddleware
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, TelegramObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.exceptions import TelegramRetryAfter, TelegramForbiddenError
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter, TelegramForbiddenError
 import asyncio
 import logging
 import hashlib
@@ -30,7 +30,7 @@ from core.categories import DETAILED_CATEGORY_OPTIONS, get_allowed_detailed_cate
 from core.utils import add_polymarket_ref, extract_polymarket_event_slug, extract_polymarket_profile_id, polymarket_event_url, polymarket_profile_url, shorten_trader_name
 from storage import saved_whales
 from storage import saved_markets
-from services.report_service import generate_report
+from services.report_service import generate_report_async
 from services.market_timeframe import TIMEFRAME_FILTER_OPTIONS
 DATA_API_URL = 'https://data-api.polymarket.com'
 _poly_service = None

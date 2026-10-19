@@ -1,6 +1,8 @@
 # PUBLIC SHELL REPOSITORY
 > This is a public demonstration shell. Core logic is stripped.
 
+Production improvements and verification notes: [Changelog](CHANGELOG.md).
+
 # Polymarket Whale Alerts 🐋
 
 [🇷🇺 Русский](#-русский) | [🇬🇧 English](#-english)

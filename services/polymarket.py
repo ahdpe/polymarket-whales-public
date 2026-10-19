@@ -6,6 +6,8 @@ import time
 import sqlite3
 import os
 import random
+import math
+import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from collections import OrderedDict
@@ -17,10 +19,29 @@ DATA_API_URL = 'https://data-api.polymarket.com'
 GAMMA_PUBLIC_PROFILE_URL = 'https://gamma-api.polymarket.com/public-profile'
 DATA_API_ACTIVITY_LIMIT = 500
 DATA_API_ACTIVITY_MAX_OFFSET = 5000
-POLL_INTERVAL = 3
+try:
+    POLL_INTERVAL = max(1.0, float(os.getenv('TRADES_POLL_INTERVAL_SEC', '10')))
+except (TypeError, ValueError):
+    POLL_INTERVAL = 10.0
+try:
+    STARTUP_MAX_ALERT_AGE_SEC = max(0, int(os.getenv('STARTUP_MAX_ALERT_AGE_SEC', '900')))
+except (TypeError, ValueError):
+    STARTUP_MAX_ALERT_AGE_SEC = 900
 MAX_LRU_SIZE = 10000
 DB_PATH = 'data/trades.db'
-TTL_HOURS = 72
+try:
+    TTL_HOURS = max(1.0, float(os.getenv('DEDUP_TTL_HOURS', '6')))
+except (TypeError, ValueError):
+    TTL_HOURS = 6.0
+CLEANUP_INTERVAL_SEC = 3600
+try:
+    CLEANUP_BATCH_SIZE = max(100, int(os.getenv('DEDUP_CLEANUP_BATCH_SIZE', '5000')))
+except (TypeError, ValueError):
+    CLEANUP_BATCH_SIZE = 5000
+try:
+    CLEANUP_BATCH_PAUSE_SEC = max(0.0, float(os.getenv('DEDUP_CLEANUP_BATCH_PAUSE_SEC', '0.05')))
+except (TypeError, ValueError):
+    CLEANUP_BATCH_PAUSE_SEC = 0.05
 SQLITE_BUSY_TIMEOUT_MS = 5000
 RECENT_WALLETS_WINDOW = 48 * 3600
 WALLET_ACTIVITY_CHECK_COOLDOWN = 300
@@ -29,12 +50,41 @@ MAX_PENDING_CALLBACK_TASKS = 5000
 CALLBACK_QUEUE_INFO_THRESHOLD = 200
 CALLBACK_QUEUE_WARN_THRESHOLD = 1000
 CALLBACK_HEALTH_LOG_INTERVAL = 30
+
+def _env_int(name: str, default: int) -> int:
+    pass
+
+class BoundedCache(OrderedDict):
+    """Dict with LRU eviction and periodic removal of expired entries.
+
+    ``is_expired(entry, now)`` decides when an entry is physically dropped;
+    freshness checks at read sites stay unchanged.
+    """
+
+    def __init__(self, max_size: int, is_expired, prune_every: int=500):
+        pass
+
+    def get(self, key, default=None):
+        pass
+
+    def __setitem__(self, key, value):
+        pass
+
+    def prune(self, now: Optional[float]=None) -> int:
+        pass
+
+    def copy(self):
+        pass
 POSITIONS_CACHE_TTL = 60
-_positions_cache = {}
+POSITIONS_CACHE_STALE_MAX = _env_int('POSITIONS_CACHE_STALE_MAX_SEC', 3600)
+_positions_cache = BoundedCache(_env_int('POSITIONS_CACHE_MAX_SIZE', 20000), lambda entry, now: now - entry['ts'] >= POSITIONS_CACHE_STALE_MAX)
 WALLET_AGE_CACHE_TTL = 7 * 24 * 60 * 60
 WALLET_AGE_FALLBACK_TTL = 600
-_wallet_age_cache = {}
 _WALLET_AGE_STABLE_SOURCES = {'etherscan', 'gamma_profile', 'polymarket_full'}
+
+def _wallet_age_entry_expired(entry, now) -> bool:
+    pass
+_wallet_age_cache = BoundedCache(_env_int('WALLET_AGE_CACHE_MAX_SIZE', 50000), _wallet_age_entry_expired)
 
 def norm_ts(x, default=0.0) -> float:
     """Normalize timestamp to seconds (handle ms)."""
@@ -72,10 +122,22 @@ class TradePersistence:
     def _add_to_lru(self, key: str):
         pass
 
-    def add_batch(self, keys):
+    def add_batch(self, keys, *, aggregation_state=None):
         pass
 
-    def cleanup(self):
+    def get_aggregation_state(self):
+        pass
+
+    def cleanup_due(self) -> bool:
+        pass
+
+    def delete_expired_batched(self, batch_size=None, pause_sec=None) -> int:
+        """Delete expired keys in small batches (no VACUUM).
+
+        Runs in a worker thread with its own connection, so the event loop and
+        self.conn are never blocked for long; each batch holds the write lock
+        only briefly and add_batch() waits via busy_timeout.
+        """
         pass
 
     def close(self):
@@ -83,7 +145,13 @@ class TradePersistence:
 
 class TradeAggregator:
 
-    def __init__(self, window_sec=60, min_alert_usd=500):
+    def __init__(self, window_sec=60, min_alert_usd=500, *, on_reset=None):
+        pass
+
+    def export_state(self, *, incomplete_poll=False):
+        pass
+
+    def restore_state(self, state, *, max_age_sec=None):
         pass
 
     def _get_key(self, trade):
@@ -92,7 +160,10 @@ class TradeAggregator:
     def process_trade(self, trade):
         pass
 
-    def cleanup(self):
+    def _snapshot(self, series):
+        pass
+
+    def cleanup(self, *, max_ready=None):
         pass
 
     def reset_aggregator(self) -> int:
@@ -130,6 +201,10 @@ class PolymarketService:
         pass
 
     async def _fetch_recent_trades(self, session, limit=10000, offset=0, min_size=10):
+        pass
+
+    def _schedule_dedup_cleanup(self):
+        """Start the hourly batched trades.db cleanup in a worker thread."""
         pass
 
     def _prune_recent_wallets(self, now: float):
@@ -189,6 +264,12 @@ class PolymarketService:
         pass
 
     async def poll_trades(self, callback, interval=POLL_INTERVAL):
+        pass
+
+    def _aggregate_poll_batch(self, callback, trades, *, complete=True, seen_keys=()):
+        pass
+
+    def _reset_aggregation(self):
         pass
 
     def _map_activity_to_trade(self, activity: dict, activity_type: str) -> dict:

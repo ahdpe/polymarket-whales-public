@@ -11,13 +11,27 @@ import time
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timedelta
 from collections import defaultdict
+from html import escape
 from urllib.parse import quote
 import aiohttp
 from storage import alerts_storage
-from core.categories import detect_category
+from storage import insider_delivery as delivery_storage
+from services.insider_delivery import send as send_insider_message
+from core.categories import DETAILED_CATEGORY_OPTIONS, detect_category, detect_category_from_official_tags, detect_detailed_categories, has_crypto_context
 from core.utils import add_polymarket_ref, polymarket_event_url, polymarket_profile_url
 from config import OWNER_ID
 logger = logging.getLogger(__name__)
+
+def _env_bool(name: str, default: bool=False) -> bool:
+    pass
+
+def parse_insider_detailed_allowlist(raw: str) -> frozenset[str]:
+    """Parse and validate the optional detailed-category allowlist."""
+    pass
+
+def resolve_insider_analysis_policy(category: str, detailed_categories, *, broad_enabled: bool, analysis_only: bool, detailed_allowlist) -> Tuple[bool, bool, frozenset[str]]:
+    """Return allowed, shadow_only and matching detailed categories."""
+    pass
 DEFAULT_SETTINGS = {'enabled': 'false', 'channel_id': '', 'cooldown_hours': '24', 'cat_sports_enabled': 'true', 'cat_crypto_enabled': 'true', 'cat_other_enabled': 'true', 'probability_min': '0', 'probability_max': '100', 'cluster_enabled': 'false', 'cluster_interval_hours': '2', 'cluster_wallet_age_hours': '24', 'cluster_min_usd': '5000', 'cluster_min_total_usd': '10000', 'cluster_min_wallets': '4', 'cluster_min_direction_pct': '75', 'cluster_side': 'both', 'cluster_include_profiles': 'true', 'cluster_max_positions': '3', 'accumulation_enabled': 'false', 'accumulation_interval_days': '14', 'accumulation_min_usd': '10000', 'accumulation_min_total_usd': '50000', 'accumulation_min_wallets': '3', 'accumulation_wallet_age_hours': '48', 'accumulation_min_direction_pct': '70', 'accumulation_include_profiles': 'true', 'accumulation_max_positions': '3', 'burst_enabled': 'false', 'burst_interval_hours': '1', 'burst_wallet_age_hours': '72', 'burst_min_usd': '1000', 'burst_min_total_usd': '5000', 'burst_min_wallets': '8', 'burst_min_direction_pct': '70', 'burst_include_profiles': 'true', 'burst_max_positions': '3', 'position_tracker_enabled': 'false', 'position_tracker_drop_sold': 'true'}
 
 class InsiderAlertsService:
@@ -53,7 +67,7 @@ class InsiderAlertsService:
         """Run scenario checks once per market after short quiet period."""
         pass
 
-    def _schedule_scenario_check_debounced(self, market_id: str, category: str) -> None:
+    def _schedule_scenario_check_debounced(self, market_id: str, category: str, *, shadow_only: bool=False, detailed_allowed: bool=False) -> None:
         """
         Debounce scenario checks by market_id to reduce repeated heavy checks
         during short trade bursts.
@@ -72,6 +86,42 @@ class InsiderAlertsService:
         """Check if insider alerts are globally enabled."""
         pass
 
+    def is_analysis_only(self) -> bool:
+        """True when the test runtime must never publish normal alerts."""
+        pass
+
+    def get_detailed_allowlist(self) -> frozenset[str]:
+        pass
+
+    def _active_scenario_window_hours(self) -> float:
+        """Return the longest currently enabled pattern window."""
+        pass
+
+    def _trade_retention_hours(self) -> float:
+        """Keep a safety day beyond the longest enabled pattern window."""
+        pass
+
+    @staticmethod
+    def _decode_detailed_categories(raw_details: Any) -> frozenset[str]:
+        """Normalize detailed categories stored either as JSON or a sequence."""
+        pass
+
+    def _stored_trade_category_allowed(self, trade: Dict[str, Any]) -> bool:
+        """Apply broad and detailed category policy to one stored raw trade."""
+        pass
+
+    def _filter_category_allowed_trades(self, trades: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Filter each stored row so detailed allowlists cannot be bypassed later."""
+        pass
+
+    def _resolve_trade_analysis_policy(self, trade_data: Dict[str, Any]):
+        """Classify a trade and resolve whether insider analysis needs it."""
+        pass
+
+    def should_collect_trade(self, trade_data: Dict[str, Any]) -> bool:
+        """Cheap pre-check used before wallet profile API calls."""
+        pass
+
     def get_channel_id(self) -> Optional[str]:
         """Get configured Telegram channel ID (env INSIDER_ALERTS_CHANNEL_ID or DB)."""
         pass
@@ -86,7 +136,7 @@ class InsiderAlertsService:
         """Check all active markets for insider patterns (called periodically)."""
         pass
 
-    async def check_scenarios(self, market_id: str, category: str='other') -> None:
+    async def check_scenarios(self, market_id: str, category: str='other', *, shadow_only: bool=False, detailed_allowed: bool=False) -> None:
         """
         Check all enabled scenarios for a specific market.
         Now async to support position verification before scenario checks.
@@ -134,6 +184,12 @@ class InsiderAlertsService:
         pass
 
     def _format_alert_message(self, scenario: str, alert_data: Dict[str, Any], shared_wallets: set=None) -> str:
+        pass
+
+    async def _notify_insider_issue(self, scenario, market_id, outcome, reason):
+        pass
+
+    async def _recover_deliveries(self):
         pass
 
     def _publish_alert(self, scenario: str, alert_data: Dict[str, Any]) -> None:
